@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="rps " viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="rock">
+    <path d="M9 45 C5 33 13 19 26 16 C38 11 54 20 57 34 C60 47 49 55 34 55 C21 56 11 54 9 45 Z" fill="#b9b5c6" stroke="#2b2b2b" stroke-width="3.5" stroke-linejoin="round"/>
+    <path d="M17 28 C20 23 24 21 29 20" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".75"/>
+    <path d="M47 22 L44 27 L48 29" fill="none" stroke="#2b2b2b" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="16" cy="40" r="1.6" fill="#8f8a9e"/><circle cx="50" cy="45" r="1.4" fill="#8f8a9e"/>
+    
+  <circle cx="26" cy="37" r="3.2" fill="#2b2b2b"/><circle cx="40" cy="37" r="3.2" fill="#2b2b2b"/>
+  <circle cx="27" cy="35.8" r="1.1" fill="#fff"/><circle cx="41" cy="35.8" r="1.1" fill="#fff"/>
+  <ellipse cx="21" cy="43" rx="4" ry="2.4" fill="#ff8fa3" opacity=".75"/>
+  <ellipse cx="45" cy="43" rx="4" ry="2.4" fill="#ff8fa3" opacity=".75"/>
+  <path d="M29 43 Q33 47 37 43" fill="none" stroke="#2b2b2b" stroke-width="2.6" stroke-linecap="round"/></svg>

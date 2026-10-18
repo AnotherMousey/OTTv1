@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tournaments · OTTv1</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header id="topbar"></header>
+  <main>
+    <h1>Tournaments</h1>
+    <p class="muted" style="margin-top:-8px">Submit a bot before the timer runs out. When it hits zero, everyone gets dragged into the arena. 🏟️</p>
+    <div class="tlist" id="list"><div class="empty">loading…</div></div>
+  </main>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/avatar.js"></script>
+  <script src="/js/rps.js"></script>
+  <script src="/js/common.js"></script>
+  <script>
+    let tournaments = [];
+
+    function subLine(t) {
+      if (ME.role === 'judge') return `<span class="muted">${t.teamsReady} team${t.teamsReady === 1 ? '' : 's'} ready</span>`;
+      const s = t.mySubmission;
+      if (!s) return t.status === 'open' ? '<span class="muted">You haven\'t submitted a bot yet.</span>' : '';
+      const icon = { ok: '✅ ready', error: '❌ broken', pending: '⏳ checking…' }[s.status];
+      const fallback = s.status !== 'ok' && t.myActive ? ' <span class="muted">(an earlier version is still entered)</span>' : '';
+      return `Your bot: <b>${LANG_LABEL[s.language]}</b> · <span class="tag ${s.status}">${icon}</span>${fallback}`;
+    }
+
+    function render() {
+      const list = $('#list');
+      if (!tournaments.length) {
+        list.innerHTML = `<div class="empty">${avatarSvg('#bbb', 90)}<br>No tournaments yet. The judge is probably still sharpening the scissors.</div>`;
+        return;
+      }
+      list.innerHTML = tournaments.map(t => {
+        const id = encodeURIComponent(t.id);
+        const statusText = { open: 'accepting bots', running: 'LIVE NOW', finished: 'finished' }[t.status];
+        let timer = '';
+        if (t.status === 'open') timer = `<div class="countdown" data-deadline="${t.deadline}"></div><small class="muted">closes ${esc(fmtDate(t.deadline))}</small>`;
+        else if (t.status === 'running') timer = '<div class="countdown">🔥 fighting…</div>';
+        else timer = `<div class="countdown">${t.champion ? '🏆 ' + esc(t.champion) : 'no winner'}</div>`;
+        const actions = [];
+        if (t.status === 'open' && ME.role !== 'judge') actions.push(`<a class="btn red" href="/tournament/${id}/submit">Submit code ✍️</a>`);
+        if (t.status === 'open' && ME.role === 'judge') actions.push(`<a class="btn" href="/tournament/${id}/submit">Practice board 🥋</a>`, `<a class="btn" href="/admin">Manage</a>`);
+        if (t.status !== 'open') actions.push(`<a class="btn ${t.status === 'running' ? 'yellow' : ''}" href="/tournament/${id}/live">${t.status === 'running' ? 'Watch live 👀' : 'Results 🏆'}</a>`);
+        return `
+          <div class="box tcard">
+            <div>
+              <div class="row"><h2>${esc(t.name)}</h2><span class="tag ${t.status}">${statusText}</span></div>
+              ${t.description ? `<div class="desc">${esc(t.description)}</div>` : ''}
+              <div style="margin-top:6px">${subLine(t)}</div>
+            </div>
+            <div class="actions" style="text-align:center">${timer}${actions.join('')}</div>
+          </div>`;
+      }).join('');
+      tick();
+    }
+
+    function tick() {
+      for (const el of $$('.countdown[data-deadline]')) {
+        const left = Date.parse(el.dataset.deadline) - serverNow();
+        el.textContent = left > 0 ? fmtCountdown(left) : 'time\'s up!';
+        el.classList.toggle('soon', left > 0 && left < 60000);
+      }
+    }
+
+    async function load() {
+      const data = await api('/api/tournaments');
+      tournaments = data.tournaments;
+      render();
+    }
+
+    (async () => {
+      const socket = await boot();
+      socket.on('tournaments:changed', load);
+      await load();
+      setInterval(tick, 250);
+      setInterval(load, 15000); // pick up submission status changes
+    })();
+  </script>
+</body>
+</html>

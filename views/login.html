@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Log in · OTTv1</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="login-card">
+      <div class="duo" id="duo"></div>
+      <form class="box" id="form" autocomplete="on">
+        <div class="trio big" id="trio"></div>
+        <h1 class="brand" style="font-size:54px">OTTv1</h1>
+        <p class="muted" style="margin-top:-6px">rock · paper · scissors · bots · glory</p>
+        <label><span>username</span><input name="username" id="username" required autofocus autocomplete="username"></label>
+        <label><span>password</span><input name="password" type="password" required autocomplete="current-password"></label>
+        <div class="err" id="err"></div>
+        <button class="btn red" type="submit" style="font-size:26px">Let me in!</button>
+        <p class="muted" style="font-size:17px;margin-bottom:0">No account? Accounts are handed out by the judge. 🎩</p>
+      </form>
+    </div>
+  </div>
+  <script src="/js/avatar.js"></script>
+  <script src="/js/rps.js"></script>
+  <script>
+    document.getElementById('duo').innerHTML = avatarSvg('#e2433f', 110) + avatarSvg('#3a7bd5', 110, { flip: true });
+    document.getElementById('trio').innerHTML = rpsIcon('R', 64) + rpsIcon('P', 64) + rpsIcon('S', 64);
+    document.getElementById('form').addEventListener('submit', async e => {
+      e.preventDefault();
+      const f = new FormData(e.target);
+      const err = document.getElementById('err');
+      err.textContent = '';
+      try {
+        const res = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: f.get('username'), password: f.get('password') }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Login failed');
+        location.href = '/';
+      } catch (ex) {
+        err.textContent = ex.message + ' 🙈';
+      }
+    });
+  </script>
+</body>
+</html>

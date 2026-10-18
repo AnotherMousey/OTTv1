@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Submit · OTTv1</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header id="topbar"></header>
+  <main class="wide">
+    <a href="/">← back to tournaments</a>
+    <div class="row" style="justify-content:space-between;align-items:flex-end">
+      <div>
+        <h1 id="tname">…</h1>
+        <div class="muted" id="tdesc"></div>
+      </div>
+      <div class="center">
+        <div class="muted" style="font-size:17px">submissions close in</div>
+        <div class="countdown" id="countdown">--:--:--</div>
+      </div>
+    </div>
+    <div class="squiggle"></div>
+
+    <section id="practice" class="hidden" style="margin-bottom:26px">
+      <div class="row" style="justify-content:space-between;align-items:baseline">
+        <h2 style="margin-bottom:0">Practice arena 🥋</h2>
+      </div>
+      <p class="muted" style="font-size:17px;margin:4px 0 0">Click your own team to see how you did against each sparring bot. Other teams' breakdowns stay secret. 🤫</p>
+      <table class="board practice">
+        <thead><tr><th>#</th><th>team</th><th class="hide-sm">lang</th><th>vs sparring bots</th><th class="hide-sm" style="width:34%"></th></tr></thead>
+        <tbody id="prows"></tbody>
+      </table>
+    </section>
+
+    <div class="submit-grid">
+      <section>
+        <div class="row" style="justify-content:space-between">
+          <div class="lang-tabs" id="langs"></div>
+          <div class="row">
+            <label class="btn small" style="margin:0">📂 Load file<input type="file" id="file" class="hidden" accept=".cpp,.cc,.cxx,.h,.hpp,.java,.py,.txt"></label>
+            <button class="btn small" id="template">↺ Starter code</button>
+          </div>
+        </div>
+        <textarea class="code" id="code" spellcheck="false"></textarea>
+        <div class="row" style="margin-top:14px">
+          <button class="btn red" id="submit" style="font-size:26px">Submit my bot 🚀</button>
+          <span id="closed" class="hidden" style="color:var(--red)">Submissions are closed.</span>
+        </div>
+        <div class="squiggle"></div>
+        <h3>How your bot works</h3>
+        <div class="docs" id="docs"></div>
+      </section>
+
+      <aside>
+        <div class="box alt">
+          <h3 style="margin-top:0">Your submissions</h3>
+          <p class="muted" style="font-size:16px;margin-top:-6px">Your newest ✅ submission is the one that plays.</p>
+          <div class="sublist" id="subs"><span class="muted">nothing yet</span></div>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/avatar.js"></script>
+  <script src="/js/rps.js"></script>
+  <script src="/js/common.js"></script>
+  <script>
+    const TEMPLATES = {
+      python: `import random
+
+# my_moves / opponent_moves: lists of 'R', 'P', 'S' from the previous turns
+# (oldest first, empty on turn 1). Return 'R', 'P' or 'S'.
+# Module-level variables survive between turns, so you can keep state.
+# print() is fine for debugging - it never reaches the grader.
+
+BEATS = {'R': 'P', 'P': 'S', 'S': 'R'}  # move -> what beats it
+
+def play(my_moves, opponent_moves):
+    if not opponent_moves:
+        return random.choice('RPS')
+    # beat whatever the opponent threw last time
+    return BEATS[opponent_moves[-1]]
+`,
+      cpp: `#include <vector>
+#include <cstdlib>
+#include <iostream>
+using namespace std;
+
+// myMoves / opponentMoves: the previous turns, oldest first ('R', 'P', 'S').
+// Both are empty on turn 1. Return 'R', 'P' or 'S'.
+// Don't write main() - the grader brings its own. Globals/statics survive
+// between turns. Debug with cerr (cout is fine too, the grader ignores it).
+
+char play(const vector<char>& myMoves, const vector<char>& opponentMoves) {
+    if (opponentMoves.empty()) return "RPS"[rand() % 3];
+    char last = opponentMoves.back();
+    if (last == 'R') return 'P';
+    if (last == 'P') return 'S';
+    return 'R';
+}
+`,
+      java: `import java.util.*;
+
+// The class must be called Bot (no package line). One Bot object plays the
+// whole game, so fields keep their values between turns.
+// myMoves / opponentMoves: previous turns, oldest first ('R', 'P', 'S').
+// Return 'R', 'P' or 'S'. System.out.println is fine for debugging.
+
+public class Bot {
+    private final Random rng = new Random();
+
+    public char play(List<Character> myMoves, List<Character> opponentMoves) {
+        if (opponentMoves.isEmpty()) return "RPS".charAt(rng.nextInt(3));
+        char last = opponentMoves.get(opponentMoves.size() - 1);
+        switch (last) {
+            case 'R': return 'P';
+            case 'P': return 'S';
+            default:  return 'R';
+        }
+    }
+}
+`,
+    };
+
+    const DOCS = {
+      python: `<p>File: <code>bot.py</code> — define a function:</p>
+        <pre>def play(my_moves: list[str], opponent_moves: list[str]) -> str</pre>`,
+      cpp: `<p>File: <code>bot.cpp</code> (C++17, compiled with g++ -O2) — define a function:</p>
+        <pre>char play(const std::vector&lt;char&gt;&amp; myMoves,
+          const std::vector&lt;char&gt;&amp; opponentMoves);</pre>`,
+      java: `<p>File: <code>Bot.java</code> — a public class <code>Bot</code> (no <code>package</code>) with a method:</p>
+        <pre>public char play(List&lt;Character&gt; myMoves,
+                 List&lt;Character&gt; opponentMoves)</pre>`,
+    };
+    const RULES = `<ul>
+        <li>Each match is <b>100 turns</b>. Every turn: win = <b>3</b> pts, draw = <b>1</b>, loss = <b>0</b>.</li>
+        <li>The histories hold every previous turn, oldest first. Index <i>i</i> of both lists is the same turn.</li>
+        <li>You have <b>1 second</b> per move (10 s for the first move, so the JVM can wake up).</li>
+        <li>Crash, time out or return something weird → that turn counts as <code>X</code> and you lose it. A crashed or timed-out bot forfeits the rest of the match. <code>X</code> can show up in the histories.</li>
+        <li>Every round is a round robin. After each round the <b>min(3, teams − 2)</b> lowest-scoring teams are eliminated, until 2 remain for the final.</li>
+        <li>On submit we compile your bot and play a 5-turn test game. Only ✅ bots get in.</li>
+        <li>Every ✅ bot then spars 100 turns against each of 10 house bots. Your total shows on the practice board; only you can see your per-bot scores. Practice games don't count in the tournament.</li>
+      </ul>`;
+
+    const tid = tournamentIdFromPath();
+    let lang = localStorage.getItem('rr-lang') || 'python';
+    let tournament = null;
+    const drafts = {};
+
+    function draftKey(l) { return `rr-draft-${tid}-${l}`; }
+    function saveDraft() { try { localStorage.setItem(draftKey(lang), $('#code').value); } catch {} }
+    function loadDraft(l) { try { return localStorage.getItem(draftKey(l)); } catch { return null; } }
+
+    function setLang(l) {
+      if ($('#code').value) saveDraft();
+      lang = l;
+      try { localStorage.setItem('rr-lang', l); } catch {}
+      $$('#langs button').forEach(b => b.classList.toggle('on', b.dataset.lang === l));
+      $('#code').value = loadDraft(l) ?? TEMPLATES[l];
+      $('#docs').innerHTML = DOCS[l] + RULES;
+    }
+
+    function renderSubs(subs) {
+      if (!subs.length) { $('#subs').innerHTML = '<span class="muted">nothing yet</span>'; return; }
+      const activeId = (subs.find(s => s.status === 'ok') || {}).id;
+      const icon = { ok: '✅ ready', error: '❌ broken', pending: '⏳ checking…' };
+      $('#subs').innerHTML = subs.map(s => `
+        <div class="sub ${s.id === activeId ? 'active' : ''}">
+          <div class="row" style="justify-content:space-between">
+            <b>${LANG_LABEL[s.language]}</b><span class="tag ${s.status}">${icon[s.status]}</span>
+          </div>
+          <div class="muted" style="font-size:15px">${esc(fmtDate(s.createdAt))}${s.id === activeId ? ' · <b style="color:var(--green)">this one plays</b>' : ''}</div>
+          ${s.message ? `<pre class="msg">${esc(s.message)}</pre>` : ''}
+          <button class="btn small" data-load="${s.id}" style="margin-top:6px">load code</button>
+        </div>`).join('');
+      $$('[data-load]').forEach(b => b.onclick = () => {
+        const s = subs.find(x => x.id === b.dataset.load);
+        setLang(s.language);
+        $('#code').value = s.code;
+        saveDraft();
+      });
+      if (subs.some(s => s.status === 'pending')) setTimeout(load, 1200);
+    }
+
+    async function load() {
+      const data = await api(`/api/tournaments/${encodeURIComponent(tid)}`);
+      tournament = data.tournament;
+      $('#tname').textContent = tournament.name;
+      $('#tdesc').textContent = tournament.description;
+      document.title = `Submit · ${tournament.name}`;
+      renderSubs(data.submissions);
+      if (tournament.status !== 'open') location.href = `/tournament/${encodeURIComponent(tid)}/live`;
+    }
+
+    // ---------- practice arena ----------
+    let openUser = null;      // whose breakdown is expanded
+    let practiceData = null;
+
+    async function loadPractice() {
+      const q = openUser ? `?user=${encodeURIComponent(openUser)}` : '';
+      try {
+        practiceData = await api(`/api/tournaments/${encodeURIComponent(tid)}/practice${q}`);
+      } catch (e) {
+        openUser = null;
+        return toast(e.message, 'error');
+      }
+      renderPractice();
+    }
+    let practiceTimer = null;
+    const refreshPractice = () => { clearTimeout(practiceTimer); practiceTimer = setTimeout(loadPractice, 150); };
+
+    function statusText(r, max) {
+      if (r.status === 'no-bot') return '<span class="muted">no working bot yet</span>';
+      if (r.status === 'queued') return '<span class="muted">⏳ waiting for a sparring slot…</span>';
+      if (r.status === 'running') return `<span class="muted">🥊 sparring… ${r.played}/10</span>`;
+      if (r.status === 'stopped') return '<span class="muted">stopped</span>';
+      if (r.status === 'error') return '<span style="color:var(--red)">evaluation failed</span>';
+      return '';
+    }
+
+    function renderPractice() {
+      const d = practiceData;
+      $('#practice').classList.toggle('hidden', !d.rows.length);
+      const canOpen = r => ME.role === 'judge' || r.userId === ME.id;
+      $('#prows').innerHTML = d.rows.map(r => {
+        const mine = r.userId === ME.id;
+        const pct = r.total ? Math.round((100 * r.total) / d.maxTotal) : 0;
+        const row = `<tr class="clickable ${mine ? 'me' : ''} ${openUser === r.userId ? 'open' : ''}" data-user="${r.userId}" title="${canOpen(r) ? 'show the breakdown' : 'no peeking!'}">
+          <td class="rank">${r.total === null ? '–' : r.rank}</td>
+          <td><div class="team">${avatarSvg(r.avatar, 36)}<span>${esc(r.teamName)}</span>${mine ? '<span class="muted" style="font-size:16px">← you!</span>' : ''}${canOpen(r) ? `<span class="caret">${openUser === r.userId ? '▾' : '▸'}</span>` : ''}</div></td>
+          <td class="hide-sm">${r.language ? LANG_LABEL[r.language] : ''}</td>
+          <td class="pts">${r.total === null ? '–' : r.total} ${statusText(r)}</td>
+          <td class="hide-sm"><div class="pbar"><div style="width:${pct}%"></div></div></td>
+        </tr>`;
+        const detail = openUser === r.userId && d.details && d.details.userId === r.userId
+          ? `<tr class="detail"><td colspan="5">${renderDetail(d.details)}</td></tr>` : '';
+        return row + detail;
+      }).join('');
+      $$('#prows tr.clickable').forEach(tr => tr.onclick = () => {
+        const r = d.rows.find(x => x.userId === tr.dataset.user);
+        if (!canOpen(r)) {
+          tr.classList.remove('nope'); void tr.offsetWidth; tr.classList.add('nope');
+          return toast("No peeking at other teams' scores 🤫");
+        }
+        openUser = openUser === r.userId ? null : r.userId;
+        if (openUser) loadPractice(); else renderPractice();
+      });
+    }
+
+    function renderDetail(det) {
+      const cards = det.results.map(r => {
+        if (r.status !== 'done') {
+          const label = { queued: '⏳ queued', playing: '🥊 fighting…', skipped: 'skipped' }[r.status] || r.status;
+          return `<div class="house pending"><div class="hn">${esc(r.name)}</div><div class="hs muted">${label}</div></div>`;
+        }
+        const res = r.winner === 'A' ? ['win', 'beat it 🎉'] : r.winner === 'B' ? ['loss', 'lost 😵'] : ['draw', 'draw 🤝'];
+        return `<div class="house ${res[0]}">
+          <div class="hn">${esc(r.name)}</div>
+          <div class="hs"><b>${r.score}</b> <span class="muted">:</span> ${r.botScore} <span class="tag">${res[1]}</span></div>
+          <div class="hbar"><div class="a" style="width:${(r.score / 300) * 100}%"></div></div>
+          ${r.issue ? `<div class="hi">⚠️ ${esc(r.issue)}</div>` : ''}
+        </div>`;
+      }).join('');
+      const done = det.results.filter(r => r.status === 'done');
+      const wins = done.filter(r => r.winner === 'A').length;
+      return `<div class="pdetail">
+        <div class="muted" style="font-size:16px">${esc(det.teamName)} · ${LANG_LABEL[det.language]} bot submitted ${esc(fmtDate(det.submittedAt))} · beat ${wins} of ${done.length} sparring bots so far</div>
+        <div class="house-grid">${cards}</div>
+      </div>`;
+    }
+
+    function tick() {
+      if (!tournament) return;
+      const left = Date.parse(tournament.deadline) - serverNow();
+      $('#countdown').textContent = fmtCountdown(left);
+      $('#countdown').classList.toggle('soon', left > 0 && left < 60000);
+      const closed = left <= 0;
+      $('#submit').disabled = closed || ME.role === 'judge';
+      $('#closed').classList.toggle('hidden', !closed);
+    }
+
+    $('#langs').innerHTML = Object.keys(TEMPLATES).map(l => `<button data-lang="${l}">${LANG_LABEL[l]}</button>`).join('');
+    $$('#langs button').forEach(b => b.onclick = () => setLang(b.dataset.lang));
+    $('#template').onclick = () => { if (confirm('Replace your code with the starter code?')) { $('#code').value = TEMPLATES[lang]; saveDraft(); } };
+    $('#code').addEventListener('input', saveDraft);
+    $('#code').addEventListener('keydown', e => {
+      if (e.key !== 'Tab') return;
+      e.preventDefault();
+      const ta = e.target, s = ta.selectionStart;
+      ta.setRangeText('    ', s, ta.selectionEnd, 'end');
+      saveDraft();
+    });
+    $('#file').addEventListener('change', async e => {
+      const f = e.target.files[0];
+      if (!f) return;
+      const ext = f.name.split('.').pop().toLowerCase();
+      if (ext === 'py') setLang('python');
+      else if (ext === 'java') setLang('java');
+      else if (['cpp', 'cc', 'cxx', 'h', 'hpp'].includes(ext)) setLang('cpp');
+      $('#code').value = await f.text();
+      saveDraft();
+      e.target.value = '';
+    });
+    $('#submit').onclick = async () => {
+      $('#submit').disabled = true;
+      try {
+        await api(`/api/tournaments/${encodeURIComponent(tid)}/submissions`, { method: 'POST', body: { language: lang, code: $('#code').value } });
+        toast('Bot received! Compiling… 🔧');
+        await load();
+        refreshPractice();
+      } catch (e) {
+        toast(e.message, 'error');
+      } finally {
+        tick();
+      }
+    };
+
+    (async () => {
+      const socket = await boot();
+      setLang(lang);
+      await load();
+      if (ME.role !== 'judge') openUser = ME.id;
+      await loadPractice();
+      socket.on('practice:updated', ({ tournamentId }) => { if (tournamentId === tid) refreshPractice(); });
+      if (ME.role === 'judge') toast('Judges can look, but only players can submit 🎩');
+      tick();
+      setInterval(tick, 250);
+    })().catch(e => toast(e.message, 'error'));
+  </script>
+</body>
+</html>

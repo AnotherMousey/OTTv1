@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Match · OTTv1</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header id="topbar"></header>
+  <main>
+    <a id="back" href="/">← back to the leaderboard</a>
+    <h2 class="center" id="title" style="margin-top:6px">…</h2>
+    <div class="stage" id="stage">
+      <svg class="scene" id="scene" viewBox="0 0 800 360" role="img" aria-label="match replay"></svg>
+      <div class="scoreline">
+        <div class="scorecard a"><div class="pts" id="ptsA">0</div><div class="lbl">points</div></div>
+        <div class="caption">
+          <div class="main" id="capMain">&nbsp;</div>
+          <div class="capsub" id="capSub">&nbsp;</div>
+        </div>
+        <div class="scorecard b"><div class="pts" id="ptsB">0</div><div class="lbl">points</div></div>
+      </div>
+      <div id="announce"></div>
+    </div>
+    <div class="controls">
+      <button class="btn small" id="first" title="back to the start">⏮</button>
+      <button class="btn small" id="prev" title="previous turn">◀</button>
+      <button class="btn yellow" id="play" style="min-width:120px;justify-content:center">▶ play</button>
+      <button class="btn small" id="next" title="next turn">▶</button>
+      <button class="btn small" id="last" title="skip to the end">⏭</button>
+      <select id="speed" title="speed">
+        <option value="900">slow</option>
+        <option value="450" selected>normal</option>
+        <option value="180">fast</option>
+        <option value="50">ludicrous</option>
+      </select>
+    </div>
+    <div class="controls"><input type="range" id="scrub" min="0" max="100" value="0"></div>
+    <div class="tape" id="tape"></div>
+    <div class="tape-legend" id="tapeLegend"></div>
+    <p class="center muted" id="issues" style="font-size:17px"></p>
+  </main>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/avatar.js"></script>
+  <script src="/js/rps.js"></script>
+  <script src="/js/common.js"></script>
+  <script>
+    const tid = tournamentIdFromPath();
+    const matchName = new URLSearchParams(location.search).get('name') || '';
+    const ORDER = ['R', 'P', 'S'];
+    const BEATS = { R: 'S', P: 'R', S: 'P' };
+    const VERBS = { RS: 'rock smashes scissors', PR: 'paper wraps rock', SP: 'scissors snip paper' };
+    const COL_A = '#e2433f', COL_B = '#3a7bd5', LIGHT_A = '#ff9b97', LIGHT_B = '#9cc7ff';
+
+    function points(a, b) {
+      if (a === 'X' && b === 'X') return [0, 0];
+      if (a === 'X') return [0, 3];
+      if (b === 'X') return [3, 0];
+      if (a === b) return [1, 1];
+      return BEATS[a] === b ? [3, 0] : [0, 3];
+    }
+
+    let AV = { A: null, B: null };
+    let M = null, turn = 0, timer = null, cumA = [0], cumB = [0], N = 0;
+
+    // ---------- scene ----------
+    // The payoff machine: an upright 3x3 table that sits fully inside the
+    // machine. Rows are the left player's move, columns the right player's;
+    // each cell shows "left pts : right pts".
+    const GX = 332, GY = 100, C = 68;  // grid's top-left corner and cell size
+    const SIDE = 3 * C;
+    const HX = 264, HY = 40;           // where the row / column headers start
+    const trim = (s, n) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
+
+    function bubble(x, side) {
+      // speech bubble, tail pointing toward the speaker
+      const tail = side === 'L' ? 'M8 46 L-10 62 L20 52' : 'M52 46 L70 62 L40 52';
+      return `<g transform="translate(${x} 150)"><g class="bubble" id="bubble${side}" opacity="0">
+        <path d="M30 2 C55 0 62 12 60 30 C58 50 48 56 30 55 C10 56 0 48 1 28 C2 10 10 2 30 2 Z" fill="#fff" stroke="#2b2b2b" stroke-width="4"/>
+        <path d="${tail}" fill="#fff" stroke="#2b2b2b" stroke-width="4" stroke-linejoin="round"/>
+        <path d="M14 47 L32 52" stroke="#fff" stroke-width="6"/>
+        <g id="icon${side}" transform="translate(6 3) scale(0.76)"></g>
+      </g></g>`;
+    }
+
+    function buildScene() {
+      const bands = [], cells = [], nums = [], heads = [], lines = [];
+      ORDER.forEach((m, i) => {
+        const rowY = GY + i * C, colX = GX + i * C;
+        // faint highlight bands for the chosen row / column
+        bands.push(`<rect class="band" id="rowA-${m}" x="${HX}" y="${rowY}" width="${GX + SIDE - HX}" height="${C}" fill="${LIGHT_A}" opacity="0"/>`);
+        bands.push(`<rect class="band" id="colB-${m}" x="${colX}" y="${HY}" width="${C}" height="${GY + SIDE - HY}" fill="${LIGHT_B}" opacity="0"/>`);
+        // row header (left player's move) and column header (right player's move)
+        heads.push(`<g transform="translate(${HX + 17} ${rowY + 8}) scale(0.5)">${rpsMarkup(m)}</g>`);
+        heads.push(`<text id="labA-${m}" x="${HX + 33}" y="${rowY + 58}" text-anchor="middle" font-size="14" fill="${LIGHT_A}">${MOVES[m].name}</text>`);
+        heads.push(`<g transform="translate(${colX + 18} ${HY + 2}) scale(0.5)">${rpsMarkup(m)}</g>`);
+        heads.push(`<text id="labB-${m}" x="${colX + C / 2}" y="${HY + 50}" text-anchor="middle" font-size="14" fill="${LIGHT_B}">${MOVES[m].name}</text>`);
+      });
+      ORDER.forEach((a, i) => ORDER.forEach((b, j) => {
+        const x = GX + j * C, y = GY + i * C;
+        cells.push(`<rect class="cell-hl" id="cell-${a}${b}" x="${x}" y="${y}" width="${C}" height="${C}" fill="#ffd84d" opacity="0"/>`);
+        const [pa, pb] = points(a, b);
+        nums.push(`<text id="num-${a}${b}" x="${x + C / 2}" y="${y + C / 2 + 7}" text-anchor="middle" font-size="21" font-family="Gochi Hand, cursive"><tspan fill="${LIGHT_A}" class="na">${pa}</tspan><tspan fill="#ddd"> : </tspan><tspan fill="${LIGHT_B}" class="nb">${pb}</tspan></text>`);
+      }));
+      for (let k = 0; k <= 3; k++) {
+        lines.push(`<path d="M${GX + k * C} ${GY} L${GX + k * C} ${GY + SIDE}"/>`, `<path d="M${GX} ${GY + k * C} L${GX + SIDE} ${GY + k * C}"/>`);
+      }
+      // corner key: which side is which
+      const corner = `
+        <path d="M${HX + 4} ${HY + 4} L${GX - 4} ${GY - 4}" stroke="#8a8a8a" stroke-width="2" stroke-linecap="round"/>
+        <text x="${GX - 6}" y="${HY + 18}" text-anchor="end" font-size="14" fill="${LIGHT_B}">right →</text>
+        <text x="${HX + 4}" y="${GY - 8}" font-size="14" fill="${LIGHT_A}">left ↓</text>`;
+
+      $('#scene').innerHTML = `
+        <defs>
+          <filter id="wobble" x="-5%" y="-5%" width="110%" height="110%">
+            <feTurbulence type="fractalNoise" baseFrequency="0.025" numOctaves="2" seed="7"/>
+            <feDisplacementMap in="SourceGraphic" scale="4"/>
+          </filter>
+        </defs>
+        <!-- ground -->
+        <path d="M14 333 Q200 330 400 333 T786 332" stroke="#2b2b2b" stroke-width="4" fill="none" stroke-linecap="round"/>
+        <!-- machine -->
+        <g filter="url(#wobble)">
+          <path d="M252 318 L224 318 L224 300 L252 288 Z" fill="#5e5e5e" stroke="#2b2b2b" stroke-width="5" stroke-linejoin="round"/>
+          <path d="M548 318 L576 318 L576 300 L548 288 Z" fill="#5e5e5e" stroke="#2b2b2b" stroke-width="5" stroke-linejoin="round"/>
+          <path d="M256 20 Q400 14 546 20 L548 330 L252 330 Z" fill="#5e5e5e" stroke="#2b2b2b" stroke-width="5" stroke-linejoin="round"/>
+        </g>
+        ${bands.join('')}
+        ${cells.join('')}
+        <g filter="url(#wobble)" stroke="#2b2b2b" stroke-width="4" stroke-linecap="round" fill="none">${lines.join('')}</g>
+        ${corner}
+        ${heads.join('')}
+        ${nums.join('')}
+        <text x="400" y="322" text-anchor="middle" font-size="15" fill="#d8d8d8">win 3 · draw 1 · lose 0</text>
+        <!-- players -->
+        <text x="100" y="118" text-anchor="middle" font-size="26" fill="${COL_A}">${esc(trim(M.teamA, 16))}</text>
+        <path d="M100 126 Q96 140 100 152 M93 144 L100 153 L107 144" stroke="#aaa" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+        <text x="700" y="118" text-anchor="middle" font-size="26" fill="${COL_B}">${esc(trim(M.teamB, 16))}</text>
+        <path d="M700 126 Q704 140 700 152 M693 144 L700 153 L707 144" stroke="#aaa" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+        <g transform="translate(40 165)"><g class="dude lively" id="dudeA" filter="url(#wobble)">${avatarMarkup(AV.A, { id: 'mouthA' })}</g></g>
+        <g transform="translate(760 165) scale(-1 1)"><g class="dude lively" id="dudeB" filter="url(#wobble)">${avatarMarkup(AV.B, { id: 'mouthB' })}</g></g>
+        ${bubble(168, 'L')}
+        ${bubble(572, 'R')}`;
+      $('#scene').style.fontFamily = "'Patrick Hand', cursive";
+    }
+
+    function setMouth(side, kind) {
+      // 'none' means: back to the mouth the player picked
+      $('#mouth' + side).innerHTML = MOUTHS[kind === 'none' ? AV[side].mouth : kind];
+    }
+    function bump(el, cls) {
+      el.classList.remove(cls);
+      void el.getBoundingClientRect();
+      el.classList.add(cls);
+    }
+    function floater(card, text, color) {
+      const f = document.createElement('div');
+      f.className = 'floater';
+      f.textContent = text;
+      f.style.color = color;
+      card.appendChild(f);
+      setTimeout(() => f.remove(), 950);
+    }
+
+    // ---------- playback ----------
+    function render(animate) {
+      $('#ptsA').textContent = cumA[turn];
+      $('#ptsB').textContent = cumB[turn];
+      $('#scrub').value = turn;
+      $$('.cell-hl, .band').forEach(c => c.setAttribute('opacity', 0));
+      $$('[id^="labA-"],[id^="labB-"]').forEach(l => l.removeAttribute('font-weight'));
+      $$('[id^="num-"]').forEach(n => n.setAttribute('font-size', 21));
+      $$('[id^="num-"] .na').forEach(t => t.setAttribute('fill', LIGHT_A));
+      $$('[id^="num-"] .nb').forEach(t => t.setAttribute('fill', LIGHT_B));
+      $$('#tape i').forEach((el, k) => {
+        el.className = k >= turn ? 'future' : el.dataset.res + (k === turn - 1 ? ' cur' : '');
+      });
+
+      if (turn === 0) {
+        ['L', 'R'].forEach(s => $('#bubble' + s).setAttribute('opacity', 0));
+        setMouth('A', 'none'); setMouth('B', 'none');
+        $('#capMain').textContent = `${M.teamA} vs ${M.teamB}`;
+        $('#capSub').textContent = `${N} turns. Press play and see who blinks first.`;
+      } else {
+        const a = M.movesA[turn - 1], b = M.movesB[turn - 1];
+        const [pa, pb] = points(a, b);
+        $('#iconL').innerHTML = rpsMarkup(a);
+        $('#iconR').innerHTML = rpsMarkup(b);
+        ['L', 'R'].forEach(s => {
+          const el = $('#bubble' + s);
+          el.setAttribute('opacity', 1);
+          if (animate) bump(el, 'pop');
+        });
+        if (a !== 'X' && b !== 'X') {
+          $(`#cell-${a}${b}`).setAttribute('opacity', 0.95);
+          $(`#num-${a}${b}`).setAttribute('font-size', 26);
+          $(`#num-${a}${b} .na`).setAttribute('fill', '#c0302c');
+          $(`#num-${a}${b} .nb`).setAttribute('fill', '#2a62b3');
+          $(`#labA-${a}`).setAttribute('font-weight', 700);
+          $(`#labB-${b}`).setAttribute('font-weight', 700);
+          $(`#rowA-${a}`).setAttribute('opacity', 0.22);
+          $(`#colB-${b}`).setAttribute('opacity', 0.22);
+        }
+        setMouth('A', pa > pb ? 'smile' : pa < pb ? 'frown' : 'flat');
+        setMouth('B', pb > pa ? 'smile' : pb < pa ? 'frown' : 'flat');
+        if (animate) {
+          if (pa > pb) { bump($('#dudeA'), 'jump'); bump($('#dudeB'), 'sad'); }
+          if (pb > pa) { bump($('#dudeB'), 'jump'); bump($('#dudeA'), 'sad'); }
+          if (pa) floater($('.scorecard.a'), '+' + pa, COL_A);
+          if (pb) floater($('.scorecard.b'), '+' + pb, COL_B);
+        }
+        $('#capMain').textContent = narrate(a, b, pa, pb);
+        $('#capSub').textContent = `Turn ${turn} of ${N}`;
+      }
+
+      const done = turn === N;
+      $('#announce').innerHTML = done ? announcement() : '';
+      $('#play').textContent = timer ? '⏸ pause' : done ? '↺ replay' : '▶ play';
+    }
+
+    function narrate(a, b, pa, pb) {
+      const A = M.teamA, B = M.teamB;
+      if (a === 'X' && b === 'X') return 'Both bots fell asleep. Nobody scores. 😴';
+      if (a === 'X') return `${A} fumbled the turn! ${B} grabs 3.`;
+      if (b === 'X') return `${B} fumbled the turn! ${A} grabs 3.`;
+      if (a === b) return `Both throw ${MOVES[a].name}. Awkward… +1 each.`;
+      const own = name => (/s$/i.test(name) ? `${name}'` : `${name}'s`);
+      return pa > pb ? `${own(A)} ${VERBS[a + b]}! +3` : `${own(B)} ${VERBS[b + a]}! +3`;
+    }
+
+    function announcement() {
+      const a = cumA[N], b = cumB[N];
+      const winner = a > b ? M.teamA : b > a ? M.teamB : null;
+      const color = a > b ? COL_A : COL_B;
+      return `<div class="announce">
+        <div class="big" style="color:${winner ? color : 'inherit'}">${winner ? `🏆 ${esc(winner)} wins!` : "🤝 It's a draw!"}</div>
+        <div class="small">${a} – ${b} after ${N} turns</div>
+      </div>`;
+    }
+
+    function step(dir, animate = true) {
+      const t = Math.max(0, Math.min(N, turn + dir));
+      if (t === turn) return false;
+      turn = t;
+      render(animate);
+      if (turn === N && animate) {
+        stop();
+        render(false);
+        confetti(45);
+      }
+      return true;
+    }
+    function stop() { clearInterval(timer); timer = null; }
+    function play() {
+      if (turn === N) { turn = 0; render(false); }
+      stop();
+      timer = setInterval(() => step(1), +$('#speed').value);
+      render(false);
+    }
+
+    function buildTape() {
+      // Turns in groups of 10, numbered. Unplayed turns stay blank so the bar never spoils the result.
+      const groups = [];
+      for (let g = 0; g < N; g += 10) {
+        const cells = [];
+        for (let k = g; k < Math.min(N, g + 10); k++) {
+          const [pa, pb] = points(M.movesA[k], M.movesB[k]);
+          cells.push(`<i data-k="${k + 1}" data-res="${pa > pb ? 'a' : pb > pa ? 'b' : 'd'}" title="turn ${k + 1}"></i>`);
+        }
+        groups.push(`<div class="tg"><span class="tn">${g + 1}</span><div class="tc">${cells.join('')}</div></div>`);
+      }
+      $('#tape').innerHTML = groups.join('');
+      $('#tapeLegend').innerHTML = `
+        <span><i class="a"></i>${esc(M.teamA)} wins the turn</span>
+        <span><i class="b"></i>${esc(M.teamB)} wins the turn</span>
+        <span><i class="d"></i>draw</span>
+        <span><i class="future"></i>not played yet</span>
+        <span class="muted">· click a box to jump there</span>`;
+      $$('#tape i').forEach(el => el.onclick = () => { stop(); turn = +el.dataset.k; render(true); });
+    }
+
+    (async () => {
+      await boot();
+      $('#back').href = `/tournament/${encodeURIComponent(tid)}/live`;
+      let data;
+      try {
+        data = await api(`/api/tournaments/${encodeURIComponent(tid)}/matches/${encodeURIComponent(matchName)}`);
+      } catch (e) {
+        $('#title').textContent = e.message + ' 🙈';
+        $('#stage').classList.add('hidden');
+        return;
+      }
+      M = data.match;
+      AV = data.avatars;
+      N = M.movesA.length;
+      for (let k = 0; k < N; k++) {
+        const [pa, pb] = points(M.movesA[k], M.movesB[k]);
+        cumA.push(cumA[k] + pa);
+        cumB.push(cumB[k] + pb);
+      }
+      document.title = `${M.teamA} vs ${M.teamB} · OTTv1`;
+      $('#title').textContent = M.name;
+      $('#scrub').max = N;
+      const issues = [M.issues && M.issues.A && `${M.teamA}: ${M.issues.A}`, M.issues && M.issues.B && `${M.teamB}: ${M.issues.B}`].filter(Boolean);
+      $('#issues').textContent = issues.length ? '⚠️ ' + issues.join(' · ') : '';
+      buildScene();
+      buildTape();
+      render(false);
+
+      $('#play').onclick = () => (timer ? (stop(), render(false)) : play());
+      $('#next').onclick = () => { stop(); step(1); };
+      $('#prev').onclick = () => { stop(); step(-1, false); };
+      $('#first').onclick = () => { stop(); turn = 0; render(false); };
+      $('#last').onclick = () => { stop(); turn = N; render(false); };
+      $('#speed').onchange = () => { if (timer) play(); };
+      $('#scrub').oninput = e => { stop(); turn = +e.target.value; render(false); };
+      document.addEventListener('keydown', e => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+        if (e.key === ' ') { e.preventDefault(); $('#play').click(); }
+        if (e.key === 'ArrowRight') $('#next').click();
+        if (e.key === 'ArrowLeft') $('#prev').click();
+      });
+      setTimeout(() => { if (!timer && turn === 0) play(); }, 900);
+    })().catch(e => toast(e.message, 'error'));
+  </script>
+</body>
+</html>

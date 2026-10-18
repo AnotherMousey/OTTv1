@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>My avatar · OTTv1</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header id="topbar"></header>
+  <main class="wide">
+    <h1>My avatar</h1>
+    <p class="muted" style="margin-top:-8px">Dress up your fez-wearing champion. Everyone sees this on the leaderboards and in match replays.</p>
+    <div class="studio">
+      <div class="box stage-box">
+        <div class="preview" id="preview"></div>
+        <div id="teamName" style="font-size:24px"></div>
+        <div class="row" style="justify-content:center;margin-top:12px">
+          <button class="btn small" id="random">🎲 Surprise me</button>
+          <button class="btn small" id="reset">↺ Undo changes</button>
+        </div>
+        <div class="row" style="justify-content:center;margin-top:14px">
+          <button class="btn red" id="save" disabled>Save avatar ✨</button>
+        </div>
+      </div>
+      <div id="options"></div>
+    </div>
+  </main>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/avatar.js"></script>
+  <script src="/js/rps.js"></script>
+  <script src="/js/common.js"></script>
+  <script>
+    let saved = null;   // what's stored on the server
+    let draft = null;   // what's on screen
+
+    const TITLES = { hat: 'Hat', shirt: 'Shirt', eyes: 'Eyes', mouth: 'Mouth', cheeks: 'Face', extra: 'Extra' };
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+    // Small close-up of the head, so face options are easy to compare.
+    function headIcon(avatar) {
+      return `<svg viewBox="22 4 76 104" width="58" height="80" aria-hidden="true">${avatarMarkup(avatar)}</svg>`;
+    }
+
+    function renderPreview() {
+      $('#preview').innerHTML = avatarSvg(draft, 250);
+      $('#save').disabled = same(draft, saved);
+    }
+
+    function renderOptions() {
+      $('#options').innerHTML = Object.entries(AVATAR_OPTIONS).map(([key, values]) => {
+        const colour = key === 'hat' || key === 'shirt';
+        const items = values.map(v => colour
+          ? `<button class="swatch ${draft[key] === v ? 'on' : ''}" data-k="${key}" data-v="${v}" style="background:${v}" title="${v}" aria-label="${TITLES[key]} ${v}"></button>`
+          : `<button class="choice ${draft[key] === v ? 'on' : ''}" data-k="${key}" data-v="${v}">${headIcon({ ...draft, [key]: v })}${esc(LABELS[key][v])}</button>`).join('');
+        return `<div class="opt-group box ${key === 'eyes' || key === 'extra' ? 'alt' : ''}"><h3>${TITLES[key]}</h3><div class="${colour ? 'swatches' : 'choices'}">${items}</div></div>`;
+      }).join('');
+      $$('#options [data-k]').forEach(b => b.onclick = () => {
+        draft = { ...draft, [b.dataset.k]: b.dataset.v };
+        renderPreview();
+        renderOptions();
+      });
+    }
+
+    $('#random').onclick = () => { draft = randomAvatar(); renderPreview(); renderOptions(); };
+    $('#reset').onclick = () => { draft = { ...saved }; renderPreview(); renderOptions(); };
+    $('#save').onclick = async () => {
+      try {
+        const { user } = await api('/api/me/avatar', { method: 'PUT', body: { avatar: draft } });
+        ME = user;
+        saved = { ...user.avatar };
+        draft = { ...saved };
+        renderTopbar();
+        renderPreview();
+        toast('Looking sharp! Avatar saved ✨');
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    };
+    window.addEventListener('beforeunload', e => { if (draft && saved && !same(draft, saved)) { e.preventDefault(); e.returnValue = ''; } });
+
+    (async () => {
+      await boot();
+      saved = { ...ME.avatar };
+      draft = { ...saved };
+      $('#teamName').textContent = ME.teamName;
+      renderPreview();
+      renderOptions();
+    })().catch(e => toast(e.message, 'error'));
+  </script>
+</body>
+</html>

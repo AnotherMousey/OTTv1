@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Live · OTTv1</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header id="topbar"></header>
+  <main>
+    <div class="live-head">
+      <h1 id="tname">…</h1>
+      <div class="round-banner" id="banner"></div>
+      <div class="progress hidden" id="progress"><div></div></div>
+      <div class="muted" id="sub" style="font-size:18px"></div>
+    </div>
+    <div class="champ-banner hidden" id="champ"></div>
+    <table class="board">
+      <thead><tr><th>#</th><th>team</th><th class="hide-sm">lang</th><th>round pts</th><th class="hide-sm">W · D · L</th><th class="hide-sm">total</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <section id="matches" class="hidden">
+      <div class="squiggle"></div>
+      <h2 id="matchesTitle">Matches</h2>
+      <div id="feed"></div>
+    </section>
+  </main>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/avatar.js"></script>
+  <script src="/js/rps.js"></script>
+  <script src="/js/common.js"></script>
+  <script>
+    const tid = tournamentIdFromPath();
+    let lastBoard = null;
+    let canSeeMatches = false;
+    let wasFinished = null;
+    const prevPoints = {};
+
+    function statusCell(r) {
+      switch (r.status) {
+        case 'champion': return '🏆';
+        case 'runner-up': return '🥈';
+        case 'eliminated': return `💀<span class="muted" style="font-size:15px"> r${r.round}</span>`;
+        default: return r.rank;
+      }
+    }
+
+    function renderBoard(b) {
+      lastBoard = b;
+      $('#tname').textContent = b.name;
+      document.title = `Live · ${b.name}`;
+      const banner = $('#banner'), sub = $('#sub'), prog = $('#progress');
+      prog.classList.add('hidden');
+      sub.textContent = '';
+      if (b.status === 'open') {
+        banner.innerHTML = `Submissions still open — starts ${esc(fmtDate(b.deadline))}`;
+      } else if (b.error) {
+        banner.innerHTML = `😵 Something broke: ${esc(b.error)}`;
+      } else if (b.entries === null) {
+        banner.innerHTML = '⏳ Collecting the last bots…';
+      } else if (b.status === 'finished') {
+        banner.innerHTML = b.champion ? `It's over! ${b.round ? `${b.round.number} round${b.round.number > 1 ? 's' : ''} of chaos.` : ''}` : (b.entries ? '' : 'Nobody showed up. 🦗');
+      } else if (!b.round) {
+        banner.innerHTML = `🥁 ${b.entries} teams entering the arena…`;
+      } else {
+        const r = b.round;
+        const what = r.isFinal ? '🔥 THE FINAL 🔥' : `Round ${r.number}`;
+        if (r.status === 'done') {
+          banner.innerHTML = `${what} is over! ${r.eliminating ? `${r.eliminating} team${r.eliminating > 1 ? 's' : ''} got the boot 👢` : ''}`;
+          sub.textContent = r.isFinal ? '' : 'Next round starting in a moment…';
+        } else {
+          banner.innerHTML = `${what} · ${r.teams} teams left`;
+          sub.textContent = r.isFinal ? 'Winner takes it all.' : `the bottom ${r.eliminating} will be eliminated after this round`;
+          prog.classList.remove('hidden');
+          prog.firstElementChild.style.width = (r.totalMatches ? (100 * r.played) / r.totalMatches : 0) + '%';
+          sub.textContent += ` · ${r.played}/${r.totalMatches} matches played`;
+        }
+      }
+
+      const champ = $('#champ');
+      if (b.champion) {
+        champ.classList.remove('hidden');
+        champ.innerHTML = `${avatarSvg(b.champion.avatar, 120, { mouth: 'smile' })}<br><span class="big">🏆 ${esc(b.champion.teamName)} 🏆</span><div class="muted">champion of ${esc(b.name)}</div>`;
+        if (wasFinished === false) confetti();
+      } else champ.classList.add('hidden');
+      wasFinished = b.status === 'finished';
+
+      // FLIP animation: remember where rows were, re-render, then slide them.
+      const tbody = $('#rows');
+      const before = {};
+      $$('tr', tbody).forEach(tr => { before[tr.dataset.id] = tr.getBoundingClientRect().top; });
+      const r = b.round;
+      const dangerFrom = r && r.status === 'running' && r.eliminating ? r.teams - r.eliminating : Infinity;
+      let aliveIndex = 0;
+      tbody.innerHTML = b.rows.map(row => {
+        const isAlive = row.status === 'alive';
+        const danger = isAlive && aliveIndex++ >= dangerFrom;
+        const cls = [row.status, danger ? 'danger' : '', ME && row.userId === ME.id ? 'me' : '', prevPoints[row.userId] !== undefined && prevPoints[row.userId] !== row.total ? 'flash' : ''].join(' ');
+        return `<tr class="${cls}" data-id="${row.userId}">
+          <td class="rank">${statusCell(row)}</td>
+          <td><div class="team">${avatarSvg(row.avatar, 40, { mouth: row.status === 'eliminated' ? 'frown' : row.status === 'champion' ? 'smile' : undefined })}<span class="n">${esc(row.teamName)}</span>${ME && row.userId === ME.id ? '<span class="muted" style="font-size:16px">← you!</span>' : ''}${danger ? ' <span title="danger zone">😬</span>' : ''}</div></td>
+          <td class="hide-sm">${LANG_LABEL[row.language] || ''}</td>
+          <td class="pts">${row.points}</td>
+          <td class="hide-sm">${row.w} · ${row.d} · ${row.l}</td>
+          <td class="hide-sm">${row.total}</td>
+        </tr>`;
+      }).join('') || '<tr><td colspan="6" class="center muted">no teams (yet)</td></tr>';
+      b.rows.forEach(row => { prevPoints[row.userId] = row.total; });
+      $$('tr', tbody).forEach(tr => {
+        const old = before[tr.dataset.id];
+        if (old === undefined) return;
+        const dy = old - tr.getBoundingClientRect().top;
+        if (!dy) return;
+        tr.style.transform = `translateY(${dy}px)`;
+        tr.style.transition = 'none';
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          tr.style.transition = 'transform .6s cubic-bezier(.3,1.4,.5,1)';
+          tr.style.transform = '';
+        }));
+      });
+
+      if (b.status === 'finished' && !canSeeMatches) {
+        canSeeMatches = true;
+        loadMatches();
+      }
+    }
+
+    const matches = [];
+    function renderFeed() {
+      const byRound = {};
+      for (const m of matches) (byRound[m.round] = byRound[m.round] || []).push(m);
+      const rounds = Object.keys(byRound).map(Number).sort((a, b) => b - a);
+      $('#feed').innerHTML = rounds.map(n => `
+        <h3>Round ${n}</h3>
+        <div class="feed">${byRound[n].slice().reverse().map(m => `
+          <a href="/tournament/${encodeURIComponent(tid)}/match?name=${encodeURIComponent(m.name)}">
+            <span>${m.winner === 'A' ? '<span class="win">👑</span> ' : ''}${esc(m.teamA)} <span class="muted">vs</span> ${esc(m.teamB)}${m.winner === 'B' ? ' <span class="win">👑</span>' : ''}</span>
+            <span class="score">${m.scoreA} – ${m.scoreB} ▶</span>
+          </a>`).join('')}</div>`).join('') || '<p class="muted">No matches yet.</p>';
+    }
+    async function loadMatches() {
+      if (!canSeeMatches) return;
+      try {
+        const data = await api(`/api/tournaments/${encodeURIComponent(tid)}/matches`);
+        matches.length = 0;
+        matches.push(...data.matches);
+        $('#matches').classList.remove('hidden');
+        $('#matchesTitle').textContent = ME.role === 'judge' && lastBoard && lastBoard.status !== 'finished' ? 'Match feed (judge eyes only 🎩)' : 'Replays';
+        renderFeed();
+      } catch {}
+    }
+
+    (async () => {
+      const socket = await boot();
+      const data = await api(`/api/tournaments/${encodeURIComponent(tid)}/leaderboard`);
+      canSeeMatches = data.canSeeMatches;
+      renderBoard(data.leaderboard);
+      loadMatches();
+      socket.emit('watch', tid);
+      socket.on('connect', () => socket.emit('watch', tid));
+      socket.on('leaderboard', b => { if (b.id === tid) renderBoard(b); });
+      socket.on('match:done', m => {
+        if (m.tournamentId !== tid || !canSeeMatches) return;
+        matches.push(m);
+        renderFeed();
+      });
+    })().catch(e => toast(e.message, 'error'));
+  </script>
+</body>
+</html>

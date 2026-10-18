@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Judge desk · OTTv1</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header id="topbar"></header>
+  <main>
+    <h1>Judge desk 🎩</h1>
+    <div>
+      <section class="box">
+        <h2 style="margin-top:0">New tournament</h2>
+        <form id="tform">
+          <label><span>name</span><input name="name" required style="width:100%" placeholder="The Great OTTv1 Rumble"></label>
+          <label><span>description (optional)</span><input name="description" style="width:100%" placeholder="Bring your best bots"></label>
+          <label><span>submission deadline (your local time)</span><input name="deadline" type="datetime-local" required style="width:100%"></label>
+          <button class="btn red">Create 🏁</button>
+        </form>
+      </section>
+    </div>
+
+    <div class="squiggle"></div>
+    <h2>Tournaments</h2>
+    <div class="box"><table class="plain"><thead><tr><th>name</th><th>status</th><th>deadline</th><th>teams</th><th></th></tr></thead><tbody id="tbody"></tbody></table></div>
+    <div id="subsPanel" class="hidden" style="margin-top:20px"></div>
+
+    <div class="squiggle"></div>
+    <h2>Accounts</h2>
+    <p class="muted" style="font-size:17px;margin-top:-6px">Accounts are added in <code>data/db.json</code> (see the README).</p>
+    <div class="box alt"><table class="plain"><thead><tr><th></th><th>username</th><th>team</th><th>role</th><th></th></tr></thead><tbody id="ubody"></tbody></table></div>
+  </main>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/avatar.js"></script>
+  <script src="/js/rps.js"></script>
+  <script src="/js/common.js"></script>
+  <script>
+    function toLocalInput(d) {
+      const pad = n => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+
+    async function loadTournaments() {
+      const { tournaments } = await api('/api/tournaments');
+      $('#tbody').innerHTML = tournaments.map(t => {
+        const id = encodeURIComponent(t.id);
+        const open = t.status === 'open';
+        return `<tr>
+          <td>${esc(t.name)}</td>
+          <td><span class="tag ${t.status}">${t.status}</span></td>
+          <td>${open ? `<input type="datetime-local" data-dl="${t.id}" value="${toLocalInput(new Date(t.deadline))}" style="font-size:16px;padding:2px 6px">` : esc(fmtDate(t.deadline))}</td>
+          <td>${t.teamsReady}</td>
+          <td class="row" style="gap:6px">
+            <button class="btn small" data-subs="${t.id}">bots</button>
+            ${open ? `<button class="btn small yellow" data-now="${t.id}">start now</button>` : `<a class="btn small" href="/tournament/${id}/live">view</a>`}
+            ${t.status !== 'running' ? `<button class="btn small" data-del="${t.id}">🗑</button>` : ''}
+          </td>
+        </tr>`;
+      }).join('') || '<tr><td colspan="5" class="muted">none yet</td></tr>';
+
+      $$('[data-dl]').forEach(inp => inp.onchange = async () => {
+        try {
+          await api(`/api/admin/tournaments/${encodeURIComponent(inp.dataset.dl)}`, { method: 'PATCH', body: { deadline: new Date(inp.value).toISOString() } });
+          toast('Deadline moved ⏰');
+        } catch (e) { toast(e.message, 'error'); }
+      });
+      $$('[data-now]').forEach(b => b.onclick = async () => {
+        if (!confirm('Close submissions and start this tournament right now?')) return;
+        try {
+          await api(`/api/admin/tournaments/${encodeURIComponent(b.dataset.now)}`, { method: 'PATCH', body: { deadline: new Date().toISOString() } });
+        } catch (e) { toast(e.message, 'error'); }
+      });
+      $$('[data-del]').forEach(b => b.onclick = async () => {
+        if (!confirm('Delete this tournament with all its submissions and matches? This cannot be undone.')) return;
+        try {
+          await api(`/api/admin/tournaments/${encodeURIComponent(b.dataset.del)}`, { method: 'DELETE' });
+          loadTournaments();
+        } catch (e) { toast(e.message, 'error'); }
+      });
+      $$('[data-subs]').forEach(b => b.onclick = () => showSubs(b.dataset.subs, tournaments.find(t => t.id === b.dataset.subs).name));
+    }
+
+    async function showSubs(id, name) {
+      const { submissions } = await api(`/api/admin/tournaments/${encodeURIComponent(id)}/submissions`);
+      const panel = $('#subsPanel');
+      panel.classList.remove('hidden');
+      panel.innerHTML = `<div class="box"><div class="row" style="justify-content:space-between"><h3 style="margin:0">Bots for ${esc(name)}</h3><button class="btn small" id="closeSubs">close</button></div>
+        <table class="plain"><thead><tr><th>team</th><th>lang</th><th>status</th><th>when</th><th></th></tr></thead><tbody>
+        ${submissions.slice().reverse().map(s => `<tr><td>${esc(s.teamName)}</td><td>${LANG_LABEL[s.language]}</td><td><span class="tag ${s.status}">${s.status}</span></td><td>${esc(fmtDate(s.createdAt))}</td>
+          <td><details><summary style="cursor:pointer">code</summary><pre class="msg">${esc(s.code)}</pre>${s.message ? `<pre class="msg">${esc(s.message)}</pre>` : ''}</details></td></tr>`).join('') || '<tr><td colspan="5" class="muted">no bots yet</td></tr>'}
+        </tbody></table></div>`;
+      $('#closeSubs').onclick = () => panel.classList.add('hidden');
+    }
+
+    async function loadUsers() {
+      const { users } = await api('/api/admin/users');
+      $('#ubody').innerHTML = users.map(u => `<tr>
+        <td>${avatarSvg(u.avatar, 34)}</td>
+        <td>${esc(u.username)}</td><td>${esc(u.teamName)}</td><td>${u.role}</td>
+        <td class="row" style="gap:6px">
+          <button class="btn small" data-pw="${u.id}">reset password</button>
+          ${u.id !== ME.id ? `<button class="btn small" data-udel="${u.id}">🗑</button>` : ''}
+        </td></tr>`).join('');
+      $$('[data-pw]').forEach(b => b.onclick = async () => {
+        const pw = prompt('New password:');
+        if (!pw) return;
+        try { await api(`/api/admin/users/${b.dataset.pw}/password`, { method: 'POST', body: { password: pw } }); toast('Password changed 🔑'); }
+        catch (e) { toast(e.message, 'error'); }
+      });
+      $$('[data-udel]').forEach(b => b.onclick = async () => {
+        if (!confirm('Delete this account?')) return;
+        try { await api(`/api/admin/users/${b.dataset.udel}`, { method: 'DELETE' }); loadUsers(); }
+        catch (e) { toast(e.message, 'error'); }
+      });
+    }
+
+    $('#tform').addEventListener('submit', async e => {
+      e.preventDefault();
+      const f = new FormData(e.target);
+      try {
+        await api('/api/admin/tournaments', { method: 'POST', body: { name: f.get('name'), description: f.get('description'), deadline: new Date(f.get('deadline')).toISOString() } });
+        e.target.reset();
+        e.target.deadline.value = toLocalInput(new Date(Date.now() + 3600e3));
+        toast('Tournament created 🏁');
+        loadTournaments();
+      } catch (ex) { toast(ex.message, 'error'); }
+    });
+
+    (async () => {
+      const socket = await boot();
+      $('#tform').deadline.value = toLocalInput(new Date(Date.now() + 3600e3));
+      socket.on('tournaments:changed', loadTournaments);
+      await Promise.all([loadTournaments(), loadUsers()]);
+    })().catch(e => toast(e.message, 'error'));
+  </script>
+</body>
+</html>
