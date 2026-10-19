@@ -25,7 +25,7 @@ async function runMatch(subA, subB, ensureBuilt) {
   const bots = [new Bot(subA), new Bot(subB)];
   const issues = [null, null];
   await Promise.all(bots.map(bot =>
-    ensureBuilt(bot.sub).then(() => bot.start(), e => { bot.dead = true; bot.reason = 'failed to build: ' + e.message; })));
+    ensureBuilt(bot.sub).then(() => bot.start(), e => { bot.dead = true; bot.reason = 'biên dịch thất bại: ' + e.message; })));
 
   let movesA = '', movesB = '', scoreA = 0, scoreB = 0;
   try {
@@ -37,8 +37,8 @@ async function runMatch(subA, subB, ensureBuilt) {
       [a, b].forEach((m, i) => {
         if (m === 'X' && !issues[i]) {
           issues[i] = raw[i] === null
-            ? `Turn ${t + 1}: bot ${bots[i].reason || 'stopped responding'}`
-            : `Turn ${t + 1}: invalid move "${String(raw[i]).slice(0, 20)}"`;
+            ? `Lượt ${t + 1}: bot ${bots[i].reason || 'không phản hồi'}`
+            : `Lượt ${t + 1}: nước đi không hợp lệ "${String(raw[i]).slice(0, 20)}"`;
         }
       });
       const [pa, pb] = points(a, b);
@@ -62,7 +62,7 @@ async function runVsHouse(sub, house, ensureBuilt) {
     bot.start();
   } catch (e) {
     bot.dead = true;
-    bot.reason = 'failed to build: ' + e.message;
+    bot.reason = 'biên dịch thất bại: ' + e.message;
   }
   const brain = house.create();
   let mine = '', theirs = '', scoreA = 0, scoreB = 0, issue = null;
@@ -73,7 +73,7 @@ async function runVsHouse(sub, house, ensureBuilt) {
       const a = normalize(raw);
       const b = normalize(brain(theirs, mine));
       if (a === 'X' && !issue) {
-        issue = raw === null ? `Turn ${t + 1}: bot ${bot.reason || 'stopped responding'}` : `Turn ${t + 1}: invalid move "${String(raw).slice(0, 20)}"`;
+        issue = raw === null ? `Lượt ${t + 1}: bot ${bot.reason || 'không phản hồi'}` : `Lượt ${t + 1}: nước đi không hợp lệ "${String(raw).slice(0, 20)}"`;
       }
       const [pa, pb] = points(a, b);
       mine += a; theirs += b; scoreA += pa; scoreB += pb;

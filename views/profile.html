@@ -1,27 +1,27 @@
 <!doctype html>
-<html lang="en">
+<html lang="vi">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>My avatar · OTTv1</title>
+  <title>Nhân vật của tôi · OTTv1</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
   <header id="topbar"></header>
   <main class="wide">
-    <h1>My avatar</h1>
-    <p class="muted" style="margin-top:-8px">Dress up your fez-wearing champion. Everyone sees this on the leaderboards and in match replays.</p>
+    <h1>Nhân vật của tôi</h1>
+    <p class="muted" style="margin-top:-8px">Trang điểm cho nhà vô địch đội mũ fez của bạn. Mọi người sẽ thấy nhân vật này trên bảng xếp hạng và khi xem lại trận đấu.</p>
     <div class="studio">
       <div class="box stage-box">
         <div class="preview" id="preview"></div>
         <div id="teamName" style="font-size:24px"></div>
         <div class="row" style="justify-content:center;margin-top:12px">
-          <button class="btn small" id="random">🎲 Surprise me</button>
-          <button class="btn small" id="reset">↺ Undo changes</button>
+          <button class="btn small" id="random">🎲 Ngẫu nhiên</button>
+          <button class="btn small" id="reset">↺ Hoàn tác</button>
         </div>
         <div class="row" style="justify-content:center;margin-top:14px">
-          <button class="btn red" id="save" disabled>Save avatar ✨</button>
+          <button class="btn red" id="save" disabled>Lưu nhân vật ✨</button>
         </div>
       </div>
       <div id="options"></div>
@@ -36,7 +36,7 @@
     let saved = null;   // what's stored on the server
     let draft = null;   // what's on screen
 
-    const TITLES = { hat: 'Hat', shirt: 'Shirt', eyes: 'Eyes', mouth: 'Mouth', cheeks: 'Face', extra: 'Extra' };
+    const TITLES = { hat: 'Mũ', shirt: 'Áo', eyes: 'Mắt', mouth: 'Miệng', cheeks: 'Mặt', extra: 'Phụ kiện' };
     const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
     // Small close-up of the head, so face options are easy to compare.
@@ -74,7 +74,7 @@
         draft = { ...saved };
         renderTopbar();
         renderPreview();
-        toast('Looking sharp! Avatar saved ✨');
+        toast('Bảnh quá! Đã lưu nhân vật ✨');
       } catch (e) {
         toast(e.message, 'error');
       }

@@ -1,40 +1,40 @@
 <!doctype html>
-<html lang="en">
+<html lang="vi">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Match · OTTv1</title>
+  <title>Trận đấu · OTTv1</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
   <header id="topbar"></header>
   <main>
-    <a id="back" href="/">← back to the leaderboard</a>
+    <a id="back" href="/">← quay lại bảng xếp hạng</a>
     <h2 class="center" id="title" style="margin-top:6px">…</h2>
     <div class="stage" id="stage">
       <svg class="scene" id="scene" viewBox="0 0 800 360" role="img" aria-label="match replay"></svg>
       <div class="scoreline">
-        <div class="scorecard a"><div class="pts" id="ptsA">0</div><div class="lbl">points</div></div>
+        <div class="scorecard a"><div class="pts" id="ptsA">0</div><div class="lbl">điểm</div></div>
         <div class="caption">
           <div class="main" id="capMain">&nbsp;</div>
           <div class="capsub" id="capSub">&nbsp;</div>
         </div>
-        <div class="scorecard b"><div class="pts" id="ptsB">0</div><div class="lbl">points</div></div>
+        <div class="scorecard b"><div class="pts" id="ptsB">0</div><div class="lbl">điểm</div></div>
       </div>
       <div id="announce"></div>
     </div>
     <div class="controls">
-      <button class="btn small" id="first" title="back to the start">⏮</button>
-      <button class="btn small" id="prev" title="previous turn">◀</button>
-      <button class="btn yellow" id="play" style="min-width:120px;justify-content:center">▶ play</button>
-      <button class="btn small" id="next" title="next turn">▶</button>
-      <button class="btn small" id="last" title="skip to the end">⏭</button>
-      <select id="speed" title="speed">
-        <option value="900">slow</option>
-        <option value="450" selected>normal</option>
-        <option value="180">fast</option>
-        <option value="50">ludicrous</option>
+      <button class="btn small" id="first" title="về đầu trận">⏮</button>
+      <button class="btn small" id="prev" title="lượt trước">◀</button>
+      <button class="btn yellow" id="play" style="min-width:120px;justify-content:center">▶ phát</button>
+      <button class="btn small" id="next" title="lượt sau">▶</button>
+      <button class="btn small" id="last" title="tới cuối trận">⏭</button>
+      <select id="speed" title="tốc độ">
+        <option value="900">chậm</option>
+        <option value="450" selected>bình thường</option>
+        <option value="180">nhanh</option>
+        <option value="50">siêu tốc</option>
       </select>
     </div>
     <div class="controls"><input type="range" id="scrub" min="0" max="100" value="0"></div>
@@ -52,7 +52,7 @@
     const matchName = new URLSearchParams(location.search).get('name') || '';
     const ORDER = ['R', 'P', 'S'];
     const BEATS = { R: 'S', P: 'R', S: 'P' };
-    const VERBS = { RS: 'rock smashes scissors', PR: 'paper wraps rock', SP: 'scissors snip paper' };
+    const VERBS = { RS: 'búa đập kéo', PR: 'bao trùm búa', SP: 'kéo cắt bao' };
     const COL_A = '#e2433f', COL_B = '#3a7bd5', LIGHT_A = '#ff9b97', LIGHT_B = '#9cc7ff';
 
     function points(a, b) {
@@ -103,7 +103,7 @@
         const x = GX + j * C, y = GY + i * C;
         cells.push(`<rect class="cell-hl" id="cell-${a}${b}" x="${x}" y="${y}" width="${C}" height="${C}" fill="#ffd84d" opacity="0"/>`);
         const [pa, pb] = points(a, b);
-        nums.push(`<text id="num-${a}${b}" x="${x + C / 2}" y="${y + C / 2 + 7}" text-anchor="middle" font-size="21" font-family="Gochi Hand, cursive"><tspan fill="${LIGHT_A}" class="na">${pa}</tspan><tspan fill="#ddd"> : </tspan><tspan fill="${LIGHT_B}" class="nb">${pb}</tspan></text>`);
+        nums.push(`<text id="num-${a}${b}" x="${x + C / 2}" y="${y + C / 2 + 7}" text-anchor="middle" font-size="21" font-family="Pangolin, cursive"><tspan fill="${LIGHT_A}" class="na">${pa}</tspan><tspan fill="#ddd"> : </tspan><tspan fill="${LIGHT_B}" class="nb">${pb}</tspan></text>`);
       }));
       for (let k = 0; k <= 3; k++) {
         lines.push(`<path d="M${GX + k * C} ${GY} L${GX + k * C} ${GY + SIDE}"/>`, `<path d="M${GX} ${GY + k * C} L${GX + SIDE} ${GY + k * C}"/>`);
@@ -111,8 +111,8 @@
       // corner key: which side is which
       const corner = `
         <path d="M${HX + 4} ${HY + 4} L${GX - 4} ${GY - 4}" stroke="#8a8a8a" stroke-width="2" stroke-linecap="round"/>
-        <text x="${GX - 6}" y="${HY + 18}" text-anchor="end" font-size="14" fill="${LIGHT_B}">right →</text>
-        <text x="${HX + 4}" y="${GY - 8}" font-size="14" fill="${LIGHT_A}">left ↓</text>`;
+        <text x="${GX - 6}" y="${HY + 18}" text-anchor="end" font-size="14" fill="${LIGHT_B}">phải →</text>
+        <text x="${HX + 4}" y="${GY - 8}" font-size="14" fill="${LIGHT_A}">trái ↓</text>`;
 
       $('#scene').innerHTML = `
         <defs>
@@ -135,7 +135,7 @@
         ${corner}
         ${heads.join('')}
         ${nums.join('')}
-        <text x="400" y="322" text-anchor="middle" font-size="15" fill="#d8d8d8">win 3 · draw 1 · lose 0</text>
+        <text x="400" y="322" text-anchor="middle" font-size="15" fill="#d8d8d8">thắng 3 · hòa 1 · thua 0</text>
         <!-- players -->
         <text x="100" y="118" text-anchor="middle" font-size="26" fill="${COL_A}">${esc(trim(M.teamA, 16))}</text>
         <path d="M100 126 Q96 140 100 152 M93 144 L100 153 L107 144" stroke="#aaa" stroke-width="2.5" fill="none" stroke-linecap="round"/>
@@ -184,7 +184,7 @@
         ['L', 'R'].forEach(s => $('#bubble' + s).setAttribute('opacity', 0));
         setMouth('A', 'none'); setMouth('B', 'none');
         $('#capMain').textContent = `${M.teamA} vs ${M.teamB}`;
-        $('#capSub').textContent = `${N} turns. Press play and see who blinks first.`;
+        $('#capSub').textContent = `${N} lượt. Bấm phát để xem ai chớp mắt trước.`;
       } else {
         const a = M.movesA[turn - 1], b = M.movesB[turn - 1];
         const [pa, pb] = points(a, b);
@@ -214,22 +214,21 @@
           if (pb) floater($('.scorecard.b'), '+' + pb, COL_B);
         }
         $('#capMain').textContent = narrate(a, b, pa, pb);
-        $('#capSub').textContent = `Turn ${turn} of ${N}`;
+        $('#capSub').textContent = `Lượt ${turn}/${N}`;
       }
 
       const done = turn === N;
       $('#announce').innerHTML = done ? announcement() : '';
-      $('#play').textContent = timer ? '⏸ pause' : done ? '↺ replay' : '▶ play';
+      $('#play').textContent = timer ? '⏸ dừng' : done ? '↺ xem lại' : '▶ phát';
     }
 
     function narrate(a, b, pa, pb) {
       const A = M.teamA, B = M.teamB;
-      if (a === 'X' && b === 'X') return 'Both bots fell asleep. Nobody scores. 😴';
-      if (a === 'X') return `${A} fumbled the turn! ${B} grabs 3.`;
-      if (b === 'X') return `${B} fumbled the turn! ${A} grabs 3.`;
-      if (a === b) return `Both throw ${MOVES[a].name}. Awkward… +1 each.`;
-      const own = name => (/s$/i.test(name) ? `${name}'` : `${name}'s`);
-      return pa > pb ? `${own(A)} ${VERBS[a + b]}! +3` : `${own(B)} ${VERBS[b + a]}! +3`;
+      if (a === 'X' && b === 'X') return 'Cả hai bot đều ngủ gật. Không ai có điểm. 😴';
+      if (a === 'X') return `${A} lóng ngóng bỏ lượt! ${B} ăn trọn 3 điểm.`;
+      if (b === 'X') return `${B} lóng ngóng bỏ lượt! ${A} ăn trọn 3 điểm.`;
+      if (a === b) return `Cả hai cùng ra ${MOVES[a].name}. Ngượng ghê… mỗi bên +1.`;
+      return pa > pb ? `${A}: ${VERBS[a + b]}! +3` : `${B}: ${VERBS[b + a]}! +3`;
     }
 
     function announcement() {
@@ -237,8 +236,8 @@
       const winner = a > b ? M.teamA : b > a ? M.teamB : null;
       const color = a > b ? COL_A : COL_B;
       return `<div class="announce">
-        <div class="big" style="color:${winner ? color : 'inherit'}">${winner ? `🏆 ${esc(winner)} wins!` : "🤝 It's a draw!"}</div>
-        <div class="small">${a} – ${b} after ${N} turns</div>
+        <div class="big" style="color:${winner ? color : 'inherit'}">${winner ? `🏆 ${esc(winner)} thắng!` : '🤝 Hòa!'}</div>
+        <div class="small">${a} – ${b} sau ${N} lượt</div>
       </div>`;
     }
 
@@ -269,17 +268,17 @@
         const cells = [];
         for (let k = g; k < Math.min(N, g + 10); k++) {
           const [pa, pb] = points(M.movesA[k], M.movesB[k]);
-          cells.push(`<i data-k="${k + 1}" data-res="${pa > pb ? 'a' : pb > pa ? 'b' : 'd'}" title="turn ${k + 1}"></i>`);
+          cells.push(`<i data-k="${k + 1}" data-res="${pa > pb ? 'a' : pb > pa ? 'b' : 'd'}" title="lượt ${k + 1}"></i>`);
         }
         groups.push(`<div class="tg"><span class="tn">${g + 1}</span><div class="tc">${cells.join('')}</div></div>`);
       }
       $('#tape').innerHTML = groups.join('');
       $('#tapeLegend').innerHTML = `
-        <span><i class="a"></i>${esc(M.teamA)} wins the turn</span>
-        <span><i class="b"></i>${esc(M.teamB)} wins the turn</span>
-        <span><i class="d"></i>draw</span>
-        <span><i class="future"></i>not played yet</span>
-        <span class="muted">· click a box to jump there</span>`;
+        <span><i class="a"></i>${esc(M.teamA)} thắng lượt</span>
+        <span><i class="b"></i>${esc(M.teamB)} thắng lượt</span>
+        <span><i class="d"></i>hòa</span>
+        <span><i class="future"></i>chưa đấu</span>
+        <span class="muted">· bấm vào ô để nhảy tới lượt đó</span>`;
       $$('#tape i').forEach(el => el.onclick = () => { stop(); turn = +el.dataset.k; render(true); });
     }
 
@@ -303,7 +302,7 @@
         cumB.push(cumB[k] + pb);
       }
       document.title = `${M.teamA} vs ${M.teamB} · OTTv1`;
-      $('#title').textContent = M.name;
+      $('#title').textContent = `Vòng ${M.round} · ${M.teamA} vs ${M.teamB}`;
       $('#scrub').max = N;
       const issues = [M.issues && M.issues.A && `${M.teamA}: ${M.issues.A}`, M.issues && M.issues.B && `${M.teamB}: ${M.issues.B}`].filter(Boolean);
       $('#issues').textContent = issues.length ? '⚠️ ' + issues.join(' · ') : '';

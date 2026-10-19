@@ -1,23 +1,23 @@
 <!doctype html>
-<html lang="en">
+<html lang="vi">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Submit · OTTv1</title>
+  <title>Nộp bài · OTTv1</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
   <header id="topbar"></header>
   <main class="wide">
-    <a href="/">← back to tournaments</a>
+    <a href="/">← quay lại danh sách giải đấu</a>
     <div class="row" style="justify-content:space-between;align-items:flex-end">
       <div>
         <h1 id="tname">…</h1>
         <div class="muted" id="tdesc"></div>
       </div>
       <div class="center">
-        <div class="muted" style="font-size:17px">submissions close in</div>
+        <div class="muted" style="font-size:17px">hạn nộp bài còn</div>
         <div class="countdown" id="countdown">--:--:--</div>
       </div>
     </div>
@@ -25,11 +25,11 @@
 
     <section id="practice" class="hidden" style="margin-bottom:26px">
       <div class="row" style="justify-content:space-between;align-items:baseline">
-        <h2 style="margin-bottom:0">Practice arena 🥋</h2>
+        <h2 style="margin-bottom:0" id="ptitle">Sân luyện tập 🥋</h2>
       </div>
-      <p class="muted" style="font-size:17px;margin:4px 0 0">Click your own team to see how you did against each sparring bot. Other teams' breakdowns stay secret. 🤫</p>
+      <p class="muted" style="font-size:17px;margin:4px 0 0" id="phint">Bấm vào đội của bạn để xem kết quả với từng bot đấu tập. Chi tiết của các đội khác được giữ bí mật. 🤫</p>
       <table class="board practice">
-        <thead><tr><th>#</th><th>team</th><th class="hide-sm">lang</th><th>vs sparring bots</th><th class="hide-sm" style="width:34%"></th></tr></thead>
+        <thead id="phead"><tr><th>#</th><th>đội</th><th class="hide-sm">ngôn ngữ</th><th>điểm với bot đấu tập</th><th class="hide-sm" style="width:34%"></th></tr></thead>
         <tbody id="prows"></tbody>
       </table>
     </section>
@@ -39,25 +39,25 @@
         <div class="row" style="justify-content:space-between">
           <div class="lang-tabs" id="langs"></div>
           <div class="row">
-            <label class="btn small" style="margin:0">📂 Load file<input type="file" id="file" class="hidden" accept=".cpp,.cc,.cxx,.h,.hpp,.java,.py,.txt"></label>
-            <button class="btn small" id="template">↺ Starter code</button>
+            <label class="btn small" style="margin:0">📂 Mở tệp<input type="file" id="file" class="hidden" accept=".cpp,.cc,.cxx,.h,.hpp,.java,.py,.txt"></label>
+            <button class="btn small" id="template">↺ Code mẫu</button>
           </div>
         </div>
         <textarea class="code" id="code" spellcheck="false"></textarea>
         <div class="row" style="margin-top:14px">
-          <button class="btn red" id="submit" style="font-size:26px">Submit my bot 🚀</button>
-          <span id="closed" class="hidden" style="color:var(--red)">Submissions are closed.</span>
+          <button class="btn red" id="submit" style="font-size:26px">Nộp bot 🚀</button>
+          <span id="closed" class="hidden" style="color:var(--red)">Đã hết hạn nộp bài.</span>
         </div>
         <div class="squiggle"></div>
-        <h3>How your bot works</h3>
+        <h3>Cách bot của bạn hoạt động</h3>
         <div class="docs" id="docs"></div>
       </section>
 
       <aside>
         <div class="box alt">
-          <h3 style="margin-top:0">Your submissions</h3>
-          <p class="muted" style="font-size:16px;margin-top:-6px">Your newest ✅ submission is the one that plays.</p>
-          <div class="sublist" id="subs"><span class="muted">nothing yet</span></div>
+          <h3 style="margin-top:0">Bài nộp của bạn</h3>
+          <p class="muted" style="font-size:16px;margin-top:-6px" id="yoursubsHint">Bài nộp ✅ mới nhất của bạn sẽ được dùng để thi đấu.</p>
+          <div class="sublist" id="subs"><span class="muted">chưa có gì</span></div>
         </div>
       </aside>
     </div>
@@ -67,6 +67,7 @@
   <script src="/js/avatar.js"></script>
   <script src="/js/rps.js"></script>
   <script src="/js/common.js"></script>
+  <script src="/js/campaign.js"></script>
   <script>
     const TEMPLATES = {
       python: `import random
@@ -126,24 +127,37 @@ public class Bot {
     };
 
     const DOCS = {
-      python: `<p>File: <code>bot.py</code> — define a function:</p>
+      python: `<p>Tệp: <code>bot.py</code>, viết một hàm:</p>
         <pre>def play(my_moves: list[str], opponent_moves: list[str]) -> str</pre>`,
-      cpp: `<p>File: <code>bot.cpp</code> (C++17, compiled with g++ -O2) — define a function:</p>
+      cpp: `<p>Tệp: <code>bot.cpp</code> (C++17, biên dịch bằng g++ -O2), viết một hàm:</p>
         <pre>char play(const std::vector&lt;char&gt;&amp; myMoves,
           const std::vector&lt;char&gt;&amp; opponentMoves);</pre>`,
-      java: `<p>File: <code>Bot.java</code> — a public class <code>Bot</code> (no <code>package</code>) with a method:</p>
+      java: `<p>Tệp: <code>Bot.java</code>, một lớp public tên <code>Bot</code> (không có dòng <code>package</code>) với phương thức:</p>
         <pre>public char play(List&lt;Character&gt; myMoves,
                  List&lt;Character&gt; opponentMoves)</pre>`,
     };
-    const RULES = `<ul>
-        <li>Each match is <b>100 turns</b>. Every turn: win = <b>3</b> pts, draw = <b>1</b>, loss = <b>0</b>.</li>
-        <li>The histories hold every previous turn, oldest first. Index <i>i</i> of both lists is the same turn.</li>
-        <li>You have <b>1 second</b> per move (10 s for the first move, so the JVM can wake up).</li>
-        <li>Crash, time out or return something weird → that turn counts as <code>X</code> and you lose it. A crashed or timed-out bot forfeits the rest of the match. <code>X</code> can show up in the histories.</li>
-        <li>Every round is a round robin. After each round the <b>min(3, teams − 2)</b> lowest-scoring teams are eliminated, until 2 remain for the final.</li>
-        <li>On submit we compile your bot and play a 5-turn test game. Only ✅ bots get in.</li>
-        <li>Every ✅ bot then spars 100 turns against each of 10 house bots. Your total shows on the practice board; only you can see your per-bot scores. Practice games don't count in the tournament.</li>
+    const COMMON_RULES = `
+        <li>Nước đi: <code>R</code> = búa, <code>P</code> = bao, <code>S</code> = kéo.</li>
+        <li>Mỗi trận gồm <b>100 lượt</b>. Mỗi lượt: thắng = <b>3</b> điểm, hòa = <b>1</b>, thua = <b>0</b>.</li>
+        <li>Hai danh sách lịch sử chứa mọi lượt trước đó, cũ nhất đứng đầu. Vị trí <i>i</i> của hai danh sách là cùng một lượt.</li>
+        <li>Bạn có <b>1 giây</b> cho mỗi nước đi (lượt đầu được 10 giây để JVM kịp khởi động).</li>
+        <li>Bot bị lỗi, quá giờ hoặc trả về giá trị lạ thì lượt đó tính là <code>X</code> và bạn thua lượt đó. Bot bị lỗi hoặc quá giờ sẽ bị xử thua toàn bộ các lượt còn lại của trận. <code>X</code> có thể xuất hiện trong lịch sử.</li>
+        <li>Khi nộp, hệ thống biên dịch bot và cho chơi thử 5 lượt. Chỉ bot ✅ mới được tham gia.</li>`;
+    function rulesFor(mode) {
+      if (mode === 'campaign') {
+        return `<ul>${COMMON_RULES}
+        <li><b>Chế độ chiến dịch:</b> mỗi bot ✅ đấu với từng bot trong 10 bot đấu tập, tối đa <b>5 ván</b> (mỗi ván 100 lượt). Để <b>hạ</b> một bot đấu tập, bạn phải <b>thắng cả 5 ván</b> (nhiều điểm hơn nó trong mỗi ván). Chỉ cần thua hoặc hòa một ván là bài nộp đó không hạ được bot này, và các ván còn lại bị bỏ qua.</li>
+        <li>Nộp bao nhiêu bot cũng được. <b>Mọi bài nộp đều được tính:</b> hạ mỗi bot đấu tập bằng ít nhất một bài nộp là hoàn thành chiến dịch.</li>
+        <li>Thời điểm về đích là lúc bạn <b>nộp</b> bot hạ được bot đấu tập cuối cùng còn lại. Ai về đích sớm nhất xếp đầu; các đội chưa về đích xếp theo số bot đã hạ.</li>
+        <li><b>Điểm phạt (PEN):</b> mỗi bài nộp trước khi về đích tính <b>20</b> điểm phạt (kể cả bài bị lỗi). Khi về đích, PEN được cộng thêm <b>số phút</b> từ lúc giải mở đến lúc bạn nộp bài về đích. Bài về đích và các bài nộp sau đó không bị phạt.</li>
+        <li>Trên bảng chiến dịch, ô thứ <i>i</i> sáng lên khi bot đấu tập thứ <i>i</i> bị hạ, nên mọi người đều thấy bạn đã hạ những bot nào. Code và kết quả từng ván của bạn thì chỉ mình bạn xem được.</li>
       </ul>`;
+      }
+      return `<ul>${COMMON_RULES}
+        <li>Mỗi vòng thi đấu vòng tròn. Sau mỗi vòng, <b>min(3, số đội − 2)</b> đội ít điểm nhất bị loại, cho đến khi còn 2 đội vào chung kết.</li>
+        <li>Mỗi bot ✅ sau đó đấu tập 100 lượt với từng bot trong 10 bot của nhà. Tổng điểm hiện trên bảng luyện tập; chỉ bạn thấy điểm chi tiết với từng bot. Các trận luyện tập không tính vào giải.</li>
+      </ul>`;
+    }
 
     const tid = tournamentIdFromPath();
     let lang = localStorage.getItem('rr-lang') || 'python';
@@ -160,21 +174,22 @@ public class Bot {
       try { localStorage.setItem('rr-lang', l); } catch {}
       $$('#langs button').forEach(b => b.classList.toggle('on', b.dataset.lang === l));
       $('#code').value = loadDraft(l) ?? TEMPLATES[l];
-      $('#docs').innerHTML = DOCS[l] + RULES;
+      $('#docs').innerHTML = DOCS[l] + rulesFor(tournament && tournament.mode);
     }
 
     function renderSubs(subs) {
-      if (!subs.length) { $('#subs').innerHTML = '<span class="muted">nothing yet</span>'; return; }
-      const activeId = (subs.find(s => s.status === 'ok') || {}).id;
-      const icon = { ok: '✅ ready', error: '❌ broken', pending: '⏳ checking…' };
+      if (!subs.length) { $('#subs').innerHTML = '<span class="muted">chưa có gì</span>'; return; }
+      const campaignMode = tournament && tournament.mode === 'campaign';
+      const activeId = campaignMode ? null : (subs.find(s => s.status === 'ok') || {}).id;
+      const icon = { ok: '✅ sẵn sàng', error: '❌ bị lỗi', pending: '⏳ đang kiểm tra…' };
       $('#subs').innerHTML = subs.map(s => `
         <div class="sub ${s.id === activeId ? 'active' : ''}">
           <div class="row" style="justify-content:space-between">
-            <b>${LANG_LABEL[s.language]}</b><span class="tag ${s.status}">${icon[s.status]}</span>
+            <b>${campaignMode ? `#${subs.length - subs.indexOf(s)} · ` : ''}${LANG_LABEL[s.language]}</b><span class="tag ${s.status}">${icon[s.status]}</span>
           </div>
-          <div class="muted" style="font-size:15px">${esc(fmtDate(s.createdAt))}${s.id === activeId ? ' · <b style="color:var(--green)">this one plays</b>' : ''}</div>
+          <div class="muted" style="font-size:15px">${esc(fmtDate(s.createdAt))}${s.id === activeId ? ' · <b style="color:var(--green)">bài này đang được dùng</b>' : ''}</div>
           ${s.message ? `<pre class="msg">${esc(s.message)}</pre>` : ''}
-          <button class="btn small" data-load="${s.id}" style="margin-top:6px">load code</button>
+          <button class="btn small" data-load="${s.id}" style="margin-top:6px">mở lại code</button>
         </div>`).join('');
       $$('[data-load]').forEach(b => b.onclick = () => {
         const s = subs.find(x => x.id === b.dataset.load);
@@ -187,15 +202,27 @@ public class Bot {
 
     async function load() {
       const data = await api(`/api/tournaments/${encodeURIComponent(tid)}`);
+      const firstLoad = !tournament;
       tournament = data.tournament;
+      if (firstLoad) setupMode();
       $('#tname').textContent = tournament.name;
       $('#tdesc').textContent = tournament.description;
-      document.title = `Submit · ${tournament.name}`;
+      document.title = `Nộp bài · ${tournament.name}`;
       renderSubs(data.submissions);
       if (tournament.status !== 'open') location.href = `/tournament/${encodeURIComponent(tid)}/live`;
     }
 
-    // ---------- practice arena ----------
+    // Adjust labels for the tournament's mode (called once the tournament is known).
+    function setupMode() {
+      $('#docs').innerHTML = DOCS[lang] + rulesFor(tournament.mode);
+      if (tournament.mode !== 'campaign') return;
+      $('#ptitle').textContent = 'Bảng chiến dịch 🗺️';
+      $('#phint').classList.add('hidden');
+      $('#phead').innerHTML = CAMPAIGN_HEAD;
+      $('#yoursubsHint').textContent = 'Trong chiến dịch, mọi bài nộp ✅ đều được tính.';
+    }
+
+    // ---------- practice arena / campaign board ----------
     let openUser = null;      // whose breakdown is expanded
     let practiceData = null;
 
@@ -207,17 +234,26 @@ public class Bot {
         openUser = null;
         return toast(e.message, 'error');
       }
-      renderPractice();
+      if (practiceData.mode === 'campaign') renderCampaign();
+      else renderPractice();
+    }
+    function renderCampaign() {
+      const d = practiceData;
+      $('#practice').classList.remove('hidden');
+      renderCampaignTable($('#prows'), d.board, { openUser, details: d.details }, user => {
+        openUser = user;
+        if (openUser) loadPractice(); else renderCampaign();
+      });
     }
     let practiceTimer = null;
     const refreshPractice = () => { clearTimeout(practiceTimer); practiceTimer = setTimeout(loadPractice, 150); };
 
     function statusText(r, max) {
-      if (r.status === 'no-bot') return '<span class="muted">no working bot yet</span>';
-      if (r.status === 'queued') return '<span class="muted">⏳ waiting for a sparring slot…</span>';
-      if (r.status === 'running') return `<span class="muted">🥊 sparring… ${r.played}/10</span>`;
-      if (r.status === 'stopped') return '<span class="muted">stopped</span>';
-      if (r.status === 'error') return '<span style="color:var(--red)">evaluation failed</span>';
+      if (r.status === 'no-bot') return '<span class="muted">chưa có bot chạy được</span>';
+      if (r.status === 'queued') return '<span class="muted">⏳ đang chờ lượt đấu tập…</span>';
+      if (r.status === 'running') return `<span class="muted">🥊 đang đấu tập… ${r.played}/10</span>`;
+      if (r.status === 'stopped') return '<span class="muted">đã dừng</span>';
+      if (r.status === 'error') return '<span style="color:var(--red)">chấm thất bại</span>';
       return '';
     }
 
@@ -228,9 +264,9 @@ public class Bot {
       $('#prows').innerHTML = d.rows.map(r => {
         const mine = r.userId === ME.id;
         const pct = r.total ? Math.round((100 * r.total) / d.maxTotal) : 0;
-        const row = `<tr class="clickable ${mine ? 'me' : ''} ${openUser === r.userId ? 'open' : ''}" data-user="${r.userId}" title="${canOpen(r) ? 'show the breakdown' : 'no peeking!'}">
+        const row = `<tr class="clickable ${mine ? 'me' : ''} ${openUser === r.userId ? 'open' : ''}" data-user="${r.userId}" title="${canOpen(r) ? 'xem chi tiết' : 'không được nhìn trộm!'}">
           <td class="rank">${r.total === null ? '–' : r.rank}</td>
-          <td><div class="team">${avatarSvg(r.avatar, 36)}<span>${esc(r.teamName)}</span>${mine ? '<span class="muted" style="font-size:16px">← you!</span>' : ''}${canOpen(r) ? `<span class="caret">${openUser === r.userId ? '▾' : '▸'}</span>` : ''}</div></td>
+          <td><div class="team">${avatarSvg(r.avatar, 36)}<span>${esc(r.teamName)}</span>${mine ? '<span class="muted" style="font-size:16px">← bạn!</span>' : ''}${canOpen(r) ? `<span class="caret">${openUser === r.userId ? '▾' : '▸'}</span>` : ''}</div></td>
           <td class="hide-sm">${r.language ? LANG_LABEL[r.language] : ''}</td>
           <td class="pts">${r.total === null ? '–' : r.total} ${statusText(r)}</td>
           <td class="hide-sm"><div class="pbar"><div style="width:${pct}%"></div></div></td>
@@ -243,7 +279,7 @@ public class Bot {
         const r = d.rows.find(x => x.userId === tr.dataset.user);
         if (!canOpen(r)) {
           tr.classList.remove('nope'); void tr.offsetWidth; tr.classList.add('nope');
-          return toast("No peeking at other teams' scores 🤫");
+          return toast('Không được xem điểm của đội khác 🤫');
         }
         openUser = openUser === r.userId ? null : r.userId;
         if (openUser) loadPractice(); else renderPractice();
@@ -253,10 +289,10 @@ public class Bot {
     function renderDetail(det) {
       const cards = det.results.map(r => {
         if (r.status !== 'done') {
-          const label = { queued: '⏳ queued', playing: '🥊 fighting…', skipped: 'skipped' }[r.status] || r.status;
+          const label = { queued: '⏳ đang chờ', playing: '🥊 đang đấu…', skipped: 'bỏ qua' }[r.status] || r.status;
           return `<div class="house pending"><div class="hn">${esc(r.name)}</div><div class="hs muted">${label}</div></div>`;
         }
-        const res = r.winner === 'A' ? ['win', 'beat it 🎉'] : r.winner === 'B' ? ['loss', 'lost 😵'] : ['draw', 'draw 🤝'];
+        const res = r.winner === 'A' ? ['win', 'thắng 🎉'] : r.winner === 'B' ? ['loss', 'thua 😵'] : ['draw', 'hòa 🤝'];
         return `<div class="house ${res[0]}">
           <div class="hn">${esc(r.name)}</div>
           <div class="hs"><b>${r.score}</b> <span class="muted">:</span> ${r.botScore} <span class="tag">${res[1]}</span></div>
@@ -267,7 +303,7 @@ public class Bot {
       const done = det.results.filter(r => r.status === 'done');
       const wins = done.filter(r => r.winner === 'A').length;
       return `<div class="pdetail">
-        <div class="muted" style="font-size:16px">${esc(det.teamName)} · ${LANG_LABEL[det.language]} bot submitted ${esc(fmtDate(det.submittedAt))} · beat ${wins} of ${done.length} sparring bots so far</div>
+        <div class="muted" style="font-size:16px">${esc(det.teamName)} · bot ${LANG_LABEL[det.language]} nộp lúc ${esc(fmtDate(det.submittedAt))} · đến giờ đã thắng ${wins}/${done.length} bot đấu tập</div>
         <div class="house-grid">${cards}</div>
       </div>`;
     }
@@ -284,7 +320,7 @@ public class Bot {
 
     $('#langs').innerHTML = Object.keys(TEMPLATES).map(l => `<button data-lang="${l}">${LANG_LABEL[l]}</button>`).join('');
     $$('#langs button').forEach(b => b.onclick = () => setLang(b.dataset.lang));
-    $('#template').onclick = () => { if (confirm('Replace your code with the starter code?')) { $('#code').value = TEMPLATES[lang]; saveDraft(); } };
+    $('#template').onclick = () => { if (confirm('Thay code hiện tại bằng code mẫu?')) { $('#code').value = TEMPLATES[lang]; saveDraft(); } };
     $('#code').addEventListener('input', saveDraft);
     $('#code').addEventListener('keydown', e => {
       if (e.key !== 'Tab') return;
@@ -308,7 +344,7 @@ public class Bot {
       $('#submit').disabled = true;
       try {
         await api(`/api/tournaments/${encodeURIComponent(tid)}/submissions`, { method: 'POST', body: { language: lang, code: $('#code').value } });
-        toast('Bot received! Compiling… 🔧');
+        toast('Đã nhận bot! Đang biên dịch… 🔧');
         await load();
         refreshPractice();
       } catch (e) {
@@ -325,7 +361,7 @@ public class Bot {
       if (ME.role !== 'judge') openUser = ME.id;
       await loadPractice();
       socket.on('practice:updated', ({ tournamentId }) => { if (tournamentId === tid) refreshPractice(); });
-      if (ME.role === 'judge') toast('Judges can look, but only players can submit 🎩');
+      if (ME.role === 'judge') toast('Trọng tài chỉ được xem, chỉ người chơi mới được nộp bài 🎩');
       tick();
       setInterval(tick, 250);
     })().catch(e => toast(e.message, 'error'));

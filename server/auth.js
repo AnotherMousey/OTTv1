@@ -19,13 +19,13 @@ function verifyPassword(password, stored) {
 function createUser({ username, password, teamName, role = 'player' }) {
   username = String(username || '').trim();
   teamName = String(teamName || '').trim() || username;
-  if (!/^[A-Za-z0-9_.-]{2,32}$/.test(username)) throw new Error('Username must be 2-32 letters, digits, _ . or -');
-  if (String(password || '').length < 3) throw new Error('Password must be at least 3 characters');
-  if (teamName.length > 32) throw new Error('Team name must be at most 32 characters');
-  if (!['player', 'judge'].includes(role)) throw new Error('Role must be player or judge');
+  if (!/^[A-Za-z0-9_.-]{2,32}$/.test(username)) throw new Error('Tên đăng nhập phải có 2–32 ký tự: chữ không dấu, số, _ . hoặc -');
+  if (String(password || '').length < 3) throw new Error('Mật khẩu phải có ít nhất 3 ký tự');
+  if (teamName.length > 32) throw new Error('Tên đội tối đa 32 ký tự');
+  if (!['player', 'judge'].includes(role)) throw new Error('Vai trò phải là player hoặc judge');
   const users = db.data.users;
-  if (users.some(u => u.username.toLowerCase() === username.toLowerCase())) throw new Error('Username already taken');
-  if (users.some(u => u.teamName.toLowerCase() === teamName.toLowerCase())) throw new Error('Team name already taken');
+  if (users.some(u => u.username.toLowerCase() === username.toLowerCase())) throw new Error('Tên đăng nhập đã có người dùng');
+  if (users.some(u => u.teamName.toLowerCase() === teamName.toLowerCase())) throw new Error('Tên đội đã có người dùng');
   const user = { id: db.id(), username, teamName, role, passwordHash: hashPassword(password), createdAt: new Date().toISOString() };
   users.push(user);
   db.save();

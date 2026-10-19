@@ -50,6 +50,6 @@ function rpsMarkup(move) {
 
 // Standalone inline <svg>.
 function rpsIcon(move, size = 32, cls = '') {
-  const label = { R: 'rock', P: 'paper', S: 'scissors', X: 'nothing' }[move] || 'nothing';
+  const label = { R: 'búa', P: 'bao', S: 'kéo', X: 'bỏ lượt' }[move] || 'bỏ lượt';
   return `<svg class="rps ${cls}" viewBox="0 0 64 64" width="${size}" height="${size}" role="img" aria-label="${label}">${rpsMarkup(move)}</svg>`;
 }

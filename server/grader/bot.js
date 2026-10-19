@@ -20,7 +20,7 @@ class Bot {
       const spec = command(this.sub);
       this.proc = spawn(spec.cmd, spec.args, { cwd: spec.cwd, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
     } catch (e) {
-      return this._die('could not start: ' + e.message);
+      return this._die('không khởi động được: ' + e.message);
     }
     const p = this.proc;
     p.stdout.setEncoding('utf8');
@@ -28,8 +28,8 @@ class Bot {
     p.stdout.on('data', chunk => this._onStdout(chunk));
     p.stderr.on('data', chunk => { this.stderr = (this.stderr + chunk).slice(-3000); });
     p.stdin.on('error', () => {});
-    p.on('error', e => this._die('could not start: ' + e.message));
-    p.on('exit', code => this._die(`crashed (exit code ${code})`));
+    p.on('error', e => this._die('không khởi động được: ' + e.message));
+    p.on('exit', code => this._die(`bị lỗi và dừng (mã thoát ${code})`));
   }
 
   _onStdout(chunk) {
@@ -44,7 +44,7 @@ class Bot {
         w(line.slice(5).trim());
       }
     }
-    if (this.stdoutBuf.length > 1e6) this.fail('printed too much output');
+    if (this.stdoutBuf.length > 1e6) this.fail('in ra quá nhiều dữ liệu');
   }
 
   _die(reason) {
@@ -72,7 +72,7 @@ class Bot {
       const timer = setTimeout(() => {
         if (this.waiter === done) {
           this.waiter = null;
-          this.fail(`took longer than ${timeoutMs} ms to move`);
+          this.fail(`mất quá ${timeoutMs} ms để ra nước`);
           resolve(null);
         }
       }, timeoutMs);

@@ -12,10 +12,10 @@
     extra: ['none', 'glasses', 'shades', 'mustache', 'bowtie', 'bandaid', 'monocle', 'flower'],
   };
   const LABELS = {
-    eyes: { dots: 'dots', shiny: 'shiny', happy: 'happy', sleepy: 'sleepy', wide: 'wide', wink: 'wink', angry: 'grumpy', stars: 'starry' },
-    mouth: { none: 'none', smile: 'smile', grin: 'grin', flat: 'meh', o: 'ooh', tongue: 'blep', smirk: 'smirk', teeth: 'toothy' },
-    cheeks: { none: 'none', blush: 'blush', freckles: 'freckles' },
-    extra: { none: 'none', glasses: 'glasses', shades: 'shades', mustache: 'mustache', bowtie: 'bow tie', bandaid: 'band-aid', monocle: 'monocle', flower: 'flower' },
+    eyes: { dots: 'chấm', shiny: 'long lanh', happy: 'vui vẻ', sleepy: 'buồn ngủ', wide: 'tròn xoe', wink: 'nháy mắt', angry: 'cau có', stars: 'mắt sao' },
+    mouth: { none: 'không', smile: 'cười', grin: 'cười toe', flat: 'thờ ơ', o: 'ồ', tongue: 'lè lưỡi', smirk: 'nhếch mép', teeth: 'nhe răng' },
+    cheeks: { none: 'không', blush: 'má hồng', freckles: 'tàn nhang' },
+    extra: { none: 'không', glasses: 'kính', shades: 'kính râm', mustache: 'ria mép', bowtie: 'nơ', bandaid: 'băng cá nhân', monocle: 'kính một mắt', flower: 'hoa' },
   };
 
   function hashOf(name) {

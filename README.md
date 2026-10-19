@@ -16,7 +16,7 @@ npm start            # http://localhost:3000
 On first start a **judge** account is created and its password is printed in the console
 (set `JUDGE_PASSWORD=...` before the first start to choose it yourself).
 
-Users cannot register. Accounts are added to the `users` list in `data/db.json`. **Stop the server
+Players can sign up themselves at `/register` (the judge can switch this off on the Judge desk; new accounts are always players). Accounts can also be added to the `users` list in `data/db.json`. **Stop the server
 first**, because a running server keeps its own copy in memory and overwrites the file. Write the
 password in plain text:
 
@@ -46,7 +46,23 @@ npm start
 
 Log in as e.g. `rocky` / `demo`, wait for the countdown, and you'll be dragged to the live page.
 
-## How a tournament works
+## Tournament modes
+
+The judge picks a mode when creating a tournament (older tournaments without one are brawls):
+
+- **⚔️ Brawl:** the format described below. At the deadline every team's newest working bot enters
+  round-robin elimination rounds until a champion is left.
+- **🗺️ Campaign:** a race against the 10 sparring bots. Players submit as many bots as they like, and
+  every working submission plays up to 5 games (100 turns each) against each sparring bot. A sparring
+  bot counts as beaten when one submission wins all 5; the first loss or draw ends that series. A player **finishes** once all 10
+  are beaten, by any mix of their submissions. Their finish time is the *submission time* of the bot
+  that beat the last remaining one. The leaderboard ranks finishers by finish time, then everyone
+  else by bots beaten (earlier progress first). Everyone sees which sparring bots each team has beaten
+  (square *i* on the board = bot *i*) and finish times; only the player (and the judge) sees
+  their game-by-game results. At the deadline submissions close, bots
+  submitted before it finish grading, and the results freeze. No elimination matches are played.
+
+## How a tournament works (brawl)
 
 1. The judge creates a tournament with a deadline. The main page lists it with a countdown.
 2. Players press **Submit code**, pick a language and paste or upload their bot. Each submission
@@ -108,6 +124,7 @@ left off; matches already played are kept.
 | `MATCH_PACE_MS` | 1500 | minimum time per match, so the live leaderboard has some drama |
 | `ROUND_BREAK_MS` | 5000 | pause between rounds |
 | `PRACTICE_PARALLEL` | 2 | practice games run at the same time |
+| `SIGNUP_LIMIT` | 30 | max self-registrations per hour from one IP address |
 | `MOVE_TIMEOUT_MS` / `FIRST_MOVE_TIMEOUT_MS` | 1000 / 10000 | per-move time limits |
 
 ## ⚠️ Security note

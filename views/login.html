@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="vi">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Log in · OTTv1</title>
+  <title>Đăng nhập · OTTv1</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/css/style.css">
 </head>
@@ -14,20 +14,26 @@
       <form class="box" id="form" autocomplete="on">
         <div class="trio big" id="trio"></div>
         <h1 class="brand" style="font-size:54px">OTTv1</h1>
-        <p class="muted" style="margin-top:-6px">rock · paper · scissors · bots · glory</p>
-        <label><span>username</span><input name="username" id="username" required autofocus autocomplete="username"></label>
-        <label><span>password</span><input name="password" type="password" required autocomplete="current-password"></label>
+        <p class="muted" style="margin-top:-6px">oẳn tù tì</p>
+        <label><span>tên đăng nhập</span><input name="username" id="username" required autofocus autocomplete="username"></label>
+        <label><span>mật khẩu</span><input name="password" type="password" required autocomplete="current-password"></label>
         <div class="err" id="err"></div>
-        <button class="btn red" type="submit" style="font-size:26px">Let me in!</button>
-        <p class="muted" style="font-size:17px;margin-bottom:0">No account? Accounts are handed out by the judge. 🎩</p>
+        <button class="btn red" type="submit" style="font-size:26px">Đăng Nhập</button>
+        <p class="muted" style="font-size:17px;margin-bottom:0" id="signup">Chưa có tài khoản? Hãy xin trọng tài cấp cho bạn. 🎩</p>
       </form>
     </div>
   </div>
   <script src="/js/avatar.js"></script>
   <script src="/js/rps.js"></script>
+  <script src="/js/duo.js"></script>
   <script>
-    document.getElementById('duo').innerHTML = avatarSvg('#e2433f', 110) + avatarSvg('#3a7bd5', 110, { flip: true });
+    startDuo(document.getElementById('duo'),
+      { hat: '#e2433f', shirt: '#ffd84d', eyes: 'shiny', mouth: 'smile', cheeks: 'blush', extra: 'bowtie' },
+      { hat: '#3a7bd5', shirt: '#9cc7ff', eyes: 'shiny', mouth: 'smile', cheeks: 'blush', extra: 'flower' });
     document.getElementById('trio').innerHTML = rpsIcon('R', 64) + rpsIcon('P', 64) + rpsIcon('S', 64);
+    fetch('/api/register').then(r => r.json()).then(({ open }) => {
+      if (open) document.getElementById('signup').innerHTML = 'Chưa có tài khoản? <a href="/register">Đăng ký tại đây</a> 🎩';
+    }).catch(() => {});
     document.getElementById('form').addEventListener('submit', async e => {
       e.preventDefault();
       const f = new FormData(e.target);
@@ -40,7 +46,7 @@
           body: JSON.stringify({ username: f.get('username'), password: f.get('password') }),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Login failed');
+        if (!res.ok) throw new Error(data.error || 'Đăng nhập thất bại');
         location.href = '/';
       } catch (ex) {
         err.textContent = ex.message + ' 🙈';

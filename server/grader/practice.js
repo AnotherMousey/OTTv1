@@ -5,6 +5,9 @@ const { HOUSE_BOTS } = require('./house');
 const { runVsHouse } = require('./match');
 
 const PARALLEL = +process.env.PRACTICE_PARALLEL || 2;
+// Campaign: a sparring bot only counts as beaten if the submission wins this many games
+// against it in a row. The first game it doesn't win ends the series.
+const CAMPAIGN_GAMES = 5;
 
 let listener = () => {};
 function onUpdate(fn) {
@@ -25,13 +28,20 @@ async function withSlot(fn) {
   }
 }
 
-const tournamentOpen = sub => {
-  const t = db.data.tournaments.find(x => x.id === sub.tournamentId);
-  return t && t.status === 'open';
+const tournamentOf = sub => db.data.tournaments.find(x => x.id === sub.tournamentId);
+const isCampaign = sub => (tournamentOf(sub) || {}).mode === 'campaign';
+
+// Brawl: practice only matters while submissions are open.
+// Campaign: every submission made before the deadline gets fully evaluated, even after it.
+const canEvaluate = sub => {
+  const t = tournamentOf(sub);
+  return !!t && (t.status === 'open' || t.mode === 'campaign');
 };
 
-// Stop evaluating older submissions once the same player has a newer working one.
+// Brawl only: stop evaluating older submissions once the same player has a newer working one.
+// (In a campaign every submission counts, so nothing is ever cancelled.)
 function supersede(sub) {
+  if (isCampaign(sub)) return;
   for (const s of db.data.submissions) {
     if (s !== sub && s.userId === sub.userId && s.tournamentId === sub.tournamentId && s.practice && s.practice.status === 'running') {
       s.practice.cancelled = true;
@@ -41,7 +51,7 @@ function supersede(sub) {
 
 const running = new Map();
 function evaluate(sub, ensureBuilt) {
-  if (running.has(sub.id)) return running.get(sub.id);
+  if (running.has(sub.id)) return running.get(sub.id).promise;
   supersede(sub);
   sub.practice = {
     status: 'running',
@@ -54,10 +64,31 @@ function evaluate(sub, ensureBuilt) {
 
   const promise = Promise.all(HOUSE_BOTS.map((house, i) => withSlot(async () => {
     const slot = sub.practice.results[i];
-    if (sub.practice.cancelled || !tournamentOpen(sub)) { slot.status = 'skipped'; return; }
+    if (sub.practice.cancelled || !canEvaluate(sub)) { slot.status = 'skipped'; return; }
     slot.status = 'playing';
-    const r = await runVsHouse(sub, house, ensureBuilt);
-    Object.assign(slot, { status: 'done', score: r.scoreA, botScore: r.scoreB, winner: r.winner, issue: r.issue });
+    if (!isCampaign(sub)) {
+      const r = await runVsHouse(sub, house, ensureBuilt);
+      Object.assign(slot, { status: 'done', score: r.scoreA, botScore: r.scoreB, winner: r.winner, issue: r.issue });
+    } else {
+      const games = [];
+      slot.games = games;
+      slot.needed = CAMPAIGN_GAMES;
+      while (games.length < CAMPAIGN_GAMES) {
+        const r = await runVsHouse(sub, house, ensureBuilt);
+        games.push({ score: r.scoreA, botScore: r.scoreB, winner: r.winner });
+        if (r.issue && !slot.issue) slot.issue = r.issue;
+        listener(sub);
+        if (r.winner !== 'A') break; // lost or drew one: this bot can't be beaten by this submission
+      }
+      const last = games[games.length - 1];
+      Object.assign(slot, {
+        status: 'done',
+        wins: games.filter(g => g.winner === 'A').length,
+        score: games.reduce((s, g) => s + g.score, 0),
+        botScore: games.reduce((s, g) => s + g.botScore, 0),
+        winner: last.winner === 'A' ? 'A' : last.winner, // 'A' only after 5 straight wins
+      });
+    }
     sub.practice.total = sub.practice.results.reduce((s, x) => s + (x.score || 0), 0);
     db.save();
     listener(sub);
@@ -77,8 +108,13 @@ function evaluate(sub, ensureBuilt) {
       db.save();
       listener(sub);
     });
-  running.set(sub.id, promise);
+  running.set(sub.id, { tournamentId: sub.tournamentId, promise });
   return promise;
 }
 
-module.exports = { evaluate, onUpdate, HOUSE_BOTS };
+// Resolves once every evaluation currently queued for this tournament has finished.
+function waitFor(tournamentId) {
+  return Promise.all([...running.values()].filter(r => r.tournamentId === tournamentId).map(r => r.promise));
+}
+
+module.exports = { evaluate, waitFor, onUpdate, HOUSE_BOTS };

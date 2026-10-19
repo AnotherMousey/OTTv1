@@ -5,6 +5,7 @@ const db = require('./db');
 const grader = require('./grader');
 const { runMatch } = require('./grader/match');
 const { avatarOf } = require('./auth');
+const campaign = require('./campaign');
 const avatarById = id => avatarOf(db.data.users.find(u => u.id === id) || { teamName: '' });
 
 const PARALLEL_MATCHES = +process.env.PARALLEL_MATCHES || Math.max(1, Math.floor(os.cpus().length / 2));
@@ -61,6 +62,7 @@ class TournamentManager {
         this.io.to('users').emit('tournament:started', { id: t.id, name: t.name });
         this.io.to('users').emit('tournaments:changed');
       }
+      if (t.mode === 'campaign') return await this.closeCampaign(t);
       if (!t.entries) {
         await grader.waitForValidations(t.id);
         t.entries = this.collectEntries(t);
@@ -77,6 +79,24 @@ class TournamentManager {
     } finally {
       this.active.delete(t.id);
     }
+  }
+
+  // Campaign deadline: no matches to play. Let every submission made before the
+  // deadline finish compiling and sparring, then freeze the standings.
+  async closeCampaign(t) {
+    this.broadcast(t);
+    grader.resumePractice(); // after a restart: re-queue games that were cut off (no-op otherwise)
+    await grader.waitForValidations(t.id);
+    await grader.practice.waitFor(t.id);
+    const final = campaign.board(t);
+    // winner = top of the final board (most bots beaten / earliest finish), if they beat any at all
+    t.championId = final.rows.length && final.rows[0].beaten > 0 ? final.rows[0].userId : null;
+    t.status = 'finished';
+    t.finishedAt = new Date().toISOString();
+    db.save();
+    console.log(`[campaign] "${t.name}" closed. ${final.finishers} of ${final.rows.length} teams finished.`);
+    this.broadcast(t);
+    this.io.to('users').emit('tournaments:changed');
   }
 
   // Each player's newest working submission is their entry.
@@ -207,6 +227,7 @@ class TournamentManager {
   }
 
   leaderboard(t) {
+    if (t.mode === 'campaign') return campaign.board(t);
     const info = {
       id: t.id, name: t.name, status: t.status, deadline: t.deadline, error: t.error || null,
       entries: t.entries ? t.entries.length : null, round: null, champion: null, rows: [],

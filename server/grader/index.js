@@ -64,7 +64,7 @@ async function build(sub) {
   } else {
     throw new Error('Unknown language');
   }
-  if (r.code !== 0) throw new Error(stripDir(r.out, dir) || 'Compilation failed');
+  if (r.code !== 0) throw new Error(stripDir(r.out, dir) || 'Biên dịch thất bại');
   fs.writeFileSync(path.join(dir, '.ok'), new Date().toISOString());
 }
 
@@ -89,8 +89,8 @@ async function smokeTest(sub) {
       const m = normalize(raw);
       if (m === 'X') {
         const why = raw === null
-          ? `Your bot ${bot.reason || 'stopped responding'} on test turn ${i + 1}.`
-          : `Your bot returned "${String(raw).slice(0, 20)}" on test turn ${i + 1} - expected R, P or S.`;
+          ? `Bot của bạn ${bot.reason || 'không phản hồi'} ở lượt thử thứ ${i + 1}.`
+          : `Bot của bạn trả về "${String(raw).slice(0, 20)}" ở lượt thử thứ ${i + 1}, trong khi chỉ được trả về R, P hoặc S.`;
         await new Promise(r => setTimeout(r, 100)); // let the last stderr arrive
         const err = stripDir(bot.stderr, buildDir(sub));
         return { ok: false, message: why + (err ? '\n\n' + err : '') };
@@ -98,7 +98,7 @@ async function smokeTest(sub) {
       my = m;
       opp = script[i];
     }
-    return { ok: true, message: 'Compiled and survived a 5-turn test run. Ready to rumble!' };
+    return { ok: true, message: 'Biên dịch thành công và vượt qua 5 lượt chơi thử. Sẵn sàng chiến!' };
   } finally {
     bot.stop();
   }
@@ -114,7 +114,7 @@ function validate(sub) {
       await ensureBuilt(sub, true);
       result = await smokeTest(sub);
     } catch (e) {
-      result = { ok: false, message: 'Compile error:\n' + e.message };
+      result = { ok: false, message: 'Lỗi biên dịch:\n' + e.message };
     }
     sub.status = result.ok ? 'ok' : 'error';
     sub.message = result.message;
@@ -141,9 +141,21 @@ function activeSubmission(tournamentId, userId) {
   return best;
 }
 
-// After a restart, finish practice runs that were cut off (open tournaments only).
+// After a restart, finish practice runs that were cut off.
+// Brawl: only the active submission of open tournaments. Campaign: every working submission
+// of a tournament that isn't finished yet (submissions from before the deadline still count).
 function resumePractice() {
   for (const t of db.data.tournaments) {
+    if (t.mode === 'campaign') {
+      if (t.status === 'finished') continue;
+      for (const s of db.data.submissions) {
+        if (s.tournamentId !== t.id || s.status !== 'ok') continue;
+        // also regrade submissions graded before the best-of-5 rule (no per-game results)
+        const oldRule = s.practice && s.practice.results.some(r => r.status === 'done' && !r.games);
+        if (!s.practice || s.practice.status !== 'done' || oldRule) practice.evaluate(s, ensureBuilt);
+      }
+      continue;
+    }
     if (t.status !== 'open') continue;
     const users = new Set(db.data.submissions.filter(s => s.tournamentId === t.id).map(s => s.userId));
     for (const uid of users) {

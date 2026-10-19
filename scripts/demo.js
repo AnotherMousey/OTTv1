@@ -16,6 +16,7 @@ const deadlineMs = /^\d+$/.test(arg) ? Date.now() + +arg * 1000 : Date.parse(arg
 if (!Number.isFinite(deadlineMs)) throw new Error('Bad deadline: ' + arg);
 const seconds = Math.round((deadlineMs - Date.now()) / 1000);
 const tournamentName = process.argv[3] || 'Demo Cup';
+const mode = process.argv[4] === 'campaign' ? 'campaign' : 'brawl'; // argv[4]: brawl (default) or campaign
 const EX = path.join(__dirname, '..', 'examples');
 const teams = [
   ['rocky', 'Rock Lobsters', 'python', 'rock.py'],
@@ -31,6 +32,7 @@ const now = Date.now();
 const t = {
   id: db.id(),
   name: tournamentName,
+  mode,
   description: 'Seven silly bots, one fez.',
   deadline: new Date(deadlineMs).toISOString(),
   status: 'open',

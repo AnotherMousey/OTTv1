@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Đăng ký · OTTv1</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="login-card">
+      <div class="duo" id="duo"></div>
+      <form class="box" id="form" autocomplete="on">
+        <div class="trio big" id="trio"></div>
+        <h1 class="brand" style="font-size:46px">Tham gia OTTv1</h1>
+        <p class="muted" style="margin-top:-6px">đội mũ fez, viết bot, đè bẹp đối thủ</p>
+        <div id="closed" class="hidden">
+          <p>Hiện đang đóng đăng ký. 🙈<br>Hãy xin trọng tài cấp tài khoản.</p>
+        </div>
+        <div id="fields">
+          <label><span>tên đăng nhập <small class="muted">(2–32 ký tự: chữ không dấu, số, _ . -)</small></span><input name="username" id="username" required autofocus autocomplete="username" pattern="[A-Za-z0-9_.\-]{2,32}"></label>
+          <label><span>tên đội <small class="muted">(mọi người sẽ thấy tên này)</small></span><input name="teamName" maxlength="32" placeholder="vd: Bao Bọc Cả Thế Giới"></label>
+          <label><span>mật khẩu <small class="muted">(ít nhất 6 ký tự)</small></span><input name="password" type="password" required minlength="6" autocomplete="new-password"></label>
+          <label><span>nhập lại mật khẩu</span><input name="password2" type="password" required minlength="6" autocomplete="new-password"></label>
+          <div class="err" id="err"></div>
+          <button class="btn red" type="submit" style="font-size:26px">Đăng ký!</button>
+        </div>
+        <p class="muted" style="font-size:17px;margin-bottom:0">Đã có tài khoản? <a href="/login">Đăng nhập</a></p>
+      </form>
+    </div>
+  </div>
+  <script src="/js/avatar.js"></script>
+  <script src="/js/rps.js"></script>
+  <script src="/js/duo.js"></script>
+  <script>
+    const $ = s => document.querySelector(s);
+    startDuo($('#duo'),
+      { hat: '#3fae5a', shirt: '#b5e6c0', eyes: 'shiny', mouth: 'smile', cheeks: 'freckles', extra: 'glasses' },
+      { hat: '#f39c12', shirt: '#ffc48a', eyes: 'shiny', mouth: 'smile', cheeks: 'blush', extra: 'mustache' });
+    $('#trio').innerHTML = rpsIcon('R', 64) + rpsIcon('P', 64) + rpsIcon('S', 64);
+
+    fetch('/api/register').then(r => r.json()).then(({ open }) => {
+      if (!open) { $('#fields').classList.add('hidden'); $('#closed').classList.remove('hidden'); }
+    }).catch(() => {});
+
+    $('#form').addEventListener('submit', async e => {
+      e.preventDefault();
+      const f = new FormData(e.target);
+      const err = $('#err');
+      err.textContent = '';
+      if (f.get('password') !== f.get('password2')) { err.textContent = 'Hai mật khẩu không khớp 🙈'; return; }
+      try {
+        const res = await fetch('/api/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: f.get('username'), teamName: f.get('teamName'), password: f.get('password') }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Đăng ký thất bại');
+        location.href = '/me'; // new players start by dressing up their avatar
+      } catch (ex) {
+        err.textContent = ex.message + ' 🙈';
+      }
+    });
+  </script>
+</body>
+</html>

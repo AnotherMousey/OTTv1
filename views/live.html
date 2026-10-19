@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="vi">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Live · OTTv1</title>
+  <title>Trực tiếp · OTTv1</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/css/style.css">
 </head>
@@ -18,12 +18,12 @@
     </div>
     <div class="champ-banner hidden" id="champ"></div>
     <table class="board">
-      <thead><tr><th>#</th><th>team</th><th class="hide-sm">lang</th><th>round pts</th><th class="hide-sm">W · D · L</th><th class="hide-sm">total</th></tr></thead>
+      <thead id="lhead"><tr><th>#</th><th>đội</th><th class="hide-sm">ngôn ngữ</th><th>điểm vòng</th><th class="hide-sm">T · H · B</th><th class="hide-sm">tổng</th></tr></thead>
       <tbody id="rows"></tbody>
     </table>
     <section id="matches" class="hidden">
       <div class="squiggle"></div>
-      <h2 id="matchesTitle">Matches</h2>
+      <h2 id="matchesTitle">Các trận đấu</h2>
       <div id="feed"></div>
     </section>
   </main>
@@ -32,6 +32,7 @@
   <script src="/js/avatar.js"></script>
   <script src="/js/rps.js"></script>
   <script src="/js/common.js"></script>
+  <script src="/js/campaign.js"></script>
   <script>
     const tid = tournamentIdFromPath();
     let lastBoard = null;
@@ -43,47 +44,101 @@
       switch (r.status) {
         case 'champion': return '🏆';
         case 'runner-up': return '🥈';
-        case 'eliminated': return `💀<span class="muted" style="font-size:15px"> r${r.round}</span>`;
+        case 'eliminated': return `💀<span class="muted" style="font-size:15px"> v${r.round}</span>`;
         default: return r.rank;
       }
     }
 
-    function renderBoard(b) {
+    // ---------- campaign mode ----------
+    const cstate = { openUser: null, details: null };
+    let campaignCountdown = null;
+    async function openCampaignRow(user) {
+      cstate.openUser = user;
+      cstate.details = null;
+      if (user) {
+        try {
+          const d = await api(`/api/tournaments/${encodeURIComponent(tid)}/practice?user=${encodeURIComponent(user)}`);
+          cstate.details = d.details;
+        } catch (e) { cstate.openUser = null; toast(e.message, 'error'); }
+      }
+      renderCampaignBoard(lastBoard);
+    }
+    function renderCampaignBoard(b) {
       lastBoard = b;
       $('#tname').textContent = b.name;
-      document.title = `Live · ${b.name}`;
+      document.title = `Trực tiếp · ${b.name}`;
+      $('#lhead').innerHTML = CAMPAIGN_HEAD;
+      $('table.board').classList.add('practice');
+      $('#progress').classList.add('hidden');
+      const banner = $('#banner'), sub = $('#sub');
+      clearInterval(campaignCountdown);
+      if (b.status === 'open') {
+        banner.innerHTML = '🗺️ Chiến dịch đang diễn ra, kết thúc sau <span id="ccd"></span>';
+        const tickCd = () => { const el = $('#ccd'); if (el) el.textContent = fmtCountdown(Date.parse(b.deadline) - serverNow()); };
+        tickCd();
+        campaignCountdown = setInterval(tickCd, 500);
+        sub.innerHTML = `Đến giờ có ${b.finishers} đội đã hạ cả ${b.total} bot đấu tập · <a href="/tournament/${encodeURIComponent(tid)}/submit">nộp bot</a>`;
+      } else if (b.status === 'running') {
+        banner.innerHTML = '⏳ Hết giờ! Đang chấm những bài nộp cuối cùng…';
+        sub.textContent = 'Các bot nộp trước hạn chót vẫn được tính.';
+      } else {
+        const w = b.rows[0] && b.rows[0].beaten > 0 ? b.rows[0] : null;
+        banner.innerHTML = w ? `🏆 Đội chiến thắng: <b>${esc(w.teamName)}</b>!` : '🏁 Chiến dịch kết thúc! Không đội nào hạ được bot đấu tập nào.';
+        sub.textContent = !w ? '' : w.finishedAt
+          ? `Hạ cả ${b.total} bot đấu tập · về đích lúc ${fmtClock(w.finishedAt)} · PEN ${w.pen}`
+          : `Hạ ${w.beaten}/${b.total} bot đấu tập · PEN ${w.pen}`;
+      }
+      const champ = $('#champ');
+      // finished: the top team is the winner even if nobody beat all 10; still running: first finisher
+      const top = b.rows[0];
+      const first = b.status === 'finished' ? (top && top.beaten > 0 ? top : null) : (top && top.finishedAt ? top : null);
+      if (first) {
+        champ.classList.remove('hidden');
+        const when = first.finishedAt ? fmtClock(first.finishedAt) : `${first.beaten}/${b.total} bot đấu tập`;
+        champ.innerHTML = `${avatarSvg(first.avatar, 110, { mouth: 'smile' })}<br><span class="big">${b.status === 'finished' ? '🏆' : '🏁'} ${esc(first.teamName)}</span><div class="muted">${b.status === 'finished' ? 'nhà vô địch chiến dịch' : 'về đích đầu tiên'} · ${esc(when)}</div>`;
+        if (wasFinished === false && b.status === 'finished') confetti();
+      } else champ.classList.add('hidden');
+      wasFinished = b.status === 'finished';
+      renderCampaignTable($('#rows'), b, cstate, openCampaignRow);
+    }
+
+    function renderBoard(b) {
+      if (b.mode === 'campaign') return renderCampaignBoard(b);
+      lastBoard = b;
+      $('#tname').textContent = b.name;
+      document.title = `Trực tiếp · ${b.name}`;
       const banner = $('#banner'), sub = $('#sub'), prog = $('#progress');
       prog.classList.add('hidden');
       sub.textContent = '';
       if (b.status === 'open') {
-        banner.innerHTML = `Submissions still open — starts ${esc(fmtDate(b.deadline))}`;
+        banner.innerHTML = `Vẫn đang nhận bài · bắt đầu lúc ${esc(fmtDate(b.deadline))}`;
       } else if (b.error) {
-        banner.innerHTML = `😵 Something broke: ${esc(b.error)}`;
+        banner.innerHTML = `😵 Có lỗi xảy ra: ${esc(b.error)}`;
       } else if (b.entries === null) {
-        banner.innerHTML = '⏳ Collecting the last bots…';
+        banner.innerHTML = '⏳ Đang thu thập những bot cuối cùng…';
       } else if (b.status === 'finished') {
-        banner.innerHTML = b.champion ? `It's over! ${b.round ? `${b.round.number} round${b.round.number > 1 ? 's' : ''} of chaos.` : ''}` : (b.entries ? '' : 'Nobody showed up. 🦗');
+        banner.innerHTML = b.champion ? `Kết thúc! ${b.round ? `${b.round.number} vòng hỗn loạn.` : ''}` : (b.entries ? '' : 'Chẳng ai tham gia. 🦗');
       } else if (!b.round) {
-        banner.innerHTML = `🥁 ${b.entries} teams entering the arena…`;
+        banner.innerHTML = `🥁 ${b.entries} đội đang tiến vào đấu trường…`;
       } else {
         const r = b.round;
-        const what = r.isFinal ? '🔥 THE FINAL 🔥' : `Round ${r.number}`;
+        const what = r.isFinal ? '🔥 CHUNG KẾT 🔥' : `Vòng ${r.number}`;
         if (r.status === 'done') {
-          banner.innerHTML = `${what} is over! ${r.eliminating ? `${r.eliminating} team${r.eliminating > 1 ? 's' : ''} got the boot 👢` : ''}`;
-          sub.textContent = r.isFinal ? '' : 'Next round starting in a moment…';
+          banner.innerHTML = `${what} đã kết thúc! ${r.eliminating ? `${r.eliminating} đội bị loại 👢` : ''}`;
+          sub.textContent = r.isFinal ? '' : 'Vòng tiếp theo sắp bắt đầu…';
         } else {
-          banner.innerHTML = `${what} · ${r.teams} teams left`;
-          sub.textContent = r.isFinal ? 'Winner takes it all.' : `the bottom ${r.eliminating} will be eliminated after this round`;
+          banner.innerHTML = `${what} · còn ${r.teams} đội`;
+          sub.textContent = r.isFinal ? 'Người thắng lấy tất cả.' : `${r.eliminating} đội cuối bảng sẽ bị loại sau vòng này`;
           prog.classList.remove('hidden');
           prog.firstElementChild.style.width = (r.totalMatches ? (100 * r.played) / r.totalMatches : 0) + '%';
-          sub.textContent += ` · ${r.played}/${r.totalMatches} matches played`;
+          sub.textContent += ` · đã đấu ${r.played}/${r.totalMatches} trận`;
         }
       }
 
       const champ = $('#champ');
       if (b.champion) {
         champ.classList.remove('hidden');
-        champ.innerHTML = `${avatarSvg(b.champion.avatar, 120, { mouth: 'smile' })}<br><span class="big">🏆 ${esc(b.champion.teamName)} 🏆</span><div class="muted">champion of ${esc(b.name)}</div>`;
+        champ.innerHTML = `${avatarSvg(b.champion.avatar, 120, { mouth: 'smile' })}<br><span class="big">🏆 ${esc(b.champion.teamName)} 🏆</span><div class="muted">vô địch ${esc(b.name)}</div>`;
         if (wasFinished === false) confetti();
       } else champ.classList.add('hidden');
       wasFinished = b.status === 'finished';
@@ -101,13 +156,13 @@
         const cls = [row.status, danger ? 'danger' : '', ME && row.userId === ME.id ? 'me' : '', prevPoints[row.userId] !== undefined && prevPoints[row.userId] !== row.total ? 'flash' : ''].join(' ');
         return `<tr class="${cls}" data-id="${row.userId}">
           <td class="rank">${statusCell(row)}</td>
-          <td><div class="team">${avatarSvg(row.avatar, 40, { mouth: row.status === 'eliminated' ? 'frown' : row.status === 'champion' ? 'smile' : undefined })}<span class="n">${esc(row.teamName)}</span>${ME && row.userId === ME.id ? '<span class="muted" style="font-size:16px">← you!</span>' : ''}${danger ? ' <span title="danger zone">😬</span>' : ''}</div></td>
+          <td><div class="team">${avatarSvg(row.avatar, 40, { mouth: row.status === 'eliminated' ? 'frown' : row.status === 'champion' ? 'smile' : undefined })}<span class="n">${esc(row.teamName)}</span>${ME && row.userId === ME.id ? '<span class="muted" style="font-size:16px">← bạn!</span>' : ''}${danger ? ' <span title="vùng nguy hiểm">😬</span>' : ''}</div></td>
           <td class="hide-sm">${LANG_LABEL[row.language] || ''}</td>
           <td class="pts">${row.points}</td>
           <td class="hide-sm">${row.w} · ${row.d} · ${row.l}</td>
           <td class="hide-sm">${row.total}</td>
         </tr>`;
-      }).join('') || '<tr><td colspan="6" class="center muted">no teams (yet)</td></tr>';
+      }).join('') || '<tr><td colspan="6" class="center muted">chưa có đội nào</td></tr>';
       b.rows.forEach(row => { prevPoints[row.userId] = row.total; });
       $$('tr', tbody).forEach(tr => {
         const old = before[tr.dataset.id];
@@ -134,21 +189,21 @@
       for (const m of matches) (byRound[m.round] = byRound[m.round] || []).push(m);
       const rounds = Object.keys(byRound).map(Number).sort((a, b) => b - a);
       $('#feed').innerHTML = rounds.map(n => `
-        <h3>Round ${n}</h3>
+        <h3>Vòng ${n}</h3>
         <div class="feed">${byRound[n].slice().reverse().map(m => `
           <a href="/tournament/${encodeURIComponent(tid)}/match?name=${encodeURIComponent(m.name)}">
             <span>${m.winner === 'A' ? '<span class="win">👑</span> ' : ''}${esc(m.teamA)} <span class="muted">vs</span> ${esc(m.teamB)}${m.winner === 'B' ? ' <span class="win">👑</span>' : ''}</span>
             <span class="score">${m.scoreA} – ${m.scoreB} ▶</span>
-          </a>`).join('')}</div>`).join('') || '<p class="muted">No matches yet.</p>';
+          </a>`).join('')}</div>`).join('') || '<p class="muted">Chưa có trận nào.</p>';
     }
     async function loadMatches() {
-      if (!canSeeMatches) return;
+      if (!canSeeMatches || (lastBoard && lastBoard.mode === 'campaign')) return;
       try {
         const data = await api(`/api/tournaments/${encodeURIComponent(tid)}/matches`);
         matches.length = 0;
         matches.push(...data.matches);
         $('#matches').classList.remove('hidden');
-        $('#matchesTitle').textContent = ME.role === 'judge' && lastBoard && lastBoard.status !== 'finished' ? 'Match feed (judge eyes only 🎩)' : 'Replays';
+        $('#matchesTitle').textContent = ME.role === 'judge' && lastBoard && lastBoard.status !== 'finished' ? 'Diễn biến các trận (chỉ trọng tài xem được 🎩)' : 'Xem lại các trận';
         renderFeed();
       } catch {}
     }
@@ -161,7 +216,12 @@
       loadMatches();
       socket.emit('watch', tid);
       socket.on('connect', () => socket.emit('watch', tid));
-      socket.on('leaderboard', b => { if (b.id === tid) renderBoard(b); });
+      socket.on('leaderboard', b => {
+        if (b.id !== tid) return;
+        renderBoard(b);
+        // keep an open campaign breakdown fresh too
+        if (b.mode === 'campaign' && cstate.openUser) openCampaignRow(cstate.openUser);
+      });
       socket.on('match:done', m => {
         if (m.tournamentId !== tid || !canSeeMatches) return;
         matches.push(m);
