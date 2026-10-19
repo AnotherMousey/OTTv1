@@ -1,3 +1,4 @@
+const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const express = require('express');
@@ -60,7 +61,14 @@ function pageAuth(req, res, next) {
   if (!req.user) return res.redirect('/login');
   next();
 }
-const view = name => (req, res) => res.sendFile(path.join(VIEWS, name));
+// Every restart gets a new asset version, appended to the page's CSS/JS links, so browsers
+// and proxies (e.g. Cloudflare) never serve a stale stylesheet or script after an update.
+const ASSET_VERSION = Date.now().toString(36);
+const view = name => (req, res) => {
+  const html = fs.readFileSync(path.join(VIEWS, name), 'utf8')
+    .replace(/(href|src)="(\/(?:css|js)\/[^"?]+)"/g, `$1="$2?v=${ASSET_VERSION}"`);
+  res.set('Cache-Control', 'no-cache').type('html').send(html);
+};
 const fail = (res, code, error) => res.status(code).json({ error });
 
 function publicTournament(t, user) {
@@ -96,7 +104,7 @@ function publicSubmission(s, withCode = false) {
 const canSeeMatches = (t, user) => isJudge(user) || t.status === 'finished';
 
 // ---------- pages ----------
-app.get('/login', (req, res) => (currentUser(req) ? res.redirect('/') : res.sendFile(path.join(VIEWS, 'login.html'))));
+app.get('/login', (req, res) => (currentUser(req) ? res.redirect('/') : view('login.html')(req, res)));
 app.get('/', pageAuth, view('index.html'));
 app.get('/tournament/:id/submit', pageAuth, view('submit.html'));
 app.get('/tournament/:id/live', pageAuth, view('live.html'));
@@ -124,7 +132,7 @@ const signupsByIp = new Map(); // ip -> timestamps of recent sign-ups
 // Players at one venue often share an IP, so keep this generous (SIGNUP_LIMIT per hour per IP).
 const SIGNUP_LIMIT = +process.env.SIGNUP_LIMIT || 30, SIGNUP_WINDOW_MS = 60 * 60 * 1000;
 
-app.get('/register', (req, res) => (currentUser(req) ? res.redirect('/') : res.sendFile(path.join(VIEWS, 'register.html'))));
+app.get('/register', (req, res) => (currentUser(req) ? res.redirect('/') : view('register.html')(req, res)));
 app.get('/api/register', (req, res) => res.json({ open: registrationOpen() }));
 app.post('/api/register', (req, res) => {
   if (!registrationOpen()) return fail(res, 403, 'Đang đóng đăng ký. Hãy xin trọng tài cấp tài khoản.');
