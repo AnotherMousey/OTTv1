@@ -53,16 +53,18 @@ const running = new Map();
 function evaluate(sub, ensureBuilt) {
   if (running.has(sub.id)) return running.get(sub.id).promise;
   supersede(sub);
+  // Campaign submissions aimed at one sparring bot only fight that bot.
+  const opponents = isCampaign(sub) && sub.target ? HOUSE_BOTS.filter(h => h.id === sub.target) : HOUSE_BOTS;
   sub.practice = {
     status: 'running',
     total: 0,
     startedAt: new Date().toISOString(),
-    results: HOUSE_BOTS.map(h => ({ bot: h.id, name: h.name, status: 'queued' })),
+    results: opponents.map(h => ({ bot: h.id, name: h.name, status: 'queued' })),
   };
   db.save();
   listener(sub);
 
-  const promise = Promise.all(HOUSE_BOTS.map((house, i) => withSlot(async () => {
+  const promise = Promise.all(opponents.map((house, i) => withSlot(async () => {
     const slot = sub.practice.results[i];
     if (sub.practice.cancelled || !canEvaluate(sub)) { slot.status = 'skipped'; return; }
     slot.status = 'playing';

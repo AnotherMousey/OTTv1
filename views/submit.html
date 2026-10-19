@@ -36,6 +36,10 @@
 
     <div class="submit-grid">
       <section>
+        <div id="picker" class="hidden" style="margin-bottom:16px">
+          <h3 style="margin:0 0 8px">Chọn đối thủ 🎯</h3>
+          <div class="picker" id="pickerBots"></div>
+        </div>
         <div class="row" style="justify-content:space-between">
           <div class="lang-tabs" id="langs"></div>
           <div class="row">
@@ -146,8 +150,8 @@ public class Bot {
     function rulesFor(mode) {
       if (mode === 'campaign') {
         return `<ul>${COMMON_RULES}
-        <li><b>Chế độ chiến dịch:</b> mỗi bot ✅ đấu với từng bot trong 10 bot đấu tập, tối đa <b>5 ván</b> (mỗi ván 100 lượt). Để <b>hạ</b> một bot đấu tập, bạn phải <b>thắng cả 5 ván</b> (nhiều điểm hơn nó trong mỗi ván). Chỉ cần thua hoặc hòa một ván là bài nộp đó không hạ được bot này, và các ván còn lại bị bỏ qua.</li>
-        <li>Nộp bao nhiêu bot cũng được. <b>Mọi bài nộp đều được tính:</b> hạ mỗi bot đấu tập bằng ít nhất một bài nộp là hoàn thành chiến dịch.</li>
+        <li><b>Chế độ chiến dịch:</b> mỗi bài nộp <b>chọn một</b> trong 10 bot đấu tập làm đối thủ và đấu với nó tối đa <b>5 ván</b> (mỗi ván 100 lượt). Để <b>hạ</b> bot đó, bạn phải <b>thắng cả 5 ván</b> (nhiều điểm hơn nó trong mỗi ván). Chỉ cần thua hoặc hòa một ván là bài nộp đó thất bại, và các ván còn lại bị bỏ qua.</li>
+        <li>Nộp bao nhiêu bài cũng được, mỗi bài cho một đối thủ, theo thứ tự tùy ý. Hạ đủ cả 10 bot đấu tập là hoàn thành chiến dịch.</li>
         <li>Thời điểm về đích là lúc bạn <b>nộp</b> bot hạ được bot đấu tập cuối cùng còn lại. Ai về đích sớm nhất xếp đầu; các đội chưa về đích xếp theo số bot đã hạ.</li>
         <li><b>Điểm phạt (PEN):</b> mỗi bài nộp trước khi về đích tính <b>20</b> điểm phạt (kể cả bài bị lỗi). Khi về đích, PEN được cộng thêm <b>số phút</b> từ lúc giải mở đến lúc bạn nộp bài về đích. Bài về đích và các bài nộp sau đó không bị phạt.</li>
         <li>Trên bảng chiến dịch, ô thứ <i>i</i> sáng lên khi bot đấu tập thứ <i>i</i> bị hạ, nên mọi người đều thấy bạn đã hạ những bot nào. Code và kết quả từng ván của bạn thì chỉ mình bạn xem được.</li>
@@ -162,6 +166,9 @@ public class Bot {
     const tid = tournamentIdFromPath();
     let lang = localStorage.getItem('rr-lang') || 'python';
     let tournament = null;
+    let bots = [];        // sparring bots [{ id, name }]
+    let target = null;    // campaign: which sparring bot the next submission fights
+    const botName = id => (bots.find(b => b.id === id) || {}).name || id;
     const drafts = {};
 
     function draftKey(l) { return `rr-draft-${tid}-${l}`; }
@@ -185,7 +192,7 @@ public class Bot {
       $('#subs').innerHTML = subs.map(s => `
         <div class="sub ${s.id === activeId ? 'active' : ''}">
           <div class="row" style="justify-content:space-between">
-            <b>${campaignMode ? `#${subs.length - subs.indexOf(s)} · ` : ''}${LANG_LABEL[s.language]}</b><span class="tag ${s.status}">${icon[s.status]}</span>
+            <b>${campaignMode ? `#${subs.length - subs.indexOf(s)} · ` : ''}${LANG_LABEL[s.language]}${s.target ? ` <span style="font-weight:400">vs ${esc(botName(s.target))}</span>` : ''}</b><span class="tag ${s.status}">${icon[s.status]}</span>
           </div>
           <div class="muted" style="font-size:15px">${esc(fmtDate(s.createdAt))}${s.id === activeId ? ' · <b style="color:var(--green)">bài này đang được dùng</b>' : ''}</div>
           ${s.message ? `<pre class="msg">${esc(s.message)}</pre>` : ''}
@@ -204,6 +211,7 @@ public class Bot {
       const data = await api(`/api/tournaments/${encodeURIComponent(tid)}`);
       const firstLoad = !tournament;
       tournament = data.tournament;
+      bots = data.bots || [];
       if (firstLoad) setupMode();
       $('#tname').textContent = tournament.name;
       $('#tdesc').textContent = tournament.description;
@@ -237,7 +245,25 @@ public class Bot {
       if (practiceData.mode === 'campaign') renderCampaign();
       else renderPractice();
     }
+    // Campaign: pick the sparring bot your next submission will fight.
+    function renderPicker() {
+      if (!tournament || tournament.mode !== 'campaign' || !bots.length) return;
+      $('#picker').classList.remove('hidden');
+      const det = practiceData && practiceData.details && practiceData.details.userId === ME.id ? practiceData.details : null;
+      const st = id => (det && det.bots.find(b => b.bot === id)) || {};
+      if (!target) target = (bots.find(b => !st(b.id).beaten) || bots[0]).id;
+      $('#pickerBots').innerHTML = bots.map((b, i) => {
+        const s = st(b.id);
+        const note = s.beaten ? '✓ đã hạ' : s.inProgress ? '🥊 đang đấu…' : s.best && s.best.games ? `tốt nhất: thắng ${s.best.wins}/5` : 'chưa đấu';
+        return `<button class="pick ${b.id === target ? 'on' : ''} ${s.beaten ? 'beaten' : ''}" data-id="${b.id}">
+          <span class="pnum">${i + 1}</span><span class="pname">${esc(b.name)}</span><span class="pnote">${note}</span></button>`;
+      }).join('');
+      $$('#pickerBots .pick').forEach(el => el.onclick = () => { target = el.dataset.id; renderPicker(); });
+      $('#submit').textContent = `Nộp bot đấu với ${botName(target)} 🚀`;
+    }
+
     function renderCampaign() {
+      renderPicker();
       const d = practiceData;
       $('#practice').classList.remove('hidden');
       renderCampaignTable($('#prows'), d.board, { openUser, details: d.details }, user => {
@@ -341,9 +367,15 @@ public class Bot {
       e.target.value = '';
     });
     $('#submit').onclick = async () => {
+      const campaignMode = tournament && tournament.mode === 'campaign';
+      if (campaignMode) {
+        const det = practiceData && practiceData.details;
+        const already = det && det.userId === ME.id && (det.bots.find(b => b.bot === target) || {}).beaten;
+        if (already && !confirm(`Bạn đã hạ ${botName(target)} rồi. Vẫn nộp bài đấu với bot này?`)) return;
+      }
       $('#submit').disabled = true;
       try {
-        await api(`/api/tournaments/${encodeURIComponent(tid)}/submissions`, { method: 'POST', body: { language: lang, code: $('#code').value } });
+        await api(`/api/tournaments/${encodeURIComponent(tid)}/submissions`, { method: 'POST', body: { language: lang, code: $('#code').value, ...(campaignMode ? { target } : {}) } });
         toast('Đã nhận bot! Đang biên dịch… 🔧');
         await load();
         refreshPractice();

@@ -68,7 +68,7 @@ The judge picks a mode when creating a tournament (older tournaments without one
 2. Players press **Submit code**, pick a language and paste or upload their bot. Each submission
    is compiled and given a 5-turn test run. The newest ✅ submission is the one that plays.
    Every ✅ bot also plays a practice game (100 turns) against each of 10 built-in sparring bots
-   ([server/grader/house.js](server/grader/house.js)): Nhất Chiêu Đoạt Mệnh (one fixed move), Luân Hồi (R→P→S cycle),
+   ([server/grader/house.js](server/grader/house.js)): Kiên Định (one fixed move), Luân Hồi (R→P→S cycle),
    Vô Chiêu (random), Tâm Ma (copies you), Tùy Duyên (win-stay/lose-shift), Liệu Địch (frequency analysis),
    Thức Thời (decay/window), Thiên Cơ (Markov chain), Mưu Lược (n-gram) and Minh Triết (Bayesian inference).
    The submit page shows a practice board with every team's total (max 3000). Only you (and the judge)

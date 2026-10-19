@@ -88,7 +88,7 @@ function publicTournament(t, user) {
   };
 }
 function publicSubmission(s, withCode = false) {
-  const out = { id: s.id, tournamentId: s.tournamentId, language: s.language, status: s.status, message: s.message || '', createdAt: s.createdAt };
+  const out = { id: s.id, tournamentId: s.tournamentId, language: s.language, target: s.target || null, status: s.status, message: s.message || '', createdAt: s.createdAt };
   if (withCode) out.code = s.code;
   return out;
 }
@@ -176,7 +176,13 @@ app.get('/api/tournaments/:id', apiAuth, (req, res) => {
     .filter(s => s.tournamentId === t.id && s.userId === req.user.id)
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
     .map(s => publicSubmission(s, true));
-  res.json({ tournament: publicTournament(t, req.user), submissions: mine, languages: grader.LANGS, serverNow: Date.now() });
+  res.json({
+    tournament: publicTournament(t, req.user),
+    submissions: mine,
+    languages: grader.LANGS,
+    bots: grader.practice.HOUSE_BOTS.map(h => ({ id: h.id, name: h.name })),
+    serverNow: Date.now(),
+  });
 });
 
 app.post('/api/tournaments/:id/submissions', apiAuth, (req, res) => {
@@ -184,13 +190,17 @@ app.post('/api/tournaments/:id/submissions', apiAuth, (req, res) => {
   if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
   if (isJudge(req.user)) return fail(res, 403, 'Trọng tài chỉ chấm, không thi đấu. (Hãy đăng nhập bằng tài khoản người chơi để nộp bài.)');
   if (t.status !== 'open' || Date.parse(t.deadline) <= Date.now()) return fail(res, 400, 'Muộn rồi! Giải này đã hết hạn nộp bài.');
-  const { language, code } = req.body || {};
+  if (t.startsAt && Date.parse(t.startsAt) > Date.now()) return fail(res, 400, 'Giải chưa bắt đầu, hãy đợi đến giờ mở cửa nhé.');
+  const { language, code, target } = req.body || {};
   if (!grader.LANGS[language]) return fail(res, 400, 'Hãy chọn ngôn ngữ: cpp, java hoặc python');
+  // Campaign: each submission is aimed at one sparring bot.
+  const isCampaign = t.mode === 'campaign';
+  if (isCampaign && !grader.practice.HOUSE_BOTS.some(h => h.id === target)) return fail(res, 400, 'Hãy chọn bot đấu tập mà bài nộp này sẽ đấu');
   if (typeof code !== 'string' || !code.trim()) return fail(res, 400, 'Code của bạn đang trống');
   if (code.length > MAX_CODE_LENGTH) return fail(res, 400, `Code quá dài (tối đa ${MAX_CODE_LENGTH} ký tự)`);
   const busy = db.data.submissions.some(s => s.tournamentId === t.id && s.userId === req.user.id && s.status === 'pending');
   if (busy) return fail(res, 429, 'Bài nộp trước của bạn vẫn đang được kiểm tra, đợi chút nhé');
-  const sub = { id: db.id(), tournamentId: t.id, userId: req.user.id, language, code, status: 'pending', message: '', createdAt: new Date().toISOString() };
+  const sub = { id: db.id(), tournamentId: t.id, userId: req.user.id, language, code, ...(isCampaign ? { target } : {}), status: 'pending', message: '', createdAt: new Date().toISOString() };
   db.data.submissions.push(sub);
   db.save();
   grader.validate(sub);
@@ -247,7 +257,8 @@ app.get('/api/tournaments/:id/practice', apiAuth, (req, res) => {
         status: s.practice ? s.practice.status : 'queued',
         total: s.practice ? s.practice.total : 0,
         results: (s.practice ? s.practice.results : grader.practice.HOUSE_BOTS.map(h => ({ bot: h.id, name: h.name, status: 'queued' })))
-          .map(({ bot, name, status, score, botScore, winner, issue }) => ({ bot, name, status, score, botScore, winner, issue })),
+          // names come from the current bot list, so renamed bots show their new name on old results
+          .map(({ bot, name, status, score, botScore, winner, issue }) => ({ bot, name: (grader.practice.HOUSE_BOTS.find(h => h.id === bot) || { name }).name, status, score, botScore, winner, issue })),
       };
     }
   } else if (req.query.user) {

@@ -100,7 +100,7 @@
       panel.classList.remove('hidden');
       panel.innerHTML = `<div class="box"><div class="row" style="justify-content:space-between"><h3 style="margin:0">Các bot của ${esc(name)}</h3><button class="btn small" id="closeSubs">đóng</button></div>
         <table class="plain"><thead><tr><th>đội</th><th>ngôn ngữ</th><th>trạng thái</th><th>lúc</th><th></th></tr></thead><tbody>
-        ${submissions.slice().reverse().map(s => `<tr><td>${esc(s.teamName)}</td><td>${LANG_LABEL[s.language]}</td><td><span class="tag ${s.status}">${STATUS_VI[s.status] || s.status}</span></td><td>${esc(fmtDate(s.createdAt))}</td>
+        ${submissions.slice().reverse().map(s => `<tr><td>${esc(s.teamName)}</td><td>${LANG_LABEL[s.language]}${s.target ? ` · vs ${esc(s.target)}` : ''}</td><td><span class="tag ${s.status}">${STATUS_VI[s.status] || s.status}</span></td><td>${esc(fmtDate(s.createdAt))}</td>
           <td><details><summary style="cursor:pointer">xem code</summary><pre class="msg">${esc(s.code)}</pre>${s.message ? `<pre class="msg">${esc(s.message)}</pre>` : ''}</details></td></tr>`).join('') || '<tr><td colspan="5" class="muted">chưa có bot nào</td></tr>'}
         </tbody></table></div>`;
       $('#closeSubs').onclick = () => panel.classList.add('hidden');

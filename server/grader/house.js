@@ -36,7 +36,7 @@ function normalizeDist(counts) {
 const HOUSE_BOTS = [
   {
     id: 'nhat-chieu-doat-menh',
-    name: 'Nhất Chiêu Đoạt Mệnh',
+    name: 'Kiên Định',
     desc: 'Picks one move (rock, paper or scissors) and plays it all game.',
     create() {
       const fixed = rnd();

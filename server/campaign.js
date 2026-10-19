@@ -11,14 +11,14 @@ const TOTAL = HOUSE_BOTS.length;
 const PEN_PER_SUBMISSION = 20;
 
 // Penalty (PEN), ICPC-style: 20 for every submission made before the one that finished
-// the campaign, plus the minutes from the start of the tournament to the finishing
+// the campaign, plus the minutes from the tournament's start (startsAt, else createdAt) to the finishing
 // submission. Submissions after finishing are free. Unfinished: 20 per submission so far.
 function penaltyOf(t, p) {
   if (!p.finishedAt) {
     return { pen: PEN_PER_SUBMISSION * p.subs.length, extraSubs: p.subs.length, minutes: null };
   }
   const finishing = Math.max(...Object.values(p.beaten).map(b => b.number)); // submission # that completed the set
-  const minutes = Math.max(0, Math.floor((Date.parse(p.finishedAt) - Date.parse(t.createdAt)) / 60000));
+  const minutes = Math.max(0, Math.floor((Date.parse(p.finishedAt) - Date.parse(t.startsAt || t.createdAt)) / 60000));
   return { pen: PEN_PER_SUBMISSION * (finishing - 1) + minutes, extraSubs: finishing - 1, minutes };
 }
 
@@ -108,7 +108,7 @@ function board(t) {
     mode: 'campaign',
     status: t.status,
     deadline: t.deadline,
-    startedAt: t.createdAt,
+    startedAt: t.startsAt || t.createdAt,
     total: TOTAL,
     bots: HOUSE_BOTS.map(h => h.name),
     finishers: rows.filter(r => r.finishedAt).length,
