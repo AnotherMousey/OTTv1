@@ -1,36 +1,146 @@
-// The 10 built-in sparring bots used for practice evaluations.
+// The 10 built-in sparring bots, from easiest to hardest.
 // Each entry has create() -> brain(myMoves, oppMoves) -> 'R' | 'P' | 'S'.
-// Histories are strings, oldest first; the opponent's history may contain 'X'
-// (a forfeited turn), which every bot treats as "no information".
+// Histories are strings, oldest first ("my" = the bot's own moves); the opponent's
+// history may contain 'X' (a forfeited turn).
+//
+// Bots 1–5 follow their rules exactly (one move, a fixed cycle, random, copycat,
+// win-stay/lose-shift). Bots 6–9 predict you with their own algorithm (frequency,
+// decay/window, Markov chain, n-gram) and then "second-guess" how to use that
+// prediction: counter it directly, or assume you anticipated that, and so on, by
+// whichever has been winning lately. Bot 10 does Bayesian inference over many theories
+// of how you play (including "you are second-guessing me") and best-responds.
 const MOVES = ['R', 'P', 'S'];
-const COUNTER = { R: 'P', P: 'S', S: 'R' }; // move -> the move that beats it
-const BEATS = { R: 'S', P: 'R', S: 'P' };   // move -> the move it beats
+const BEAT = { R: 'P', P: 'S', S: 'R' }; // move -> the move that beats it
+const LOSE = { R: 'S', P: 'R', S: 'P' }; // move -> the move it beats
 
 const rnd = () => MOVES[Math.floor(Math.random() * 3)];
-const valid = m => m === 'R' || m === 'P' || m === 'S';
+const clean = s => s.replace(/[^RPS]/g, 'R');
+const shift = (m, k) => MOVES[(MOVES.indexOf(m) + k) % 3];
 
-// Pick the key with the highest weight, breaking ties at random.
-function argmax(weights) {
-  let best = -Infinity, picks = [];
-  for (const m of MOVES) {
-    const w = weights[m] || 0;
-    if (w > best + 1e-12) { best = w; picks = [m]; } else if (Math.abs(w - best) <= 1e-12) picks.push(m);
+function mostCommon(seq) {
+  const c = { R: 0, P: 0, S: 0 };
+  for (const m of seq) c[m]++;
+  const best = Math.max(c.R, c.P, c.S);
+  const ties = MOVES.filter(m => c[m] === best);
+  return ties[Math.floor(Math.random() * ties.length)];
+}
+
+// ---------- predictors: (my, opp) -> predicted next move of `opp`, or null ----------
+const P = {
+  last: () => (my, opp) => opp[opp.length - 1] || null,
+  freq: (window = Infinity) => (my, opp) => (opp.length ? mostCommon(opp.slice(-window)) : null),
+  decay: (rate, window) => (my, opp) => {
+    if (!opp.length) return null;
+    const w = { R: 0, P: 0, S: 0 };
+    let k = 1;
+    for (let i = opp.length - 1; i >= Math.max(0, opp.length - window); i--) { w[opp[i]] += k; k *= rate; }
+    return MOVES.reduce((a, b) => (w[b] > w[a] ? b : a));
+  },
+  // what opp did right after the last time `seq` ended the same way (most recent match)
+  ngram: (which, len) => (my, opp) => {
+    const n = opp.length;
+    if (n <= len) return null;
+    const seq = which === 'opp' ? opp : which === 'my' ? my : null;
+    const tok = i => (seq ? seq[i] : my[i] + opp[i]);
+    outer: for (let end = n - 1; end >= len; end--) {
+      for (let k = 1; k <= len; k++) if (tok(end - k) !== tok(n - k)) continue outer;
+      return opp[end];
+    }
+    return null;
+  },
+  // first-order Markov chain on opp's own moves / on the joint (my, opp) pair
+  markov: joint => (my, opp) => {
+    const n = opp.length;
+    if (n < 2) return null;
+    const key = i => (joint ? my[i] + opp[i] : opp[i]);
+    const c = { R: 0, P: 0, S: 0 };
+    let seen = 0;
+    for (let i = 0; i < n - 1; i++) if (key(i) === key(n - 1)) { c[opp[i + 1]] += 1 + i / n; seen++; }
+    return seen ? MOVES.reduce((a, b) => (c[b] > c[a] ? b : a)) : null;
+  },
+};
+
+// ---------- the meta layer ----------
+// For every predictor we build 6 candidate moves:
+//   a) predictor applied to the opponent -> counter it, plus the 2 "rotations"
+//      (opponent anticipated that, opponent anticipated our anticipation, ...)
+//   b) predictor applied to OURSELVES (what would the opponent predict about us?) -> the
+//      opponent will counter that, so we counter their counter, plus rotations.
+// Each candidate's recent record is scored with decay; we play the best one.
+// The only randomness: with probability `noise` a bot plays a random move instead.
+function metaBrain(predictors, { decay = 0.9, noise = 0.05, randomWhenLosing = false, mirror = true, rotations = 3 } = {}) {
+  let scores = null, lastCands = null, seen = 0;
+  return (myRaw, oppRaw) => {
+    const my = clean(myRaw), opp = clean(oppRaw);
+    // score last turn's candidates against what the opponent actually played
+    if (lastCands && opp.length > seen) {
+      const actual = opp[opp.length - 1];
+      lastCands.forEach((c, i) => {
+        scores[i] *= decay;
+        if (c === BEAT[actual]) scores[i] += 1; else if (c === LOSE[actual]) scores[i] -= 1;
+      });
+    }
+    seen = opp.length;
+    const cands = [];
+    for (const p of predictors) {
+      const them = p(my, opp) || rnd();
+      for (let k = 0; k < rotations; k++) cands.push(shift(BEAT[them], k));
+      if (mirror) {
+        const me = p(opp, my) || rnd();                // what the opponent would predict about us
+        for (let k = 0; k < rotations; k++) cands.push(shift(BEAT[BEAT[me]], k));
+      }
+    }
+    if (!scores) scores = new Array(cands.length).fill(0);
+    lastCands = cands;
+    if (!opp.length || Math.random() < noise) return rnd();
+    let best = 0;
+    for (let i = 1; i < cands.length; i++) if (scores[i] > scores[best]) best = i;
+    if (randomWhenLosing && scores[best] <= 0.5) return rnd(); // being out-thought: go unpredictable
+    return cands[best];
+  };
+}
+
+// Bayesian inference: every theory predicts the opponent's next move (or null = "no idea",
+// i.e. uniform). A theory that predicted move m gives the actual move probability 1-eps if it
+// was m, eps/2 otherwise. Posterior ∝ prior × likelihood, with old evidence slowly forgotten.
+// We then play the best response (win 3, draw 1) to the posterior-predictive distribution.
+function bayesBrain(theories, { forget = 0.9, eps = 0.15, noise = 0.05 } = {}) {
+  let logw = null, lastPreds = null, seen = 0;
+  return (myRaw, oppRaw) => {
+    const my = clean(myRaw), opp = clean(oppRaw);
+    if (lastPreds && opp.length > seen) {
+      const actual = opp[opp.length - 1];
+      lastPreds.forEach((p, i) => {
+        const lik = p === null ? 1 / 3 : p === actual ? 1 - eps : eps / 2;
+        logw[i] = forget * logw[i] + Math.log(lik);
+      });
+    }
+    seen = opp.length;
+    const preds = theories.map(t => t(my, opp));
+    if (!logw) logw = new Array(preds.length).fill(0);
+    lastPreds = preds;
+    if (!opp.length || Math.random() < noise) return rnd();
+    const top = Math.max(...logw);
+    const dist = { R: 0, P: 0, S: 0 };
+    preds.forEach((p, i) => {
+      const w = Math.exp(logw[i] - top);
+      for (const m of MOVES) dist[m] += w * (p === null ? 1 / 3 : p === m ? 1 - eps : eps / 2);
+    });
+    const ev = m => 3 * dist[LOSE[m]] + dist[m];
+    return MOVES.reduce((a, b) => (ev(b) > ev(a) ? b : a));
+  };
+}
+
+// Theories for the Bayesian bot: for each predictor, "you play what it predicts", "you play
+// what beats that", "you play what beats *that*", plus the same three built from what YOU
+// would predict about ME (i.e. you are countering my habits). And one "you are random" theory.
+function theoriesFrom(predictors) {
+  const out = [() => null];
+  for (const p of predictors) {
+    for (let k = 0; k < 3; k++) out.push((my, opp) => { const x = p(my, opp); return x ? shift(x, k) : null; });
+    for (let k = 0; k < 3; k++) out.push((my, opp) => { const me = p(opp, my); return me ? shift(BEAT[me], k) : null; });
   }
-  return picks[Math.floor(Math.random() * picks.length)];
-}
-
-// Given a probability distribution over the opponent's next move, play the
-// move with the best expected score (win 3, draw 1, lose 0).
-function bestResponse(dist) {
-  const ev = {};
-  for (const m of MOVES) ev[m] = 3 * (dist[BEATS[m]] || 0) + 1 * (dist[m] || 0);
-  return argmax(ev);
-}
-
-function normalizeDist(counts) {
-  const total = MOVES.reduce((s, m) => s + (counts[m] || 0), 0);
-  if (!total) return null;
-  return Object.fromEntries(MOVES.map(m => [m, (counts[m] || 0) / total]));
+  return out;
 }
 
 const HOUSE_BOTS = [
@@ -62,11 +172,11 @@ const HOUSE_BOTS = [
   {
     id: 'tam-ma',
     name: 'Tâm Ma',
-    desc: "Copies your previous move. First move is random.",
+    desc: 'Copies your previous move. First move is random.',
     create() {
       return (my, opp) => {
         const last = opp[opp.length - 1];
-        return valid(last) ? last : rnd();
+        return last === 'R' || last === 'P' || last === 'S' ? last : rnd();
       };
     },
   },
@@ -78,7 +188,7 @@ const HOUSE_BOTS = [
       return (my, opp) => {
         const mine = my[my.length - 1], theirs = opp[opp.length - 1];
         if (!mine) return rnd();
-        const won = !valid(theirs) || BEATS[mine] === theirs;
+        const won = !'RPS'.includes(theirs) || LOSE[mine] === theirs;
         if (won) return mine;
         const others = MOVES.filter(m => m !== mine);
         return others[Math.floor(Math.random() * 2)];
@@ -88,121 +198,46 @@ const HOUSE_BOTS = [
   {
     id: 'lieu-dich',
     name: 'Liệu Địch',
-    desc: 'Frequency analysis: counts all your moves and counters your favourite.',
+    desc: 'Frequency analysis (whole game and last 12 turns) with a second-guessing layer.',
     create() {
-      return (my, opp) => {
-        const counts = {};
-        for (const m of opp) if (valid(m)) counts[m] = (counts[m] || 0) + 1;
-        const dist = normalizeDist(counts);
-        return dist ? bestResponse(dist) : rnd();
-      };
+      return metaBrain([P.freq(), P.freq(12)], { decay: 0.85, noise: 0.05 });
     },
   },
   {
     id: 'thuc-thoi',
     name: 'Thức Thời',
-    desc: 'Decay/window: looks at your last 20 moves, weighting recent ones more (decay 0.85), and counters the favourite.',
+    desc: 'Decay/window frequencies (fast and slow) with a second-guessing layer.',
     create() {
-      const WINDOW = 20, DECAY = 0.85;
-      return (my, opp) => {
-        const weights = {};
-        let w = 1;
-        for (let k = opp.length - 1; k >= Math.max(0, opp.length - WINDOW); k--) {
-          if (valid(opp[k])) weights[opp[k]] = (weights[opp[k]] || 0) + w;
-          w *= DECAY;
-        }
-        const dist = normalizeDist(weights);
-        return dist ? bestResponse(dist) : rnd();
-      };
+      return metaBrain([P.decay(0.85, 20), P.decay(0.6, 8)], { decay: 0.85, noise: 0.05, mirror: false });
     },
   },
   {
     id: 'thien-co',
     name: 'Thiên Cơ',
-    desc: 'Markov chain: learns what you play after each of your moves, predicts your next one and counters it.',
+    desc: 'Markov chains on your moves and on both players\' moves, with a second-guessing layer.',
     create() {
-      return (my, opp) => {
-        const last = opp[opp.length - 1];
-        if (!valid(last)) return rnd();
-        const counts = {};
-        for (let k = 1; k < opp.length; k++) {
-          if (opp[k - 1] === last && valid(opp[k])) counts[opp[k]] = (counts[opp[k]] || 0) + 1;
-        }
-        const dist = normalizeDist(counts);
-        return dist ? bestResponse(dist) : rnd();
-      };
+      return metaBrain([P.markov(false), P.markov(true)], { decay: 0.92, noise: 0.05, mirror: false });
     },
   },
   {
     id: 'muu-luoc',
     name: 'Mưu Lược',
-    desc: 'N-gram: finds earlier spots where the last few turns (both players, up to 4) repeated, and counters what you did next.',
+    desc: "N-gram history matching (your moves and both players' moves), always backing whichever pattern has been right lately.",
     create() {
-      const MAX_N = 4;
-      return (my, opp) => {
-        const len = opp.length;
-        const token = k => my[k] + opp[k]; // one turn = both moves
-        for (let n = Math.min(MAX_N, len - 1); n >= 1; n--) {
-          const counts = {};
-          for (let end = n; end < len; end++) {
-            // does the n turns before `end` match the n most recent turns?
-            let same = true;
-            for (let k = 0; k < n && same; k++) same = token(end - n + k) === token(len - n + k);
-            if (same && valid(opp[end])) counts[opp[end]] = (counts[opp[end]] || 0) + 1;
-          }
-          const dist = normalizeDist(counts);
-          if (dist) return bestResponse(dist);
-        }
-        return rnd();
-      };
+      const preds = [];
+      for (let len = 1; len <= 3; len++) preds.push(P.ngram('opp', len));
+      for (let len = 1; len <= 2; len++) preds.push(P.ngram('joint', len));
+      return metaBrain(preds, { decay: 0.9, noise: 0.05, mirror: true, rotations: 1 });
     },
   },
   {
     id: 'minh-triet',
     name: 'Minh Triết',
-    desc: "Bayesian inference: keeps a belief over several theories of how you play (fixed, cycler, copycat, counter-puncher, frequency…), updates it every turn and best-responds.",
+    desc: 'The boss: Bayesian inference over many theories of how you play (habits, patterns, and whether you are countering it), then the best response.',
     create() {
-      const EPS = 0.1; // every theory admits a little noise
-      const next = m => MOVES[(MOVES.indexOf(m) + 1) % 3];
-      const prev = m => MOVES[(MOVES.indexOf(m) + 2) % 3];
-      const point = m => Object.fromEntries(MOVES.map(x => [x, x === m ? 1 - EPS : EPS / 2]));
-      const uniform = { R: 1 / 3, P: 1 / 3, S: 1 / 3 };
-      // Each theory: (my, opp, t) -> distribution over the opponent's move at turn t.
-      const theories = [
-        ...MOVES.map(c => () => point(c)),                                                       // always c
-        (my, opp, t) => (valid(opp[t - 1]) ? point(next(opp[t - 1])) : uniform),               // cycles up
-        (my, opp, t) => (valid(opp[t - 1]) ? point(prev(opp[t - 1])) : uniform),               // cycles down
-        (my, opp, t) => (valid(opp[t - 1]) ? point(opp[t - 1]) : uniform),                      // repeats itself
-        (my, opp, t) => (valid(my[t - 1]) ? point(my[t - 1]) : uniform),                        // copies me
-        (my, opp, t) => (valid(my[t - 1]) ? point(COUNTER[my[t - 1]]) : uniform),               // beats my last
-        (my, opp, t) => (valid(my[t - 1]) ? point(BEATS[my[t - 1]]) : uniform),                 // loses to my last
-        (my, opp, t) => {                                                                       // follows its own frequencies
-          const c = { R: 1, P: 1, S: 1 };
-          for (let k = 0; k < t; k++) if (valid(opp[k])) c[opp[k]]++;
-          return normalizeDist(c);
-        },
-        () => uniform,                                                                          // pure random
-      ];
-      let logPost = theories.map(() => 0);
-      let seen = 0;
-      return (my, opp) => {
-        // fold in any turns we haven't scored yet
-        for (; seen < opp.length; seen++) {
-          if (!valid(opp[seen]) || seen === 0) continue;
-          // slowly forget old evidence so it notices when you switch styles
-          theories.forEach((th, i) => { logPost[i] = 0.97 * logPost[i] + Math.log(th(my, opp, seen)[opp[seen]] || 1e-9); });
-        }
-        if (!opp.length) return rnd();
-        const maxLog = Math.max(...logPost);
-        const weights = logPost.map(l => Math.exp(l - maxLog));
-        const z = weights.reduce((a, b) => a + b, 0);
-        const dist = { R: 0, P: 0, S: 0 };
-        theories.forEach((th, i) => {
-          const d = th(my, opp, opp.length);
-          for (const m of MOVES) dist[m] += (weights[i] / z) * d[m];
-        });
-        return bestResponse(dist);
-      };
+      const preds = [P.last(), P.freq(), P.freq(10), P.decay(0.8, 20), P.markov(false), P.markov(true)];
+      for (const which of ['opp', 'joint']) for (let len = 1; len <= 4; len++) preds.push(P.ngram(which, len));
+      return bayesBrain(theoriesFrom(preds), { forget: 0.9, eps: 0.15, noise: 0.05 });
     },
   },
 ];

@@ -1,6 +1,6 @@
 const Bot = require('./bot');
 
-const TURNS = 100;
+const TURNS = +process.env.TURNS || 100; // turns per game
 const FIRST_MOVE_TIMEOUT_MS = +process.env.FIRST_MOVE_TIMEOUT_MS || 10000;
 const MOVE_TIMEOUT_MS = +process.env.MOVE_TIMEOUT_MS || 1000;
 const BEATS = { R: 'S', P: 'R', S: 'P' };

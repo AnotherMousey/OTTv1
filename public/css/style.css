@@ -275,8 +275,8 @@ pre.msg { white-space: pre; background: #f4f2ea; border-radius: 8px; padding: 10
 .board .done { color: var(--green); font-weight: 700; white-space: nowrap; }
 .board td.pen { font-family: 'Pangolin', cursive; font-size: 24px; white-space: nowrap; cursor: help; }
 .house .hw { font-size: 14px; color: #666; }
-.series { display: inline-flex; gap: 3px; vertical-align: middle; }
-.series i { width: 20px; height: 22px; border: 2px solid var(--ink); border-radius: 5px; background: #fff; font-style: normal; font-size: 15px; line-height: 18px; text-align: center; font-family: 'Patrick Hand', cursive; }
+.series { display: inline-flex; flex-wrap: wrap; gap: 2px; vertical-align: middle; }
+.series i { width: 15px; height: 20px; border: 2px solid var(--ink); border-radius: 5px; background: #fff; font-style: normal; font-size: 12px; line-height: 16px; text-align: center; font-family: 'Patrick Hand', cursive; }
 .series i.w { background: var(--green); color: #fff; }
 .series i.l { background: var(--red); color: #fff; }
 .series i.d { background: #c9c9c9; }

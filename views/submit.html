@@ -140,26 +140,28 @@ public class Bot {
         <pre>public char play(List&lt;Character&gt; myMoves,
                  List&lt;Character&gt; opponentMoves)</pre>`,
     };
-    const COMMON_RULES = `
+    let TURNS = 100, GAMES = 5, COOLDOWN = 90000; // updated from the server on load
+    const commonRules = () => `
         <li>Nước đi: <code>R</code> = búa, <code>P</code> = bao, <code>S</code> = kéo.</li>
-        <li>Mỗi trận gồm <b>100 lượt</b>. Mỗi lượt: thắng = <b>3</b> điểm, hòa = <b>1</b>, thua = <b>0</b>.</li>
+        <li>Mỗi trận gồm <b>${TURNS} lượt</b>. Mỗi lượt: thắng = <b>3</b> điểm, hòa = <b>1</b>, thua = <b>0</b>.</li>
         <li>Hai danh sách lịch sử chứa mọi lượt trước đó, cũ nhất đứng đầu. Vị trí <i>i</i> của hai danh sách là cùng một lượt.</li>
         <li>Bạn có <b>1 giây</b> cho mỗi nước đi (lượt đầu được 10 giây để JVM kịp khởi động).</li>
         <li>Bot bị lỗi, quá giờ hoặc trả về giá trị lạ thì lượt đó tính là <code>X</code> và bạn thua lượt đó. Bot bị lỗi hoặc quá giờ sẽ bị xử thua toàn bộ các lượt còn lại của trận. <code>X</code> có thể xuất hiện trong lịch sử.</li>
-        <li>Khi nộp, hệ thống biên dịch bot và cho chơi thử 5 lượt. Chỉ bot ✅ mới được tham gia.</li>`;
+        <li>Khi nộp, hệ thống biên dịch bot và cho chơi thử 5 lượt. Chỉ bot ✅ mới được tham gia.</li>
+        <li>Mỗi lần nộp cách nhau ít nhất <b>${Math.round(COOLDOWN / 1000)} giây</b>.</li>`;
     function rulesFor(mode) {
       if (mode === 'campaign') {
-        return `<ul>${COMMON_RULES}
-        <li><b>Chế độ chiến dịch:</b> mỗi bài nộp <b>chọn một</b> trong 10 bot đấu tập làm đối thủ và đấu với nó tối đa <b>5 ván</b> (mỗi ván 100 lượt). Để <b>hạ</b> bot đó, bạn phải <b>thắng cả 5 ván</b> (nhiều điểm hơn nó trong mỗi ván). Chỉ cần thua hoặc hòa một ván là bài nộp đó thất bại, và các ván còn lại bị bỏ qua.</li>
+        return `<ul>${commonRules()}
+        <li><b>Chế độ chiến dịch:</b> mỗi bài nộp <b>chọn một</b> trong 10 bot đấu tập làm đối thủ và đấu với nó tối đa <b>${GAMES} ván</b> (mỗi ván ${TURNS} lượt). Để <b>hạ</b> bot đó, bạn phải <b>thắng cả ${GAMES} ván</b> (nhiều điểm hơn nó trong mỗi ván). Chỉ cần thua hoặc hòa một ván là bài nộp đó thất bại, và các ván còn lại bị bỏ qua.</li>
         <li>Nộp bao nhiêu bài cũng được, mỗi bài cho một đối thủ, theo thứ tự tùy ý. Hạ đủ cả 10 bot đấu tập là hoàn thành chiến dịch.</li>
         <li>Thời điểm về đích là lúc bạn <b>nộp</b> bot hạ được bot đấu tập cuối cùng còn lại. Ai về đích sớm nhất xếp đầu; các đội chưa về đích xếp theo số bot đã hạ.</li>
         <li><b>Điểm phạt (PEN):</b> mỗi bài nộp trước khi về đích tính <b>20</b> điểm phạt (kể cả bài bị lỗi). Khi về đích, PEN được cộng thêm <b>số phút</b> từ lúc giải mở đến lúc bạn nộp bài về đích. Bài về đích và các bài nộp sau đó không bị phạt.</li>
         <li>Trên bảng chiến dịch, ô thứ <i>i</i> sáng lên khi bot đấu tập thứ <i>i</i> bị hạ, nên mọi người đều thấy bạn đã hạ những bot nào. Code và kết quả từng ván của bạn thì chỉ mình bạn xem được.</li>
       </ul>`;
       }
-      return `<ul>${COMMON_RULES}
+      return `<ul>${commonRules()}
         <li>Mỗi vòng thi đấu vòng tròn. Sau mỗi vòng, <b>min(3, số đội − 2)</b> đội ít điểm nhất bị loại, cho đến khi còn 2 đội vào chung kết.</li>
-        <li>Mỗi bot ✅ sau đó đấu tập 100 lượt với từng bot trong 10 bot của nhà. Tổng điểm hiện trên bảng luyện tập; chỉ bạn thấy điểm chi tiết với từng bot. Các trận luyện tập không tính vào giải.</li>
+        <li>Mỗi bot ✅ sau đó đấu tập ${TURNS} lượt với từng bot trong 10 bot của nhà. Tổng điểm hiện trên bảng luyện tập; chỉ bạn thấy điểm chi tiết với từng bot. Các trận luyện tập không tính vào giải.</li>
       </ul>`;
     }
 
@@ -168,6 +170,7 @@ public class Bot {
     let tournament = null;
     let bots = [];        // sparring bots [{ id, name }]
     let target = null;    // campaign: which sparring bot the next submission fights
+    let cooldownUntil = 0; // no new submission before this time (ms)
     const botName = id => (bots.find(b => b.id === id) || {}).name || id;
     const drafts = {};
 
@@ -212,6 +215,9 @@ public class Bot {
       const firstLoad = !tournament;
       tournament = data.tournament;
       bots = data.bots || [];
+      if (data.turns) TURNS = data.turns;
+      if (data.gamesNeeded) GAMES = data.gamesNeeded;
+      if (data.cooldownMs) COOLDOWN = data.cooldownMs;
       if (firstLoad) setupMode();
       $('#tname').textContent = tournament.name;
       $('#tdesc').textContent = tournament.description;
@@ -254,12 +260,12 @@ public class Bot {
       if (!target) target = (bots.find(b => !st(b.id).beaten) || bots[0]).id;
       $('#pickerBots').innerHTML = bots.map((b, i) => {
         const s = st(b.id);
-        const note = s.beaten ? '✓ đã hạ' : s.inProgress ? '🥊 đang đấu…' : s.best && s.best.games ? `tốt nhất: thắng ${s.best.wins}/5` : 'chưa đấu';
+        const note = s.beaten ? '✓ đã hạ' : s.inProgress ? '🥊 đang đấu…' : s.best && s.best.games ? `tốt nhất: thắng ${s.best.wins}/${GAMES}` : 'chưa đấu';
         return `<button class="pick ${b.id === target ? 'on' : ''} ${s.beaten ? 'beaten' : ''}" data-id="${b.id}">
           <span class="pnum">${i + 1}</span><span class="pname">${esc(b.name)}</span><span class="pnote">${note}</span></button>`;
       }).join('');
       $$('#pickerBots .pick').forEach(el => el.onclick = () => { target = el.dataset.id; renderPicker(); });
-      $('#submit').textContent = `Nộp bot đấu với ${botName(target)} 🚀`;
+      tick();
     }
 
     function renderCampaign() {
@@ -322,7 +328,7 @@ public class Bot {
         return `<div class="house ${res[0]}">
           <div class="hn">${esc(r.name)}</div>
           <div class="hs"><b>${r.score}</b> <span class="muted">:</span> ${r.botScore} <span class="tag">${res[1]}</span></div>
-          <div class="hbar"><div class="a" style="width:${(r.score / 300) * 100}%"></div></div>
+          <div class="hbar"><div class="a" style="width:${(r.score / (TURNS * 3)) * 100}%"></div></div>
           ${r.issue ? `<div class="hi">⚠️ ${esc(r.issue)}</div>` : ''}
         </div>`;
       }).join('');
@@ -340,8 +346,13 @@ public class Bot {
       $('#countdown').textContent = fmtCountdown(left);
       $('#countdown').classList.toggle('soon', left > 0 && left < 60000);
       const closed = left <= 0;
-      $('#submit').disabled = closed || ME.role === 'judge';
+      const wait = cooldownUntil - Date.now();
+      $('#submit').disabled = closed || ME.role === 'judge' || wait > 0;
+      $('#submit').textContent = wait > 0 ? `⏳ Đợi ${Math.ceil(wait / 1000)}s…` : submitLabel();
       $('#closed').classList.toggle('hidden', !closed);
+    }
+    function submitLabel() {
+      return tournament && tournament.mode === 'campaign' && target ? `Nộp bot đấu với ${botName(target)} 🚀` : 'Nộp bot 🚀';
     }
 
     $('#langs').innerHTML = Object.keys(TEMPLATES).map(l => `<button data-lang="${l}">${LANG_LABEL[l]}</button>`).join('');
@@ -376,6 +387,7 @@ public class Bot {
       $('#submit').disabled = true;
       try {
         await api(`/api/tournaments/${encodeURIComponent(tid)}/submissions`, { method: 'POST', body: { language: lang, code: $('#code').value, ...(campaignMode ? { target } : {}) } });
+        cooldownUntil = Date.now() + COOLDOWN;
         toast('Đã nhận bot! Đang biên dịch… 🔧');
         await load();
         refreshPractice();

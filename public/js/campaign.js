@@ -25,23 +25,25 @@ function seriesPips(games, needed) {
 }
 
 function campaignDetail(det) {
+  const need = det.gamesNeeded || 5;
   const cards = det.bots.map(b => {
     if (b.beaten) {
       return `<div class="house win"><div class="hn">${esc(b.name)}</div>
-        <div class="hs">✓ đã hạ ${seriesPips(['A', 'A', 'A', 'A', 'A'], 5)}</div>
-        <div class="hw">thắng cả 5 ván · bài nộp #${b.beatenBy} · ${esc(fmtClock(b.beatenAt))}</div></div>`;
+        <div class="hs">✓ đã hạ</div>
+        <div>${seriesPips(Array(need).fill('A'), need)}</div>
+        <div class="hw">thắng cả ${need} ván · bài nộp #${b.beatenBy} · ${esc(fmtClock(b.beatenAt))}</div></div>`;
     }
     let best = '<div class="hw muted">chưa đấu</div>';
     if (b.best && b.best.games) {
       const last = b.best.games[b.best.games.length - 1];
       const why = last === 'B' ? `thua ván ${b.best.games.length}` : last === 'draw' ? `hòa ván ${b.best.games.length}` : '';
       const story = b.best.wins === 0 ? (last === 'draw' ? 'hòa ngay ván 1' : 'thua ngay ván 1') : `thắng ${b.best.wins} ván${why ? ' rồi ' + why : ''}`;
-      best = `<div class="hs">${seriesPips(b.best.games, b.best.needed || 5)}</div>
+      best = `<div class="hs">${seriesPips(b.best.games, b.best.needed || need)}</div>
         <div class="hw">tốt nhất: ${story} (bài nộp #${b.best.number})</div>`;
     } else if (b.best) {
       best = `<div class="hs"><b>${b.best.score}</b> <span class="muted">:</span> ${b.best.botScore}</div><div class="hw">tốt nhất (bài nộp #${b.best.number})</div>`;
     }
-    const live = b.inProgress ? `<div class="hw muted">🥊 ${b.liveGame ? `đang đấu ván ${b.liveGame}/5…` : 'đang chờ đấu…'}</div>` : '';
+    const live = b.inProgress ? `<div class="hw muted">🥊 ${b.liveGame ? `đang đấu ván ${b.liveGame}/${need}…` : 'đang chờ đấu…'}</div>` : '';
     return `<div class="house ${b.inProgress ? 'pending' : b.best ? 'loss' : ''}"><div class="hn">${esc(b.name)}</div>${best}${live}</div>`;
   }).join('');
   const head = det.finishedAt

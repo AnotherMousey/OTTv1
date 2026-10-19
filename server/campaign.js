@@ -5,6 +5,7 @@
 // Ranking: finishers by finish time, then everyone else by bots beaten.
 const db = require('./db');
 const { HOUSE_BOTS } = require('./grader/house');
+const { CAMPAIGN_GAMES } = require('./grader/practice');
 const { avatarOf } = require('./auth');
 
 const TOTAL = HOUSE_BOTS.length;
@@ -110,6 +111,7 @@ function board(t) {
     deadline: t.deadline,
     startedAt: t.startsAt || t.createdAt,
     total: TOTAL,
+    gamesNeeded: CAMPAIGN_GAMES,
     bots: HOUSE_BOTS.map(h => h.name),
     finishers: rows.filter(r => r.finishedAt).length,
     rows,
@@ -135,6 +137,7 @@ function details(t, userId) {
     userId,
     teamName: u.teamName,
     submissions: p.subs.length,
+    gamesNeeded: CAMPAIGN_GAMES,
     beatenCount: p.count,
     finishedAt: p.finishedAt,
     bots: HOUSE_BOTS.map(h => ({

@@ -7,7 +7,7 @@ const { runVsHouse } = require('./match');
 const PARALLEL = +process.env.PRACTICE_PARALLEL || 2;
 // Campaign: a sparring bot only counts as beaten if the submission wins this many games
 // against it in a row. The first game it doesn't win ends the series.
-const CAMPAIGN_GAMES = 5;
+const CAMPAIGN_GAMES = +process.env.CAMPAIGN_GAMES || 5;
 
 let listener = () => {};
 function onUpdate(fn) {
@@ -119,4 +119,4 @@ function waitFor(tournamentId) {
   return Promise.all([...running.values()].filter(r => r.tournamentId === tournamentId).map(r => r.promise));
 }
 
-module.exports = { evaluate, waitFor, onUpdate, HOUSE_BOTS };
+module.exports = { evaluate, waitFor, onUpdate, HOUSE_BOTS, CAMPAIGN_GAMES };

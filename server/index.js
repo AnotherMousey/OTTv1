@@ -11,6 +11,8 @@ const auth = require('./auth');
 const grader = require('./grader');
 const { normalizeAvatar } = require('../public/js/avatar');
 const { TournamentManager, matchSummary } = require('./tournament');
+const { TURNS } = require('./grader/match');
+const SUBMIT_COOLDOWN_MS = +process.env.SUBMIT_COOLDOWN_MS || 90000;
 const campaign = require('./campaign');
 
 auth.prepareUsers();
@@ -189,6 +191,9 @@ app.get('/api/tournaments/:id', apiAuth, (req, res) => {
     submissions: mine,
     languages: grader.LANGS,
     bots: grader.practice.HOUSE_BOTS.map(h => ({ id: h.id, name: h.name })),
+    turns: TURNS,
+    gamesNeeded: grader.practice.CAMPAIGN_GAMES,
+    cooldownMs: SUBMIT_COOLDOWN_MS,
     serverNow: Date.now(),
   });
 });
@@ -208,6 +213,10 @@ app.post('/api/tournaments/:id/submissions', apiAuth, (req, res) => {
   if (code.length > MAX_CODE_LENGTH) return fail(res, 400, `Code quá dài (tối đa ${MAX_CODE_LENGTH} ký tự)`);
   const busy = db.data.submissions.some(s => s.tournamentId === t.id && s.userId === req.user.id && s.status === 'pending');
   if (busy) return fail(res, 429, 'Bài nộp trước của bạn vẫn đang được kiểm tra, đợi chút nhé');
+  // at most one submission every SUBMIT_COOLDOWN_MS per player (across all tournaments)
+  const lastAt = db.data.submissions.filter(s => s.userId === req.user.id).reduce((m, s) => Math.max(m, Date.parse(s.createdAt)), 0);
+  const waitMs = lastAt + SUBMIT_COOLDOWN_MS - Date.now();
+  if (waitMs > 0) return fail(res, 429, `Chậm lại chút! Đợi ${Math.ceil(waitMs / 1000)} giây nữa rồi nộp tiếp nhé.`);
   const sub = { id: db.id(), tournamentId: t.id, userId: req.user.id, language, code, ...(isCampaign ? { target } : {}), status: 'pending', message: '', createdAt: new Date().toISOString() };
   db.data.submissions.push(sub);
   db.save();
@@ -272,7 +281,7 @@ app.get('/api/tournaments/:id/practice', apiAuth, (req, res) => {
   } else if (req.query.user) {
     return fail(res, 403, 'Không được xem điểm của đội khác 🤫');
   }
-  res.json({ rows, details, maxTotal: grader.practice.HOUSE_BOTS.length * 300, serverNow: Date.now() });
+  res.json({ rows, details, turns: TURNS, maxTotal: grader.practice.HOUSE_BOTS.length * TURNS * 3, serverNow: Date.now() });
 });
 
 app.get('/api/tournaments/:id/leaderboard', apiAuth, (req, res) => {

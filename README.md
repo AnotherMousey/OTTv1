@@ -53,7 +53,7 @@ The judge picks a mode when creating a tournament (older tournaments without one
 - **⚔️ Brawl:** the format described below. At the deadline every team's newest working bot enters
   round-robin elimination rounds until a champion is left.
 - **🗺️ Campaign:** a race against the 10 sparring bots. Players submit as many bots as they like, and
-  every working submission plays up to 5 games (100 turns each) against each sparring bot. A sparring
+  each submission picks one sparring bot and plays up to 5 games (100 turns each) against it. A sparring
   bot counts as beaten when one submission wins all 5; the first loss or draw ends that series. A player **finishes** once all 10
   are beaten, by any mix of their submissions. Their finish time is the *submission time* of the bot
   that beat the last remaining one. The leaderboard ranks finishers by finish time, then everyone
@@ -80,7 +80,7 @@ The judge picks a mode when creating a tournament (older tournaments without one
    `min(3, t − 2)` lowest teams (t = teams in the round) are eliminated. Ties are broken by
    match wins, then total points over all rounds, then earliest submission. When 2 teams remain
    they play the final.
-5. Each match is **100 turns**: win = 3 points, draw = 1, loss = 0.
+5. Each match is **100 turns**: win = 3 points, draw = 1, loss = 0. Players can submit at most once every 90 seconds.
 6. Once the tournament is finished, everyone can watch every replay.
 
 ## Writing a bot
@@ -125,6 +125,9 @@ left off; matches already played are kept.
 | `ROUND_BREAK_MS` | 5000 | pause between rounds |
 | `PRACTICE_PARALLEL` | 2 | practice games run at the same time |
 | `SIGNUP_LIMIT` | 30 | max self-registrations per hour from one IP address |
+| `TURNS` | 100 | turns per game |
+| `CAMPAIGN_GAMES` | 5 | games a campaign submission must win in a row to beat a sparring bot |
+| `SUBMIT_COOLDOWN_MS` | 90000 | minimum time between two submissions from one player |
 | `MOVE_TIMEOUT_MS` / `FIRST_MOVE_TIMEOUT_MS` | 1000 / 10000 | per-move time limits |
 
 ## ⚠️ Security note
