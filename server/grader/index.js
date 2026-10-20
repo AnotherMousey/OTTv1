@@ -117,16 +117,29 @@ async function check(sub) {
 }
 
 // A sparring bot the judge added to a campaign: same checks as a submission, but no practice games.
-async function checkBot(bot) {
-  const result = await check(bot);
-  bot.status = result.ok ? 'ok' : 'error';
-  bot.message = result.message;
+// Judge-written bot code (an added bot, or an edited built-in): checks the latest version
+// (`buildId`, `language`, `code`). If it passes it becomes the live one that plays; if not, the
+// previous live version keeps playing. A result for a version the judge has since replaced is dropped.
+async function checkBot(item) {
+  const version = { id: item.buildId || item.id, language: item.language || 'python', code: item.code };
+  const result = await check(version);
+  if ((item.buildId || item.id) !== version.id) { removeBuild(version); return result; } // superseded meanwhile
+  item.status = result.ok ? 'ok' : 'error';
+  item.message = result.message;
+  if (result.ok) {
+    const old = item.live;
+    item.live = { buildId: version.id, language: version.language, code: version.code };
+    if (old && old.buildId !== version.id) removeBuild({ id: old.buildId });
+  } else if (!item.live || item.live.buildId !== version.id) {
+    removeBuild(version);
+  }
   db.save();
   return result;
 }
 
+// Best effort: on Windows a build that is still running can't be deleted (it is just left behind).
 function removeBuild(item) {
-  fs.rmSync(buildDir(item), { recursive: true, force: true });
+  try { fs.rmSync(buildDir(item), { recursive: true, force: true }); } catch {}
 }
 
 // Compile + smoke test; writes the result onto the submission record.
@@ -182,4 +195,4 @@ function resumePractice() {
   }
 }
 
-module.exports = { LANGS, validate, checkBot, removeBuild, ensureBuilt, waitForValidations, activeSubmission, resumePractice, practice };
+module.exports = { LANGS, validate, checkBot, removeBuild, housePython: require('./house').pythonSource, ensureBuilt, waitForValidations, activeSubmission, resumePractice, practice };

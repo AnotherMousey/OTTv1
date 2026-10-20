@@ -73,8 +73,14 @@
       const banner = $('#banner'), sub = $('#sub');
       clearInterval(campaignCountdown);
       if (b.status === 'open') {
-        banner.innerHTML = '🗺️ Chiến dịch đang diễn ra, kết thúc sau <span id="ccd"></span>';
-        const tickCd = () => { const el = $('#ccd'); if (el) el.textContent = fmtCountdown(Date.parse(b.deadline) - serverNow()); };
+        const tickCd = () => {
+          const el = $('#ccd');
+          if (!el) return;
+          const toStart = Date.parse(b.startedAt) - serverNow(); // startedAt = the start time, if the judge set one
+          if (toStart > 0) { el.previousSibling.textContent = '🗺️ Chiến dịch mở sau '; el.textContent = fmtCountdown(toStart); }
+          else { el.previousSibling.textContent = '🗺️ Chiến dịch đang diễn ra, kết thúc sau '; el.textContent = fmtCountdown(Date.parse(b.deadline) - serverNow()); }
+        };
+        banner.innerHTML = '<span></span><span id="ccd"></span>';
         tickCd();
         campaignCountdown = setInterval(tickCd, 500);
         sub.innerHTML = `Đến giờ có ${b.finishers} đội đã hạ cả ${b.total} bot đấu tập · <a href="/tournament/${encodeURIComponent(tid)}/submit">nộp bot</a>`;

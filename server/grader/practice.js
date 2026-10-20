@@ -31,12 +31,26 @@ async function withSlot(fn) {
 const tournamentOf = sub => db.data.tournaments.find(x => x.id === sub.tournamentId);
 const isCampaign = sub => (tournamentOf(sub) || {}).mode === 'campaign';
 
-// The sparring bots of a tournament: the 10 built-in ones, plus (campaign only) the working
-// bots the judge added to it. Judge bots carry `custom`: their record ({ id, language, code }),
-// which is compiled and run like a submission.
+// Judge-written bot code (a bot added to a campaign, or an edited copy of a built-in bot) keeps
+// the last version that passed its check in `live` ({ buildId, language, code }). That version
+// plays while a newer edit is being checked, or if the newer edit failed.
+function liveOf(b) {
+  if (b.live) return b.live;
+  return b.status === 'ok' ? { buildId: b.id, language: b.language, code: b.code } : null; // added before `live` existed
+}
+const runnable = live => ({ id: live.buildId, language: live.language || 'python', code: live.code });
+
+// The sparring bots of a tournament: the 10 built-in ones (or the judge's edited Python copy of
+// one, once it works), plus (campaign only) the working bots the judge added. Bots run from
+// judge code carry `custom`: something shaped like a submission, compiled and run as a process.
 function botsFor(t) {
-  const extra = t && t.mode === 'campaign' ? (t.bots || []).filter(b => b.status === 'ok') : [];
-  return [...HOUSE_BOTS, ...extra.map(b => ({ id: b.id, name: b.name, custom: b }))];
+  const edits = (t && t.houseEdits) || {};
+  const house = HOUSE_BOTS.map(h => {
+    const live = edits[h.id] && edits[h.id].live;
+    return live ? { id: h.id, name: h.name, desc: h.desc, custom: runnable(live) } : h;
+  });
+  const extra = t && t.mode === 'campaign' ? (t.bots || []).filter(liveOf) : [];
+  return [...house, ...extra.map(b => ({ id: b.id, name: b.name, custom: runnable(liveOf(b)) }))];
 }
 
 // Brawl: practice only matters while submissions are open.
@@ -133,4 +147,4 @@ function waitFor(tournamentId) {
   return Promise.all([...running.values()].filter(r => r.tournamentId === tournamentId).map(r => r.promise));
 }
 
-module.exports = { evaluate, waitFor, onUpdate, botsFor, HOUSE_BOTS, CAMPAIGN_GAMES };
+module.exports = { evaluate, waitFor, onUpdate, botsFor, liveOf, HOUSE_BOTS, CAMPAIGN_GAMES };

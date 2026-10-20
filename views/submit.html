@@ -17,7 +17,7 @@
         <div class="muted" id="tdesc"></div>
       </div>
       <div class="center">
-        <div class="muted" style="font-size:17px">hạn nộp bài còn</div>
+        <div class="muted" style="font-size:17px" id="cdLabel">hạn nộp bài còn</div>
         <div class="countdown" id="countdown">--:--:--</div>
       </div>
     </div>
@@ -343,13 +343,17 @@ public class Bot {
 
     function tick() {
       if (!tournament) return;
-      const left = Date.parse(tournament.deadline) - serverNow();
+      // before the start time: count down to opening, and keep the button locked
+      const toStart = tournament.startsAt ? Date.parse(tournament.startsAt) - serverNow() : 0;
+      const notYet = toStart > 0;
+      const left = notYet ? toStart : Date.parse(tournament.deadline) - serverNow();
+      $('#cdLabel').textContent = notYet ? 'mở nhận bài sau' : 'hạn nộp bài còn';
       $('#countdown').textContent = fmtCountdown(left);
-      $('#countdown').classList.toggle('soon', left > 0 && left < 60000);
-      const closed = left <= 0;
+      $('#countdown').classList.toggle('soon', !notYet && left > 0 && left < 60000);
+      const closed = !notYet && left <= 0;
       const wait = cooldownUntil - Date.now();
-      $('#submit').disabled = closed || ME.role === 'judge' || wait > 0;
-      $('#submit').textContent = wait > 0 ? `⏳ Đợi ${Math.ceil(wait / 1000)}s…` : submitLabel();
+      $('#submit').disabled = notYet || closed || ME.role === 'judge' || wait > 0;
+      $('#submit').textContent = notYet ? '🔒 Chưa đến giờ mở nhận bài' : wait > 0 ? `⏳ Đợi ${Math.ceil(wait / 1000)}s…` : submitLabel();
       $('#closed').classList.toggle('hidden', !closed);
     }
     function submitLabel() {

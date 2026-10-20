@@ -25,7 +25,11 @@
             <option value="invite">🔒 Chỉ những đội được trọng tài chỉ định (chọn sau khi tạo giải)</option>
           </select></label>
           <label><span>mô tả (không bắt buộc)</span><input name="description" style="width:100%" placeholder="Mang theo những bot xịn nhất"></label>
-          <label><span>hạn chót nộp bài (theo giờ máy bạn)</span><input name="deadline" type="datetime-local" required style="width:100%"></label>
+          <div class="form-row">
+            <label><span>bắt đầu nhận bài <small class="muted">(bỏ trống = mở ngay)</small></span><input name="startsAt" type="datetime-local" style="width:100%"></label>
+            <label><span>hạn chót nộp bài</span><input name="deadline" type="datetime-local" required style="width:100%"></label>
+          </div>
+          <p class="muted" style="font-size:16px;margin:-4px 0 10px">Theo giờ máy bạn. Trước giờ bắt đầu, người chơi chỉ thấy đồng hồ đếm ngược; trong chiến dịch, số phút của điểm phạt được tính từ giờ bắt đầu.</p>
           <button class="btn red">Tạo giải 🏁</button>
         </form>
       </section>
@@ -33,7 +37,7 @@
 
     <div class="squiggle"></div>
     <h2>Các giải đấu</h2>
-    <div class="box"><table class="plain"><thead><tr><th>tên</th><th>chế độ</th><th>trạng thái</th><th>hạn chót</th><th>số đội</th><th></th></tr></thead><tbody id="tbody"></tbody></table></div>
+    <div class="box"><table class="plain"><thead><tr><th>tên</th><th>chế độ</th><th>trạng thái</th><th>bắt đầu</th><th>hạn chót</th><th>số đội</th><th></th></tr></thead><tbody id="tbody"></tbody></table></div>
     <div id="membersPanel" class="hidden" style="margin-top:20px"></div>
     <div id="botsPanel" class="hidden" style="margin-top:20px"></div>
     <div id="subsPanel" class="hidden" style="margin-top:20px"></div>
@@ -71,7 +75,14 @@
         <div id="bulkResult" style="margin-top:10px"></div>
       </details>
     </section>
-    <div class="box alt"><table class="plain"><thead><tr><th></th><th>tên đăng nhập</th><th>đội</th><th>vai trò</th><th></th></tr></thead><tbody id="ubody"></tbody></table></div>
+    <div class="box alt">
+      <div class="row" style="gap:10px;margin-bottom:8px">
+        <input id="userSearch" type="search" placeholder="🔍 tìm theo tên đăng nhập hoặc tên đội" autocomplete="off" style="flex:1;min-width:200px">
+        <select id="userRole" title="lọc theo vai trò"><option value="">mọi vai trò</option><option value="player">người chơi</option><option value="judge">trọng tài</option></select>
+        <span class="muted" id="userCount" style="font-size:17px"></span>
+      </div>
+      <div class="scroll-table"><table class="plain"><thead><tr><th></th><th>tên đăng nhập</th><th>đội</th><th>vai trò</th><th></th></tr></thead><tbody id="ubody"></tbody></table></div>
+    </div>
   </main>
 
   <script src="/socket.io/socket.io.js"></script>
@@ -86,33 +97,52 @@
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
     }
 
+    let startTimer = null;
     async function loadTournaments() {
       const { tournaments } = await api('/api/tournaments');
       $('#tbody').innerHTML = tournaments.map(t => {
         const id = encodeURIComponent(t.id);
         const open = t.status === 'open';
+        const waiting = open && t.startsAt && Date.parse(t.startsAt) > serverNow(); // submissions not open yet
+        const startCell = open
+          ? `<div class="row" style="gap:4px;flex-wrap:nowrap"><input type="datetime-local" data-start="${t.id}" value="${t.startsAt ? toLocalInput(new Date(t.startsAt)) : ''}" style="font-size:16px;padding:2px 6px" title="bỏ trống = nhận bài ngay">${t.startsAt ? `<button class="btn small" data-nostart="${t.id}" title="bỏ giờ bắt đầu">✕</button>` : ''}</div>`
+          : t.startsAt ? esc(fmtDate(t.startsAt)) : '<span class="muted">–</span>';
         return `<tr>
           <td>${esc(t.name)}</td>
           <td>${t.mode === 'campaign' ? '🗺️ chiến dịch' : '⚔️ hỗn chiến'}${t.access === 'invite' ? `<br><span class="muted" style="font-size:16px">🔒 ${t.members} đội được chỉ định</span>` : ''}</td>
-          <td><span class="tag ${t.status}">${STATUS_VI[t.status] || t.status}</span></td>
+          <td><span class="tag ${waiting ? 'pending' : t.status}">${waiting ? 'chưa mở' : STATUS_VI[t.status] || t.status}</span></td>
+          <td>${startCell}</td>
           <td>${open ? `<input type="datetime-local" data-dl="${t.id}" value="${toLocalInput(new Date(t.deadline))}" style="font-size:16px;padding:2px 6px">` : esc(fmtDate(t.deadline))}</td>
           <td>${t.teamsReady}</td>
           <td class="row" style="gap:6px">
             <button class="btn small" data-members="${t.id}">${t.access === 'invite' ? '🔒 ' : ''}người chơi</button>
-            ${t.mode === 'campaign' ? `<button class="btn small" data-bots="${t.id}">bot đấu tập</button>` : ''}
+            <button class="btn small" data-bots="${t.id}">bot đấu tập</button>
             <button class="btn small" data-subs="${t.id}">bài nộp</button>
-            ${open ? `<button class="btn small yellow" data-now="${t.id}">bắt đầu ngay</button>` : `<a class="btn small" href="/tournament/${id}/live">xem</a>`}
+            ${waiting ? `<button class="btn small yellow" data-opennow="${t.id}">mở nhận bài ngay</button>` : open ? `<button class="btn small yellow" data-now="${t.id}">đóng nộp bài ngay</button>` : `<a class="btn small" href="/tournament/${id}/live">xem</a>`}
             ${t.status !== 'running' ? `<button class="btn small" data-del="${t.id}">🗑</button>` : ''}
           </td>
         </tr>`;
-      }).join('') || '<tr><td colspan="6" class="muted">chưa có giải nào</td></tr>';
+      }).join('') || '<tr><td colspan="7" class="muted">chưa có giải nào</td></tr>';
 
-      $$('[data-dl]').forEach(inp => inp.onchange = async () => {
+      const patch = async (id, body, done) => {
         try {
-          await api(`/api/admin/tournaments/${encodeURIComponent(inp.dataset.dl)}`, { method: 'PATCH', body: { deadline: new Date(inp.value).toISOString() } });
-          toast('Đã đổi hạn chót ⏰');
-        } catch (e) { toast(e.message, 'error'); }
+          await api(`/api/admin/tournaments/${encodeURIComponent(id)}`, { method: 'PATCH', body });
+          toast(done);
+        } catch (e) { toast(e.message, 'error'); loadTournaments(); } // put the inputs back
+      };
+      $$('[data-dl]').forEach(inp => inp.onchange = () => {
+        if (inp.value) patch(inp.dataset.dl, { deadline: new Date(inp.value).toISOString() }, 'Đã đổi hạn chót ⏰');
       });
+      $$('[data-start]').forEach(inp => inp.onchange = () =>
+        patch(inp.dataset.start, { startsAt: inp.value ? new Date(inp.value).toISOString() : '' }, inp.value ? 'Đã đổi giờ bắt đầu 🕘' : 'Đã bỏ giờ bắt đầu: nhận bài ngay 🚪'));
+      $$('[data-nostart]').forEach(b => b.onclick = () => patch(b.dataset.nostart, { startsAt: '' }, 'Đã bỏ giờ bắt đầu: nhận bài ngay 🚪'));
+      $$('[data-opennow]').forEach(b => b.onclick = () => {
+        if (confirm('Mở nhận bài cho giải này ngay bây giờ?')) patch(b.dataset.opennow, { startsAt: new Date(serverNow()).toISOString() }, 'Đã mở nhận bài 🚪');
+      });
+      // flip "chưa mở" rows when their start time passes
+      clearTimeout(startTimer);
+      const next = Math.min(...tournaments.filter(t => t.status === 'open' && t.startsAt).map(t => Date.parse(t.startsAt) - serverNow()).filter(ms => ms > 0));
+      if (Number.isFinite(next)) startTimer = setTimeout(loadTournaments, Math.min(next + 500, 2 ** 31 - 1));
       $$('[data-now]').forEach(b => b.onclick = async () => {
         if (!confirm('Đóng nộp bài và bắt đầu giải này ngay bây giờ?')) return;
         try {
@@ -129,7 +159,7 @@
       $$('[data-subs]').forEach(b => b.onclick = () => showSubs(b.dataset.subs, tournaments.find(t => t.id === b.dataset.subs).name));
       $$('[data-bots]').forEach(b => b.onclick = () => showBots(tournaments.find(t => t.id === b.dataset.bots)));
       // keep an open bots panel in sync (e.g. a bot finished compiling)
-      if (botsOpen) { const t = tournaments.find(x => x.id === botsOpen.id); if (t) showBots(t, true); else $('#botsPanel').classList.add('hidden'); }
+      if (botsOpen) { const t = tournaments.find(x => x.id === botsOpen.t.id); if (t) showBots(t, true); else { botsOpen = null; $('#botsPanel').classList.add('hidden'); } }
       $$('[data-members]').forEach(b => b.onclick = () => showMembers(tournaments.find(t => t.id === b.dataset.members)));
       if (membersOpen && !tournaments.some(x => x.id === membersOpen.t.id)) { membersOpen = null; $('#membersPanel').classList.add('hidden'); }
     }
@@ -199,8 +229,10 @@
       };
     }
 
-    // ---------- campaign sparring bots ----------
-    let botsOpen = null; // the tournament whose bots panel is open
+    // ---------- sparring bots (built-in edits + campaign extras) ----------
+    // botsOpen = { t, data, editing: null | { kind: 'house' | 'bot' | 'new', id }, draft: { name, language, code } }
+    // The draft lives here, so the panel can re-render (e.g. a bot finished compiling) without losing typing.
+    let botsOpen = null;
     const BOT_TEMPLATE = {
       python: `# A sparring bot: same interface as a player's bot.
 def play(my_moves, opponent_moves):
@@ -224,59 +256,144 @@ public class Bot {
 }
 `,
     };
+    const botsUrl = t => `/api/admin/tournaments/${encodeURIComponent(t.id)}`;
+
     async function showBots(t, refresh = false) {
-      const panel = $('#botsPanel');
       let data;
-      try { data = await api(`/api/admin/tournaments/${encodeURIComponent(t.id)}/bots`); }
+      try { data = await api(`${botsUrl(t)}/bots`); }
       catch (e) { return toast(e.message, 'error'); }
-      // don't wipe a half-written bot when the panel refreshes itself
-      const form = $('#bform');
-      const keep = refresh && form ? { name: form.botName.value, language: form.language.value, code: form.code.value } : null;
-      botsOpen = t;
+      if (refresh && botsOpen && botsOpen.t.id === t.id) Object.assign(botsOpen, { t, data });
+      else botsOpen = { t, data, editing: null, draft: null };
+      renderBots();
+    }
+
+    // What plays right now, in words.
+    function versionText(item, isHouse) {
+      if (!item) return '<span class="muted">mặc định</span>';
+      const fallback = item.live ? 'bản trước vẫn đang được dùng' : isHouse ? 'bản mặc định vẫn đang được dùng' : 'chưa được tính';
+      if (item.status === 'pending') return `<span class="tag pending">⏳ đang kiểm tra</span> <span class="muted" style="font-size:15px">${fallback}</span>`;
+      if (item.status === 'error') return `<span class="tag error">❌ lỗi</span> <span class="muted" style="font-size:15px">${fallback}</span>`;
+      return `<span class="tag ok">${isHouse ? '✏️ đã sửa' : '✅ sẵn sàng'}</span>`;
+    }
+
+    function startEditing(kind, id) {
+      const b = botsOpen.data;
+      let draft;
+      if (kind === 'house') { const h = b.builtIn.find(x => x.id === id); draft = { name: h.name, language: 'python', code: h.edit ? h.edit.code : h.defaultCode }; }
+      else if (kind === 'bot') { const x = b.bots.find(y => y.id === id); draft = { name: x.name, language: x.language, code: x.code }; }
+      else draft = { name: '', language: 'python', code: BOT_TEMPLATE.python };
+      botsOpen.editing = { kind, id };
+      botsOpen.draft = draft;
+      renderBots();
+      $('#botsPanel .bot-editor').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function renderBots() {
+      const { t, data, editing, draft } = botsOpen;
+      const panel = $('#botsPanel');
       const open = t.status === 'open';
+      const campaign = t.mode === 'campaign';
       const n = data.builtIn.length;
+      const isEditing = (kind, id) => editing && editing.kind === kind && editing.id === id;
+      const rows = [
+        ...data.builtIn.map((h, i) => `<tr class="${isEditing('house', h.id) ? 'editing' : ''}">
+          <td>${i + 1}</td><td title="${esc(h.desc)}">${esc(h.name)}</td><td class="muted">có sẵn</td><td>${versionText(h.edit, true)}</td>
+          <td><div class="row" style="gap:6px">
+            <button class="btn small" data-edit-house="${h.id}">${open ? 'sửa code' : 'xem code'}</button>
+            ${open && h.edit ? `<button class="btn small" data-reset="${h.id}" title="dùng lại bot gốc">↺ mặc định</button>` : ''}
+          </div></td></tr>`),
+        ...data.bots.map((b, i) => `<tr class="${isEditing('bot', b.id) ? 'editing' : ''}">
+          <td>${n + i + 1}</td><td>${esc(b.name)}</td><td class="muted">thêm · ${LANG_LABEL[b.language]}</td><td>${versionText(b, false)}</td>
+          <td><div class="row" style="gap:6px">
+            <button class="btn small" data-edit-bot="${b.id}">${open ? 'sửa code' : 'xem code'}</button>
+            ${open ? `<button class="btn small" data-botdel="${b.id}">🗑</button>` : ''}
+          </div></td></tr>`),
+      ];
+
+      let editor = '';
+      if (editing) {
+        const isHouse = editing.kind === 'house';
+        const item = isHouse ? data.builtIn.find(h => h.id === editing.id) : data.bots.find(b => b.id === editing.id);
+        const last = isHouse ? item && item.edit : item; // latest check result
+        const title = editing.kind === 'new' ? 'Thêm bot đấu tập' : `${open ? 'Sửa' : 'Xem'} code: ${esc(draft.name)}`;
+        editor = `<div class="bot-editor box" style="margin-top:14px">
+          <div class="row" style="justify-content:space-between"><h3 style="margin:0">${title}</h3><button class="btn small" id="beClose">đóng</button></div>
+          ${isHouse ? `<p class="muted" style="font-size:17px;margin:4px 0 8px">Bản Python của bot có sẵn, chơi y như bản gốc. Sửa xong bấm lưu: code được biên dịch và chơi thử 5 lượt; qua được thì giải này dùng code của bạn thay cho bot gốc${campaign ? '' : ' (trong giải hỗn chiến, chỉ ảnh hưởng các trận luyện tập)'}.</p>` : `<div class="form-row">
+            <label><span>tên bot</span><input id="beName" maxlength="40" value="${esc(draft.name)}" style="width:100%" ${open ? '' : 'disabled'}></label>
+            <label><span>ngôn ngữ</span><select id="beLang" style="width:100%" ${open ? '' : 'disabled'}>${Object.keys(BOT_TEMPLATE).map(l => `<option value="${l}" ${draft.language === l ? 'selected' : ''}>${LANG_LABEL[l]}</option>`).join('')}</select></label>
+          </div>`}
+          <textarea class="code" id="beCode" spellcheck="false" style="min-height:${isHouse ? 420 : 260}px" ${open ? '' : 'readonly'}></textarea>
+          ${last && last.status === 'error' && last.message ? `<pre class="msg" style="color:var(--red)">${esc(last.message)}</pre>` : ''}
+          ${open ? `<div class="row" style="margin-top:10px">
+            <button class="btn red" id="beSave">${editing.kind === 'new' ? 'Thêm bot 🤖' : 'Lưu & kiểm tra 💾'}</button>
+            ${isHouse ? '<button class="btn small" id="beDefault" title="nạp lại code gốc vào ô soạn thảo (chưa lưu)">nạp code gốc</button>' : '<button class="btn small" id="beTemplate">code mẫu</button>'}
+          </div>` : ''}
+        </div>`;
+      }
+
       panel.classList.remove('hidden');
       panel.innerHTML = `<div class="box alt">
         <div class="row" style="justify-content:space-between"><h3 style="margin:0">Bot đấu tập của ${esc(t.name)}</h3><button class="btn small" id="closeBots">đóng</button></div>
-        <p class="muted" style="font-size:17px;margin:4px 0 8px">${n} bot có sẵn: ${data.builtIn.map((h, i) => `<span title="${esc(h.desc)}">${i + 1}. ${esc(h.name)}</span>`).join(' · ')}. Bot bạn thêm sẽ đứng sau, và người chơi phải hạ cả chúng mới về đích. Chỉ bot ✅ mới được tính.</p>
-        <table class="plain"><thead><tr><th>#</th><th>tên</th><th>ngôn ngữ</th><th>trạng thái</th><th></th></tr></thead><tbody>
-        ${data.bots.map((b, i) => `<tr><td>${n + i + 1}</td><td>${esc(b.name)}</td><td>${LANG_LABEL[b.language]}</td><td><span class="tag ${b.status}">${STATUS_VI[b.status] || b.status}</span></td>
-          <td><div class="row" style="gap:6px"><details><summary style="cursor:pointer">xem code</summary><pre class="msg">${esc(b.code)}</pre>${b.message ? `<pre class="msg">${esc(b.message)}</pre>` : ''}</details>
-          ${open ? `<button class="btn small" data-botdel="${b.id}">🗑</button>` : ''}</div></td></tr>`).join('') || '<tr><td colspan="5" class="muted">chưa thêm bot nào</td></tr>'}
-        </tbody></table>
-        ${open ? `<form id="bform" style="margin-top:14px">
-          <h3 style="margin:0 0 6px">Thêm bot đấu tập</h3>
-          <div class="form-row">
-            <label><span>tên bot</span><input name="botName" required maxlength="40" style="width:100%"></label>
-            <label><span>ngôn ngữ</span><select name="language" style="width:100%">${Object.keys(BOT_TEMPLATE).map(l => `<option value="${l}">${LANG_LABEL[l]}</option>`).join('')}</select></label>
-          </div>
-          <label><span>code (giống hệt bot của người chơi: hàm <code>play</code>)</span><textarea class="code" name="code" required spellcheck="false" style="min-height:220px"></textarea></label>
-          <button class="btn red">Thêm bot 🤖</button>
-        </form>` : '<p class="muted" style="font-size:17px">Giải đã đóng, không thể thay đổi bot đấu tập nữa.</p>'}
+        <p class="muted" style="font-size:17px;margin:4px 0 8px">Sửa code của từng bot riêng cho giải này (giải khác không bị ảnh hưởng). Bản sửa chỉ được dùng khi đã qua bước kiểm tra; trong lúc kiểm tra hoặc nếu bị lỗi, bản đang chạy vẫn được giữ.${campaign ? ' Bot bạn thêm đứng sau 10 bot có sẵn, và người chơi phải hạ cả chúng mới về đích.' : ''}${open ? '' : ' Giải đã đóng, chỉ xem được code.'}</p>
+        <table class="plain"><thead><tr><th>#</th><th>tên</th><th>loại</th><th>phiên bản đang chạy</th><th></th></tr></thead><tbody>${rows.join('')}</tbody></table>
+        ${open && campaign && !(editing && editing.kind === 'new') ? '<button class="btn small" id="addBot" style="margin-top:10px">➕ Thêm bot đấu tập</button>' : ''}
+        ${editor}
       </div>`;
+
       $('#closeBots').onclick = () => { botsOpen = null; panel.classList.add('hidden'); };
+      $$('[data-edit-house]', panel).forEach(b => b.onclick = () => startEditing('house', b.dataset.editHouse));
+      $$('[data-edit-bot]', panel).forEach(b => b.onclick = () => startEditing('bot', b.dataset.editBot));
+      if ($('#addBot')) $('#addBot').onclick = () => startEditing('new');
+      $$('[data-reset]', panel).forEach(b => b.onclick = async () => {
+        if (!confirm('Bỏ bản sửa và dùng lại bot gốc cho giải này?')) return;
+        try {
+          await api(`${botsUrl(t)}/house/${encodeURIComponent(b.dataset.reset)}`, { method: 'DELETE' });
+          if (isEditing('house', b.dataset.reset)) botsOpen.editing = null;
+          toast('Đã dùng lại bot gốc ↺');
+          showBots(t, true);
+        } catch (e) { toast(e.message, 'error'); }
+      });
       $$('[data-botdel]', panel).forEach(b => b.onclick = async () => {
         if (!confirm('Xóa bot này? Những lần người chơi đã hạ nó sẽ không còn được tính.')) return;
-        try { await api(`/api/admin/tournaments/${encodeURIComponent(t.id)}/bots/${encodeURIComponent(b.dataset.botdel)}`, { method: 'DELETE' }); showBots(t, true); }
-        catch (e) { toast(e.message, 'error'); }
-      });
-      const f = $('#bform');
-      if (!f) return;
-      if (keep) { f.botName.value = keep.name; f.language.value = keep.language; f.code.value = keep.code; }
-      else f.code.value = BOT_TEMPLATE[f.language.value];
-      f.language.onchange = () => { if (!f.code.value.trim() || Object.values(BOT_TEMPLATE).includes(f.code.value)) f.code.value = BOT_TEMPLATE[f.language.value]; };
-      f.code.addEventListener('keydown', e => {
-        if (e.key !== 'Tab') return;
-        e.preventDefault();
-        f.code.setRangeText('    ', f.code.selectionStart, f.code.selectionEnd, 'end');
-      });
-      f.onsubmit = async e => {
-        e.preventDefault();
         try {
-          await api(`/api/admin/tournaments/${encodeURIComponent(t.id)}/bots`, { method: 'POST', body: { name: f.botName.value, language: f.language.value, code: f.code.value } });
-          toast('Đã thêm bot, đang biên dịch… 🔧');
-          showBots(t);
-        } catch (ex) { toast(ex.message, 'error'); }
+          await api(`${botsUrl(t)}/bots/${encodeURIComponent(b.dataset.botdel)}`, { method: 'DELETE' });
+          if (isEditing('bot', b.dataset.botdel)) botsOpen.editing = null;
+          showBots(t, true);
+        } catch (e) { toast(e.message, 'error'); }
+      });
+      if (!editing) return;
+
+      const code = $('#beCode');
+      code.value = draft.code;
+      code.oninput = () => { draft.code = code.value; };
+      code.addEventListener('keydown', e => {
+        if (e.key !== 'Tab' || code.readOnly) return;
+        e.preventDefault();
+        code.setRangeText('    ', code.selectionStart, code.selectionEnd, 'end');
+        draft.code = code.value;
+      });
+      if ($('#beName')) $('#beName').oninput = e => { draft.name = e.target.value; };
+      if ($('#beLang')) $('#beLang').onchange = e => {
+        // swap in the new language's template unless the judge already wrote something
+        if (!draft.code.trim() || Object.values(BOT_TEMPLATE).includes(draft.code)) draft.code = code.value = BOT_TEMPLATE[e.target.value];
+        draft.language = e.target.value;
+      };
+      $('#beClose').onclick = () => { botsOpen.editing = null; renderBots(); };
+      if ($('#beTemplate')) $('#beTemplate').onclick = () => { if (confirm('Thay code hiện tại bằng code mẫu?')) draft.code = code.value = BOT_TEMPLATE[draft.language]; };
+      if ($('#beDefault')) $('#beDefault').onclick = () => {
+        if (confirm('Thay code trong ô bằng code gốc của bot? (Chưa lưu cho đến khi bấm Lưu.)')) draft.code = code.value = data.builtIn.find(h => h.id === editing.id).defaultCode;
+      };
+      if ($('#beSave')) $('#beSave').onclick = async () => {
+        try {
+          if (editing.kind === 'house') await api(`${botsUrl(t)}/house/${encodeURIComponent(editing.id)}`, { method: 'PUT', body: { code: draft.code } });
+          else if (editing.kind === 'bot') await api(`${botsUrl(t)}/bots/${encodeURIComponent(editing.id)}`, { method: 'PUT', body: draft });
+          else {
+            const { bot } = await api(`${botsUrl(t)}/bots`, { method: 'POST', body: draft });
+            botsOpen.editing = { kind: 'bot', id: bot.id };
+          }
+          toast('Đã lưu, đang biên dịch và chơi thử… 🔧');
+          showBots(t, true);
+        } catch (e) { toast(e.message, 'error'); }
       };
     }
 
@@ -292,9 +409,22 @@ public class Bot {
       $('#closeSubs').onclick = () => panel.classList.add('hidden');
     }
 
+    // ---------- accounts: search + scrolling list ----------
+    let allUsers = [];
     async function loadUsers() {
-      const { users } = await api('/api/admin/users');
-      $('#ubody').innerHTML = users.map(u => `<tr>
+      allUsers = (await api('/api/admin/users')).users;
+      renderUsers();
+    }
+    $('#userSearch').addEventListener('input', () => renderUsers());
+    $('#userRole').addEventListener('change', () => renderUsers());
+
+    function renderUsers() {
+      const users = allUsers;
+      const q = $('#userSearch').value.trim().toLowerCase();
+      const role = $('#userRole').value;
+      const shown = users.filter(u => (!role || u.role === role) && (!q || u.username.toLowerCase().includes(q) || u.teamName.toLowerCase().includes(q)));
+      $('#userCount').textContent = q || role ? `${shown.length} / ${users.length} tài khoản` : `${users.length} tài khoản`;
+      $('#ubody').innerHTML = !shown.length ? `<tr><td colspan="5" class="muted center">${users.length ? 'không tìm thấy tài khoản nào 🙈' : 'chưa có tài khoản nào'}</td></tr>` : shown.map(u => `<tr>
         <td>${avatarSvg(u.avatar, 34)}</td>
         <td>${esc(u.username)}</td><td>${esc(u.teamName)}</td><td>${u.role === 'judge' ? 'trọng tài' : 'người chơi'}</td>
         <td class="row" style="gap:6px">
@@ -324,7 +454,19 @@ public class Bot {
         try { await api(`/api/admin/users/${b.dataset.udel}`, { method: 'DELETE' }); loadUsers(); }
         catch (e) { toast(e.message, 'error'); }
       });
+      fitUserRows();
     }
+
+    // Show exactly 5 accounts; scroll for the rest. Rows can be taller on small screens
+    // (buttons wrap), so measure instead of guessing.
+    const VISIBLE_USERS = 5;
+    function fitUserRows() {
+      const box = $('.scroll-table');
+      const rows = $$('#ubody tr').slice(0, VISIBLE_USERS);
+      const head = box.querySelector('thead').offsetHeight;
+      box.style.maxHeight = rows.length ? head + rows.reduce((h, r) => h + r.offsetHeight, 0) + 2 + 'px' : '';
+    }
+    window.addEventListener('resize', () => fitUserRows());
 
     $('#uform').addEventListener('submit', async e => {
       e.preventDefault();
@@ -412,7 +554,7 @@ public class Bot {
       e.preventDefault();
       const f = new FormData(e.target);
       try {
-        const { tournament } = await api('/api/admin/tournaments', { method: 'POST', body: { name: f.get('name'), mode: f.get('mode'), access: f.get('access'), description: f.get('description'), deadline: new Date(f.get('deadline')).toISOString() } });
+        const { tournament } = await api('/api/admin/tournaments', { method: 'POST', body: { name: f.get('name'), mode: f.get('mode'), access: f.get('access'), description: f.get('description'), startsAt: f.get('startsAt') ? new Date(f.get('startsAt')).toISOString() : '', deadline: new Date(f.get('deadline')).toISOString() } });
         e.target.reset();
         // invite-only: go straight to picking the players
         if (tournament.access === 'invite') showMembers(tournament);

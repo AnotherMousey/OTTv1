@@ -95,6 +95,7 @@ function publicTournament(t, user) {
     mode: t.mode || 'brawl',
     description: t.description || '',
     deadline: t.deadline,
+    startsAt: t.startsAt || null,
     status: t.status,
     teamsReady: t.entries ? t.entries.length : ready.size,
     access: isInviteOnly(t) ? 'invite' : 'open',
@@ -171,6 +172,25 @@ app.post('/api/admin/registration', apiAuth, (req, res, next) => (isJudge(req.us
   res.json({ open: registrationOpen() });
 });
 app.get('/api/me', apiAuth, (req, res) => res.json({ user: auth.publicUser(req.user), serverNow: Date.now() }));
+// Players rename their own team (the username never changes) and change their password.
+app.put('/api/me/team', apiAuth, (req, res) => {
+  try {
+    auth.renameTeam(req.user, (req.body || {}).teamName);
+  } catch (e) {
+    return fail(res, 400, e.message);
+  }
+  io.to('judge').emit('users:changed');
+  io.to('users').emit('tournaments:changed');
+  res.json({ user: auth.publicUser(req.user) });
+});
+app.put('/api/me/password', apiAuth, (req, res) => {
+  const { currentPassword, newPassword } = req.body || {};
+  if (!auth.verifyPassword(currentPassword, req.user.passwordHash)) return fail(res, 400, 'Mật khẩu hiện tại không đúng');
+  if (String(newPassword || '').length < 6) return fail(res, 400, 'Mật khẩu mới phải có ít nhất 6 ký tự');
+  req.user.passwordHash = auth.hashPassword(newPassword);
+  db.save();
+  res.json({ ok: true });
+});
 app.put('/api/me/avatar', apiAuth, (req, res) => {
   req.user.avatar = normalizeAvatar((req.body || {}).avatar, req.user.teamName);
   db.save();
@@ -384,14 +404,25 @@ function parseDeadline(v) {
   if (!Number.isFinite(ms)) throw new Error('Hạn chót không hợp lệ');
   return new Date(ms).toISOString();
 }
+// Optional start time: submissions open then (until then players see a countdown).
+// In a campaign the penalty minutes are counted from it.
+function parseStart(v, deadline) {
+  const ms = Date.parse(v);
+  if (!Number.isFinite(ms)) throw new Error('Giờ bắt đầu không hợp lệ');
+  if (ms >= Date.parse(deadline)) throw new Error('Giờ bắt đầu phải trước hạn chót');
+  return new Date(ms).toISOString();
+}
 app.post('/api/admin/tournaments', apiAuth, apiJudge, (req, res) => {
-  const { name, deadline, description, mode = 'brawl', access = 'open' } = req.body || {};
+  const { name, deadline, startsAt, description, mode = 'brawl', access = 'open' } = req.body || {};
   if (!String(name || '').trim()) return fail(res, 400, 'Hãy đặt tên cho giải đấu');
   if (!['brawl', 'campaign'].includes(mode)) return fail(res, 400, 'Chế độ phải là brawl (hỗn chiến) hoặc campaign (chiến dịch)');
   if (!['open', 'invite'].includes(access)) return fail(res, 400, 'Quyền tham gia phải là open hoặc invite');
-  let dl;
-  try { dl = parseDeadline(deadline); } catch (e) { return fail(res, 400, e.message); }
-  const t = { id: db.id(), name: String(name).trim().slice(0, 80), mode, access, ...(access === 'invite' ? { members: [] } : {}), description: String(description || '').slice(0, 500), deadline: dl, status: 'open', createdAt: new Date().toISOString() };
+  let dl, start = null;
+  try {
+    dl = parseDeadline(deadline);
+    if (startsAt) start = parseStart(startsAt, dl);
+  } catch (e) { return fail(res, 400, e.message); }
+  const t = { id: db.id(), name: String(name).trim().slice(0, 80), mode, access, ...(access === 'invite' ? { members: [] } : {}), ...(start ? { startsAt: start } : {}), description: String(description || '').slice(0, 500), deadline: dl, status: 'open', createdAt: new Date().toISOString() };
   db.data.tournaments.push(t);
   db.save();
   io.to('users').emit('tournaments:changed');
@@ -401,10 +432,15 @@ app.patch('/api/admin/tournaments/:id', apiAuth, apiJudge, (req, res) => {
   const t = findTournament(req.params.id);
   if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
   if (t.status !== 'open') return fail(res, 400, 'Chỉ sửa được giải đấu chưa bắt đầu');
-  const { name, deadline, description, access } = req.body || {};
+  const { name, deadline, startsAt, description, access } = req.body || {};
   if (access !== undefined && !['open', 'invite'].includes(access)) return fail(res, 400, 'Quyền tham gia phải là open hoặc invite');
   try {
-    if (deadline !== undefined) t.deadline = parseDeadline(deadline);
+    const dl = deadline !== undefined ? parseDeadline(deadline) : t.deadline;
+    // startsAt: a date, or '' / null to remove it (submissions open right away)
+    const start = startsAt === undefined ? t.startsAt || null : startsAt ? parseStart(startsAt, dl) : null;
+    if (start && Date.parse(start) >= Date.parse(dl)) throw new Error('Giờ bắt đầu phải trước hạn chót');
+    t.deadline = dl;
+    if (start) t.startsAt = start; else delete t.startsAt;
   } catch (e) {
     return fail(res, 400, e.message);
   }
@@ -454,9 +490,15 @@ app.delete('/api/admin/tournaments/:id', apiAuth, apiJudge, (req, res) => {
   io.to('users').emit('tournaments:changed');
   res.json({ ok: true });
 });
-// Campaign sparring bots added by the judge (on top of the 10 built-in ones).
-const publicBot = b => ({ id: b.id, name: b.name, language: b.language, code: b.code, status: b.status, message: b.message || '', createdAt: b.createdAt });
-// A judge bot finished compiling: refresh pickers, campaign boards and the judge desk.
+// Sparring bots the judge controls, per tournament:
+//  - t.bots: bots added to a campaign (on top of the 10 built-in ones), any language;
+//  - t.houseEdits[houseId]: an edited Python copy of a built-in bot (all modes; in a brawl it
+//    only changes the practice games).
+// Each keeps its latest code (status = result of its check) and `live`, the last version that
+// passed, which is the one that plays (see grader/practice.js).
+const houseBot = id => grader.practice.HOUSE_BOTS.find(h => h.id === id);
+const publicBot = b => ({ id: b.id, name: b.name, language: b.language, code: b.code, status: b.status, message: b.message || '', live: !!grader.practice.liveOf(b), stale: b.status !== 'ok' && !!grader.practice.liveOf(b), createdAt: b.createdAt, updatedAt: b.updatedAt || null });
+// A judge bot was added, edited or finished compiling: refresh pickers, campaign boards and the judge desk.
 function botChanged(t) {
   io.to('users').emit('tournaments:changed');
   io.to('users').emit('practice:updated', { tournamentId: t.id });
@@ -465,38 +507,108 @@ function botChanged(t) {
 function checkBot(t, bot) {
   grader.checkBot(bot).then(() => botChanged(t));
 }
+function badCode(code) {
+  if (typeof code !== 'string' || !code.trim()) return 'Code của bot đang trống';
+  if (code.length > MAX_CODE_LENGTH) return `Code quá dài (tối đa ${MAX_CODE_LENGTH} ký tự)`;
+  return null;
+}
+// Bot changes only while the tournament is open (results must not shift under a running/finished one).
+function editableTournament(req, res) {
+  const t = findTournament(req.params.id);
+  if (!t) { fail(res, 404, 'Không tìm thấy giải đấu'); return null; }
+  if (t.status !== 'open') { fail(res, 400, 'Chỉ thay đổi được bot đấu tập khi giải còn đang mở'); return null; }
+  return t;
+}
+// Starts checking new code for an added bot or an edited built-in. The previous working
+// version (if any) keeps playing until this one passes.
+function newVersion(t, item, fields) {
+  const live = grader.practice.liveOf(item);
+  if (live) item.live = live;
+  Object.assign(item, fields, { buildId: 'bot-' + db.id(), status: 'pending', message: '', updatedAt: new Date().toISOString() });
+  db.save();
+  checkBot(t, item);
+  botChanged(t);
+}
+
 app.get('/api/admin/tournaments/:id/bots', apiAuth, apiJudge, (req, res) => {
   const t = findTournament(req.params.id);
   if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
-  res.json({ builtIn: grader.practice.HOUSE_BOTS.map(h => ({ id: h.id, name: h.name, desc: h.desc })), bots: (t.bots || []).map(publicBot), languages: grader.LANGS });
+  const edits = t.houseEdits || {};
+  res.json({
+    builtIn: grader.practice.HOUSE_BOTS.map(h => {
+      const e = edits[h.id];
+      return { id: h.id, name: h.name, desc: h.desc, defaultCode: grader.housePython(h.id), edit: e ? { ...publicBot({ ...e, name: h.name }), language: 'python' } : null };
+    }),
+    bots: (t.bots || []).map(publicBot),
+    languages: grader.LANGS,
+  });
 });
+app.put('/api/admin/tournaments/:id/house/:houseId', apiAuth, apiJudge, (req, res) => {
+  const t = editableTournament(req, res);
+  if (!t) return;
+  const h = houseBot(req.params.houseId);
+  if (!h) return fail(res, 404, 'Không tìm thấy bot');
+  const { code } = req.body || {};
+  const bad = badCode(code);
+  if (bad) return fail(res, 400, bad);
+  const edits = (t.houseEdits = t.houseEdits || {});
+  const e = (edits[h.id] = edits[h.id] || { id: h.id, language: 'python', createdAt: new Date().toISOString() });
+  newVersion(t, e, { code });
+  res.json({ ok: true });
+});
+// Back to the original built-in bot.
+app.delete('/api/admin/tournaments/:id/house/:houseId', apiAuth, apiJudge, (req, res) => {
+  const t = editableTournament(req, res);
+  if (!t) return;
+  const e = t.houseEdits && t.houseEdits[req.params.houseId];
+  if (!e) return fail(res, 404, 'Bot này đang dùng bản mặc định');
+  delete t.houseEdits[req.params.houseId];
+  db.save();
+  [e.buildId, e.live && e.live.buildId].filter(Boolean).forEach(id => grader.removeBuild({ id }));
+  botChanged(t);
+  res.json({ ok: true });
+});
+function checkBotName(t, name, except = null) {
+  if (!name) return 'Hãy đặt tên cho bot';
+  if ([...grader.practice.HOUSE_BOTS, ...(t.bots || [])].some(h => h !== except && h.name.toLowerCase() === name.toLowerCase())) return 'Đã có bot đấu tập tên này';
+  return null;
+}
 app.post('/api/admin/tournaments/:id/bots', apiAuth, apiJudge, (req, res) => {
-  const t = findTournament(req.params.id);
-  if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
+  const t = editableTournament(req, res);
+  if (!t) return;
   if (t.mode !== 'campaign') return fail(res, 400, 'Chỉ giải chiến dịch mới thêm được bot đấu tập');
-  if (t.status !== 'open') return fail(res, 400, 'Chỉ thêm được bot khi giải còn đang mở');
   const { language, code } = req.body || {};
   const name = String((req.body || {}).name || '').trim().slice(0, 40);
-  if (!name) return fail(res, 400, 'Hãy đặt tên cho bot');
-  if ([...grader.practice.HOUSE_BOTS, ...(t.bots || [])].some(h => h.name.toLowerCase() === name.toLowerCase())) return fail(res, 400, 'Đã có bot đấu tập tên này');
-  if (!grader.LANGS[language]) return fail(res, 400, 'Hãy chọn ngôn ngữ: cpp, java hoặc python');
-  if (typeof code !== 'string' || !code.trim()) return fail(res, 400, 'Code của bot đang trống');
-  if (code.length > MAX_CODE_LENGTH) return fail(res, 400, `Code quá dài (tối đa ${MAX_CODE_LENGTH} ký tự)`);
-  const bot = { id: 'bot-' + db.id(), name, language, code, status: 'pending', message: '', createdAt: new Date().toISOString() };
+  const bad = checkBotName(t, name) || (!grader.LANGS[language] && 'Hãy chọn ngôn ngữ: cpp, java hoặc python') || badCode(code);
+  if (bad) return fail(res, 400, bad);
+  const bot = { id: 'bot-' + db.id(), name, createdAt: new Date().toISOString() };
   (t.bots = t.bots || []).push(bot);
-  db.save();
-  checkBot(t, bot);
+  newVersion(t, bot, { language, code });
+  res.json({ bot: publicBot(bot) });
+});
+// Edit an added bot: a new name only takes effect at once; new code/language is checked first.
+app.put('/api/admin/tournaments/:id/bots/:botId', apiAuth, apiJudge, (req, res) => {
+  const t = editableTournament(req, res);
+  if (!t) return;
+  const bot = (t.bots || []).find(b => b.id === req.params.botId);
+  if (!bot) return fail(res, 404, 'Không tìm thấy bot');
+  const { language, code } = req.body || {};
+  const name = String((req.body || {}).name ?? bot.name).trim().slice(0, 40);
+  const bad = checkBotName(t, name, bot) || (!grader.LANGS[language] && 'Hãy chọn ngôn ngữ: cpp, java hoặc python') || badCode(code);
+  if (bad) return fail(res, 400, bad);
+  bot.name = name;
+  if (code !== bot.code || language !== bot.language) newVersion(t, bot, { language, code });
+  else { db.save(); botChanged(t); }
   res.json({ bot: publicBot(bot) });
 });
 app.delete('/api/admin/tournaments/:id/bots/:botId', apiAuth, apiJudge, (req, res) => {
-  const t = findTournament(req.params.id);
-  if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
-  if (t.status !== 'open') return fail(res, 400, 'Chỉ xóa được bot khi giải còn đang mở');
+  const t = editableTournament(req, res);
+  if (!t) return;
   const bot = (t.bots || []).find(b => b.id === req.params.botId);
   if (!bot) return fail(res, 404, 'Không tìm thấy bot');
   t.bots = t.bots.filter(b => b !== bot);
   db.save();
-  grader.removeBuild(bot);
+  [bot.id, bot.buildId, bot.live && bot.live.buildId].filter(Boolean).forEach(id => grader.removeBuild({ id }));
   botChanged(t);
   res.json({ ok: true });
 });
@@ -522,7 +634,9 @@ grader.practice.onUpdate(sub => {
 });
 grader.resumePractice();
 // Judge bots that were still compiling when the server stopped.
-for (const t of db.data.tournaments) for (const b of t.bots || []) if (b.status === 'pending') checkBot(t, b);
+for (const t of db.data.tournaments) {
+  for (const b of [...(t.bots || []), ...Object.values(t.houseEdits || {})]) if (b.status === 'pending') checkBot(t, b);
+}
 
 // ---------- sockets ----------
 io.engine.use(sessionMiddleware);

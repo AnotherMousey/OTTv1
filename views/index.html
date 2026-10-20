@@ -37,20 +37,23 @@
       }
       list.innerHTML = tournaments.map(t => {
         const id = encodeURIComponent(t.id);
-        const statusText = { open: 'đang nhận bot', running: 'ĐANG DIỄN RA', finished: 'đã kết thúc' }[t.status];
+        const waiting = t.status === 'open' && t.startsAt && Date.parse(t.startsAt) > serverNow(); // not open for submissions yet
+        const statusText = waiting ? 'sắp mở' : { open: 'đang nhận bot', running: 'ĐANG DIỄN RA', finished: 'đã kết thúc' }[t.status];
         let timer = '';
-        if (t.status === 'open') timer = `<div class="countdown" data-deadline="${t.deadline}"></div><small class="muted">đóng lúc ${esc(fmtDate(t.deadline))}</small>`;
+        if (waiting) timer = `<small class="muted">mở nhận bài sau</small><div class="countdown" data-deadline="${t.startsAt}" data-opens="1"></div><small class="muted">mở lúc ${esc(fmtDate(t.startsAt))} · đóng lúc ${esc(fmtDate(t.deadline))}</small>`;
+        else if (t.status === 'open') timer = `<div class="countdown" data-deadline="${t.deadline}"></div><small class="muted">đóng lúc ${esc(fmtDate(t.deadline))}</small>`;
         else if (t.status === 'running') timer = '<div class="countdown">🔥 đang đấu…</div>';
         else timer = `<div class="countdown">${t.champion ? '🏆 ' + esc(t.champion) : 'không có người thắng'}</div>`;
         const actions = [];
-        if (t.status === 'open' && ME.role !== 'judge') actions.push(`<a class="btn red" href="/tournament/${id}/submit">Nộp code ✍️</a>`);
+        if (waiting && ME.role !== 'judge') actions.push(`<a class="btn" href="/tournament/${id}/submit">Xem luật & chuẩn bị code 📜</a>`);
+        else if (t.status === 'open' && ME.role !== 'judge') actions.push(`<a class="btn red" href="/tournament/${id}/submit">Nộp code ✍️</a>`);
         if (t.status === 'open' && ME.role === 'judge') actions.push(`<a class="btn" href="/tournament/${id}/submit">${t.mode === 'campaign' ? 'Bảng chiến dịch 🗺️' : 'Bảng luyện tập 🥋'}</a>`, `<a class="btn" href="/admin">Quản lý</a>`);
         if (t.status === 'open' && t.mode === 'campaign' && ME.role !== 'judge') actions.push(`<a class="btn" href="/tournament/${id}/live">Bảng xếp hạng 🗺️</a>`);
         if (t.status !== 'open') actions.push(`<a class="btn ${t.status === 'running' ? 'yellow' : ''}" href="/tournament/${id}/live">${t.status === 'running' ? 'Xem trực tiếp 👀' : 'Kết quả 🏆'}</a>`);
         return `
           <div class="box tcard">
             <div>
-              <div class="row"><h2>${esc(t.name)}</h2><span class="tag ${t.status}">${statusText}</span><span class="tag mode">${t.mode === 'campaign' ? '🗺️ chiến dịch' : '⚔️ hỗn chiến'}</span>${t.access === 'invite' ? `<span class="tag mode" title="chỉ những đội được trọng tài chỉ định">🔒 ${ME.role === 'judge' ? `${t.members} đội được chỉ định` : 'giải riêng'}</span>` : ''}</div>
+              <div class="row"><h2>${esc(t.name)}</h2><span class="tag ${waiting ? 'pending' : t.status}">${statusText}</span><span class="tag mode">${t.mode === 'campaign' ? '🗺️ chiến dịch' : '⚔️ hỗn chiến'}</span>${t.access === 'invite' ? `<span class="tag mode" title="chỉ những đội được trọng tài chỉ định">🔒 ${ME.role === 'judge' ? `${t.members} đội được chỉ định` : 'giải riêng'}</span>` : ''}</div>
               ${t.description ? `<div class="desc">${esc(t.description)}</div>` : ''}
               <div style="margin-top:6px">${subLine(t)}</div>
             </div>
@@ -63,6 +66,7 @@
     function tick() {
       for (const el of $$('.countdown[data-deadline]')) {
         const left = Date.parse(el.dataset.deadline) - serverNow();
+        if (left <= 0 && el.dataset.opens) { render(); return; } // just opened: show the submit button
         el.textContent = left > 0 ? fmtCountdown(left) : 'hết giờ!';
         el.classList.toggle('soon', left > 0 && left < 60000);
       }

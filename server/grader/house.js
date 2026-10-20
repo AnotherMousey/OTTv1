@@ -242,4 +242,27 @@ const HOUSE_BOTS = [
   },
 ];
 
-module.exports = { HOUSE_BOTS };
+// ---------- Python versions ----------
+// Each built-in bot also exists as a Python bot (house_py/<id>.py) with the same behaviour.
+// The judge sees and edits that version; an edited copy then plays instead of the JS one in
+// that tournament. A bot file starts with "# uses: base predictors ..." naming the shared
+// pieces (house_py/_<piece>.py) it needs; they are pasted in so the result stands alone.
+const fs = require('fs');
+const path = require('path');
+const PY_DIR = path.join(__dirname, 'house_py');
+const piece = name => fs.readFileSync(path.join(PY_DIR, `_${name}.py`), 'utf8').trim();
+
+function pythonSource(id) {
+  const bot = HOUSE_BOTS.find(h => h.id === id);
+  if (!bot) return null;
+  const src = fs.readFileSync(path.join(PY_DIR, `${id}.py`), 'utf8').replace(/\r\n/g, '\n');
+  const [first, ...rest] = src.split('\n');
+  const uses = (first.match(/^# uses:(.*)$/) || [, ''])[1].trim().split(/\s+/).filter(Boolean);
+  const head = `# Sparring bot "${bot.name}": Python version of the built-in bot.\n` +
+    '# Same interface as a player bot: play(my_moves, opponent_moves) -> "R" | "P" | "S".\n' +
+    '# my_moves / opponent_moves: lists of the previous turns, oldest first (may contain "X").\n' +
+    '# The process lives for one game (100 turns), so module-level state is per game.';
+  return [head, ...uses.map(piece), rest.join('\n').trim()].join('\n\n\n') + '\n';
+}
+
+module.exports = { HOUSE_BOTS, pythonSource };

@@ -67,6 +67,18 @@ The judge picks a mode when creating a tournament (older tournaments without one
   player's bot. Each is compiled and smoke-tested; once ✅ it joins the list after the 10 built-in
   bots and players must beat it too to finish. Removing a bot also removes the credit for beating it.
 
+### Editing the sparring bots
+
+Each of the 10 built-in bots also has a Python version
+([server/grader/house_py/](server/grader/house_py/), assembled from shared pieces `_base.py`,
+`_predictors.py`, `_meta.py`, `_bayes.py`) that plays the same way as the JavaScript original. On the
+Judge desk (**bot đấu tập** on any open tournament) the judge can open that Python code, change it and
+save: it is compiled and given the 5-turn test, and once it passes, *that tournament* uses it instead
+of the built-in bot (other tournaments are unaffected; in a brawl it only changes the practice games).
+**↺ mặc định** goes back to the original. Bots added to a campaign can be edited the same way
+(name, language and code). While a new version is being checked, or if it fails, the last working
+version keeps playing. Credit for beating a bot earlier is kept when its code changes.
+
 ### Who can take part
 
 When creating a tournament the judge also picks who may enter it:

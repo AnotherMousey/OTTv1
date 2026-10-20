@@ -26,6 +26,26 @@
       </div>
       <div id="options"></div>
     </div>
+
+    <div class="squiggle"></div>
+    <h2>Tài khoản</h2>
+    <div class="account-grid">
+      <form class="box" id="teamForm">
+        <h3 style="margin-top:0">Đổi tên đội</h3>
+        <p class="muted" style="font-size:17px;margin-top:-6px">Tên đăng nhập <b id="uname"></b> giữ nguyên. Kết quả của các giải hỗn chiến đã bắt đầu vẫn giữ tên cũ.</p>
+        <label><span>tên đội mới</span><input name="teamName" required maxlength="32" style="width:100%"></label>
+        <button class="btn red">Lưu tên đội ✏️</button>
+      </form>
+      <form class="box alt" id="pwForm" autocomplete="on">
+        <h3 style="margin-top:0">Đổi mật khẩu</h3>
+        <input type="text" name="username" autocomplete="username" class="hidden">
+        <label><span>mật khẩu hiện tại</span><input name="currentPassword" type="password" required autocomplete="current-password" style="width:100%"></label>
+        <label><span>mật khẩu mới <small class="muted">(ít nhất 6 ký tự)</small></span><input name="newPassword" type="password" required minlength="6" autocomplete="new-password" style="width:100%"></label>
+        <label><span>nhập lại mật khẩu mới</span><input name="newPassword2" type="password" required minlength="6" autocomplete="new-password" style="width:100%"></label>
+        <div class="err" id="pwErr"></div>
+        <button class="btn red">Đổi mật khẩu 🔑</button>
+      </form>
+    </div>
   </main>
 
   <script src="/socket.io/socket.io.js"></script>
@@ -79,6 +99,32 @@
         toast(e.message, 'error');
       }
     };
+    $('#teamForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      const name = e.target.teamName.value.trim();
+      if (name === ME.teamName) return toast('Đây đã là tên đội của bạn rồi');
+      try {
+        const { user } = await api('/api/me/team', { method: 'PUT', body: { teamName: name } });
+        ME = user;
+        e.target.teamName.value = user.teamName;
+        $('#teamName').textContent = user.teamName;
+        renderTopbar();
+        toast('Đã đổi tên đội ✏️');
+      } catch (ex) { toast(ex.message, 'error'); }
+    });
+    $('#pwForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      const f = e.target, err = $('#pwErr');
+      err.textContent = '';
+      if (f.newPassword.value !== f.newPassword2.value) { err.textContent = 'Hai mật khẩu mới không khớp 🙈'; return; }
+      try {
+        await api('/api/me/password', { method: 'PUT', body: { currentPassword: f.currentPassword.value, newPassword: f.newPassword.value } });
+        f.reset();
+        f.username.value = ME.username;
+        toast('Đã đổi mật khẩu 🔑');
+      } catch (ex) { err.textContent = ex.message + ' 🙈'; }
+    });
+
     window.addEventListener('beforeunload', e => { if (draft && saved && !same(draft, saved)) { e.preventDefault(); e.returnValue = ''; } });
 
     (async () => {
@@ -86,6 +132,9 @@
       saved = { ...ME.avatar };
       draft = { ...saved };
       $('#teamName').textContent = ME.teamName;
+      $('#uname').textContent = '@' + ME.username;
+      $('#teamForm').teamName.value = ME.teamName;
+      $('#pwForm').username.value = ME.username; // lets password managers file the new password under the right account
       renderPreview();
       renderOptions();
     })().catch(e => toast(e.message, 'error'));
