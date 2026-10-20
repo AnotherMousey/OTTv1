@@ -47,7 +47,12 @@ const manager = new TournamentManager(io);
 const findUser = id => db.data.users.find(u => u.id === id);
 const findTournament = id => db.data.tournaments.find(t => t.id === id);
 const currentUser = req => (req.session.userId ? findUser(req.session.userId) : null);
-const isJudge = u => u && u.role === 'judge';
+const { isJudge, isInviteOnly, canPlay, canSee } = require('./access');
+// The tournament in the URL, if this user may see it (invite-only ones are hidden from outsiders).
+const visibleTournament = req => {
+  const t = findTournament(req.params.id);
+  return t && canSee(t, req.user) ? t : null;
+};
 
 function apiAuth(req, res, next) {
   req.user = currentUser(req);
@@ -75,7 +80,7 @@ const fail = (res, code, error) => res.status(code).json({ error });
 
 function publicTournament(t, user) {
   const subs = db.data.submissions.filter(s => s.tournamentId === t.id);
-  const ready = new Set(subs.filter(s => s.status === 'ok').map(s => s.userId));
+  const ready = new Set(subs.filter(s => s.status === 'ok' && canPlay(t, s.userId)).map(s => s.userId));
   const mine = user ? subs.filter(s => s.userId === user.id).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)) : [];
   let championId = t.championId;
   if (!championId && t.mode === 'campaign' && t.status === 'finished') {
@@ -92,6 +97,8 @@ function publicTournament(t, user) {
     deadline: t.deadline,
     status: t.status,
     teamsReady: t.entries ? t.entries.length : ready.size,
+    access: isInviteOnly(t) ? 'invite' : 'open',
+    members: isInviteOnly(t) && isJudge(user) ? (t.members || []).filter(id => findUser(id)).length : undefined,
     champion: champion ? champion.teamName : null,
     mySubmission: mine[0] ? publicSubmission(mine[0]) : null,
     myActive: (mine.find(s => s.status === 'ok') || {}).id || null,
@@ -174,13 +181,14 @@ app.put('/api/me/avatar', apiAuth, (req, res) => {
 app.get('/api/tournaments', apiAuth, (req, res) => {
   const order = { running: 0, open: 1, finished: 2 };
   const list = db.data.tournaments
+    .filter(t => canSee(t, req.user))
     .map(t => publicTournament(t, req.user))
     .sort((a, b) => order[a.status] - order[b.status] || (a.status === 'finished' ? (a.deadline < b.deadline ? 1 : -1) : a.deadline < b.deadline ? -1 : 1));
   res.json({ tournaments: list, serverNow: Date.now() });
 });
 
 app.get('/api/tournaments/:id', apiAuth, (req, res) => {
-  const t = findTournament(req.params.id);
+  const t = visibleTournament(req);
   if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
   const mine = db.data.submissions
     .filter(s => s.tournamentId === t.id && s.userId === req.user.id)
@@ -199,9 +207,10 @@ app.get('/api/tournaments/:id', apiAuth, (req, res) => {
 });
 
 app.post('/api/tournaments/:id/submissions', apiAuth, (req, res) => {
-  const t = findTournament(req.params.id);
+  const t = visibleTournament(req);
   if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
   if (isJudge(req.user)) return fail(res, 403, 'Trọng tài chỉ chấm, không thi đấu. (Hãy đăng nhập bằng tài khoản người chơi để nộp bài.)');
+  if (!canPlay(t, req.user.id)) return fail(res, 404, 'Không tìm thấy giải đấu');
   if (t.status !== 'open' || Date.parse(t.deadline) <= Date.now()) return fail(res, 400, 'Muộn rồi! Giải này đã hết hạn nộp bài.');
   if (t.startsAt && Date.parse(t.startsAt) > Date.now()) return fail(res, 400, 'Giải chưa bắt đầu, hãy đợi đến giờ mở cửa nhé.');
   const { language, code, target } = req.body || {};
@@ -233,14 +242,14 @@ app.get('/api/submissions/:id', apiAuth, (req, res) => {
 // Practice leaderboard: everyone sees each team's total against the 10 house
 // bots; the per-bot breakdown is only for the team itself (and the judge).
 app.get('/api/tournaments/:id/practice', apiAuth, (req, res) => {
-  const t = findTournament(req.params.id);
+  const t = visibleTournament(req);
   if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
   if (t.mode === 'campaign') {
     const want = String(req.query.user || req.user.id);
     if (want !== req.user.id && !isJudge(req.user)) return fail(res, 403, 'Không được xem tiến độ của đội khác 🤫');
     return res.json({ mode: 'campaign', board: campaign.board(t), details: campaign.details(t, want), serverNow: Date.now() });
   }
-  const userIds = [...new Set(db.data.submissions.filter(s => s.tournamentId === t.id).map(s => s.userId))];
+  const userIds = [...new Set(db.data.submissions.filter(s => s.tournamentId === t.id && canPlay(t, s.userId)).map(s => s.userId))];
   const rows = userIds.map(uid => {
     const u = findUser(uid);
     if (!u) return null;
@@ -285,13 +294,13 @@ app.get('/api/tournaments/:id/practice', apiAuth, (req, res) => {
 });
 
 app.get('/api/tournaments/:id/leaderboard', apiAuth, (req, res) => {
-  const t = findTournament(req.params.id);
+  const t = visibleTournament(req);
   if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
   res.json({ leaderboard: manager.leaderboard(t), canSeeMatches: canSeeMatches(t, req.user), serverNow: Date.now() });
 });
 
 app.get('/api/tournaments/:id/matches', apiAuth, (req, res) => {
-  const t = findTournament(req.params.id);
+  const t = visibleTournament(req);
   if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
   if (!canSeeMatches(t, req.user)) return fail(res, 403, 'Các trận đấu sẽ được công khai khi giải kết thúc');
   const list = Object.values(db.data.matches[t.id] || {}).map(matchSummary)
@@ -300,7 +309,7 @@ app.get('/api/tournaments/:id/matches', apiAuth, (req, res) => {
 });
 
 app.get('/api/tournaments/:id/matches/:name', apiAuth, (req, res) => {
-  const t = findTournament(req.params.id);
+  const t = visibleTournament(req);
   if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
   if (!canSeeMatches(t, req.user)) return fail(res, 403, 'Các trận đấu sẽ được công khai khi giải kết thúc');
   const m = (db.data.matches[t.id] || {})[req.params.name];
@@ -323,6 +332,23 @@ app.post('/api/admin/users', apiAuth, apiJudge, (req, res) => {
   console.log(`[users] judge "${req.user.username}" added ${user.role} "${user.username}" (team "${user.teamName}")`);
   io.to('judge').emit('users:changed');
   res.json({ user: auth.publicUser(user) });
+});
+// Many accounts at once (all or nothing). Returns the plain passwords so the judge can hand them out.
+const BULK_LIMIT = 500;
+app.post('/api/admin/users/bulk', apiAuth, apiJudge, async (req, res) => {
+  const list = (req.body || {}).users;
+  if (!Array.isArray(list) || !list.length) return fail(res, 400, 'Danh sách tài khoản đang trống');
+  if (list.length > BULK_LIMIT) return fail(res, 400, `Tối đa ${BULK_LIMIT} tài khoản mỗi lần`);
+  let result;
+  try {
+    result = await auth.createUsers(list.map(u => ({ username: u && u.username, password: u && u.password, teamName: u && u.teamName, role: (u && u.role) || 'player' })));
+  } catch (e) {
+    return fail(res, 500, e.message);
+  }
+  if (result.errors) return res.status(400).json({ error: `Có ${result.errors.length} dòng bị lỗi, chưa tạo tài khoản nào`, errors: result.errors });
+  console.log(`[users] judge "${req.user.username}" added ${result.created.length} accounts`);
+  io.to('judge').emit('users:changed');
+  res.json({ created: result.created.map(c => ({ ...auth.publicUser(c.user), password: c.password })) });
 });
 app.patch('/api/admin/users/:id', apiAuth, apiJudge, (req, res) => {
   const u = findUser(req.params.id);
@@ -359,22 +385,24 @@ function parseDeadline(v) {
   return new Date(ms).toISOString();
 }
 app.post('/api/admin/tournaments', apiAuth, apiJudge, (req, res) => {
-  const { name, deadline, description, mode = 'brawl' } = req.body || {};
+  const { name, deadline, description, mode = 'brawl', access = 'open' } = req.body || {};
   if (!String(name || '').trim()) return fail(res, 400, 'Hãy đặt tên cho giải đấu');
   if (!['brawl', 'campaign'].includes(mode)) return fail(res, 400, 'Chế độ phải là brawl (hỗn chiến) hoặc campaign (chiến dịch)');
+  if (!['open', 'invite'].includes(access)) return fail(res, 400, 'Quyền tham gia phải là open hoặc invite');
   let dl;
   try { dl = parseDeadline(deadline); } catch (e) { return fail(res, 400, e.message); }
-  const t = { id: db.id(), name: String(name).trim().slice(0, 80), mode, description: String(description || '').slice(0, 500), deadline: dl, status: 'open', createdAt: new Date().toISOString() };
+  const t = { id: db.id(), name: String(name).trim().slice(0, 80), mode, access, ...(access === 'invite' ? { members: [] } : {}), description: String(description || '').slice(0, 500), deadline: dl, status: 'open', createdAt: new Date().toISOString() };
   db.data.tournaments.push(t);
   db.save();
   io.to('users').emit('tournaments:changed');
-  res.json({ tournament: publicTournament(t) });
+  res.json({ tournament: publicTournament(t, req.user) });
 });
 app.patch('/api/admin/tournaments/:id', apiAuth, apiJudge, (req, res) => {
   const t = findTournament(req.params.id);
   if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
   if (t.status !== 'open') return fail(res, 400, 'Chỉ sửa được giải đấu chưa bắt đầu');
-  const { name, deadline, description } = req.body || {};
+  const { name, deadline, description, access } = req.body || {};
+  if (access !== undefined && !['open', 'invite'].includes(access)) return fail(res, 400, 'Quyền tham gia phải là open hoặc invite');
   try {
     if (deadline !== undefined) t.deadline = parseDeadline(deadline);
   } catch (e) {
@@ -382,9 +410,38 @@ app.patch('/api/admin/tournaments/:id', apiAuth, apiJudge, (req, res) => {
   }
   if (name !== undefined && String(name).trim()) t.name = String(name).trim().slice(0, 80);
   if (description !== undefined) t.description = String(description).slice(0, 500);
+  if (access !== undefined) {
+    t.access = access;
+    if (access === 'invite' && !t.members) t.members = [];
+  }
   db.save();
   io.to('users').emit('tournaments:changed');
   res.json({ tournament: publicTournament(t) });
+});
+// Invite-only tournaments: which players are in. Body: { userIds: [...] } (the full list).
+app.get('/api/admin/tournaments/:id/members', apiAuth, apiJudge, (req, res) => {
+  const t = findTournament(req.params.id);
+  if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
+  const submitted = new Set(db.data.submissions.filter(s => s.tournamentId === t.id).map(s => s.userId));
+  res.json({
+    access: isInviteOnly(t) ? 'invite' : 'open',
+    members: t.members || [],
+    players: db.data.users.filter(u => u.role === 'player').map(u => ({ ...auth.publicUser(u), submitted: submitted.has(u.id) })),
+  });
+});
+app.put('/api/admin/tournaments/:id/members', apiAuth, apiJudge, (req, res) => {
+  const t = findTournament(req.params.id);
+  if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
+  if (t.status !== 'open') return fail(res, 400, 'Chỉ đổi được danh sách khi giải còn đang mở');
+  const ids = (req.body || {}).userIds;
+  if (!Array.isArray(ids)) return fail(res, 400, 'Danh sách người chơi không hợp lệ');
+  const players = new Set(db.data.users.filter(u => u.role === 'player').map(u => u.id));
+  t.members = [...new Set(ids.map(String))].filter(id => players.has(id));
+  db.save();
+  io.to('users').emit('tournaments:changed');
+  io.to('users').emit('practice:updated', { tournamentId: t.id });
+  manager.broadcast(t);
+  res.json({ members: t.members });
 });
 app.delete('/api/admin/tournaments/:id', apiAuth, apiJudge, (req, res) => {
   const t = findTournament(req.params.id);
@@ -473,10 +530,11 @@ io.on('connection', socket => {
   const user = socket.request.session && findUser(socket.request.session.userId);
   if (!user) return socket.disconnect(true);
   socket.join('users');
+  socket.join('u:' + user.id);
   if (isJudge(user)) socket.join('judge');
   socket.on('watch', id => {
     const t = findTournament(String(id));
-    if (!t) return;
+    if (!t || !canSee(t, findUser(user.id))) return;
     socket.join('t:' + t.id);
     socket.emit('leaderboard', manager.leaderboard(t));
   });

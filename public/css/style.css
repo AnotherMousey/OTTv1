@@ -372,6 +372,14 @@ pre.msg { white-space: pre; background: #f4f2ea; border-radius: 8px; padding: 10
 table.plain { width: 100%; border-collapse: collapse; font-size: 18px; }
 table.plain th { text-align: left; color: var(--muted); font-weight: 400; border-bottom: 2px solid var(--ink); }
 table.plain td { border-bottom: 1px dashed #ccc; padding: 5px 4px; vertical-align: middle; }
+.member-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 6px; max-height: 420px; overflow: auto; padding: 2px; }
+.member { display: flex; align-items: center; gap: 6px; margin: 0; padding: 4px 8px; border: 2px dashed #ccc; border-radius: 10px; cursor: pointer; font-size: 17px; line-height: 1.1; }
+.member:hover { background: #fffbe6; }
+.member.on { border: 2px solid var(--green); background: #effaf1; }
+.member input { width: 18px; height: 18px; flex: none; }
+.member span { min-width: 0; overflow: hidden; }
+.member b { display: block; font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.member small { color: var(--muted); font-size: 14px; }
 .form-row { display: flex; gap: 10px; flex-wrap: wrap; }
 .form-row > * { flex: 1; min-width: 120px; }
 

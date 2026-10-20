@@ -6,6 +6,7 @@ const grader = require('./grader');
 const { runMatch } = require('./grader/match');
 const { avatarOf } = require('./auth');
 const campaign = require('./campaign');
+const { isInviteOnly, canPlay } = require('./access');
 const avatarById = id => avatarOf(db.data.users.find(u => u.id === id) || { teamName: '' });
 
 const PARALLEL_MATCHES = +process.env.PARALLEL_MATCHES || Math.max(1, Math.floor(os.cpus().length / 2));
@@ -59,7 +60,10 @@ class TournamentManager {
         t.startedAt = new Date().toISOString();
         db.save();
         console.log(`[tournament] "${t.name}" deadline reached - starting`);
-        this.io.to('users').emit('tournament:started', { id: t.id, name: t.name });
+        // pull everyone who can watch it to the live page: all users, or for an invite-only
+        // tournament just its players and the judges
+        const rooms = isInviteOnly(t) ? ['judge', ...(t.members || []).map(id => 'u:' + id)] : ['users'];
+        this.io.to(rooms).emit('tournament:started', { id: t.id, name: t.name });
         this.io.to('users').emit('tournaments:changed');
       }
       if (t.mode === 'campaign') return await this.closeCampaign(t);
@@ -103,7 +107,7 @@ class TournamentManager {
   collectEntries(t) {
     const latest = new Map();
     for (const s of db.data.submissions) {
-      if (s.tournamentId !== t.id || s.status !== 'ok') continue;
+      if (s.tournamentId !== t.id || s.status !== 'ok' || !canPlay(t, s.userId)) continue;
       const prev = latest.get(s.userId);
       if (!prev || prev.createdAt < s.createdAt) latest.set(s.userId, s);
     }

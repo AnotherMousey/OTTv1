@@ -67,6 +67,18 @@ The judge picks a mode when creating a tournament (older tournaments without one
   player's bot. Each is compiled and smoke-tested; once ✅ it joins the list after the 10 built-in
   bots and players must beat it too to finish. Removing a bot also removes the credit for beating it.
 
+### Who can take part
+
+When creating a tournament the judge also picks who may enter it:
+
+- **🌍 Every player** (default): everyone sees it and can submit.
+- **🔒 Only assigned teams:** players can't join by themselves. The judge ticks the teams that may play
+  (Judge desk → **người chơi** on the tournament's row). Everyone else doesn't see the tournament at
+  all: it isn't in their list, and they can't submit, open its leaderboard or watch it live. When the
+  deadline hits, only the assigned players (and judges) are pulled to the live page. The list can be
+  changed, or the tournament switched between the two modes, until the deadline. Removing a team
+  that already submitted drops its bots from the tournament.
+
 ## How a tournament works (brawl)
 
 1. The judge creates a tournament with a deadline. The main page lists it with a countdown.

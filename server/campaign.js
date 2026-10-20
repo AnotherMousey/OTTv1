@@ -7,6 +7,7 @@
 const db = require('./db');
 const { CAMPAIGN_GAMES, botsFor } = require('./grader/practice');
 const { avatarOf } = require('./auth');
+const { canPlay } = require('./access');
 
 const PEN_PER_SUBMISSION = 20;
 
@@ -69,7 +70,7 @@ function progressOf(t, userId) {
 }
 
 function participants(t) {
-  return [...new Set(db.data.submissions.filter(s => s.tournamentId === t.id).map(s => s.userId))]
+  return [...new Set(db.data.submissions.filter(s => s.tournamentId === t.id && canPlay(t, s.userId)).map(s => s.userId))]
     .map(id => db.data.users.find(u => u.id === id))
     .filter(Boolean);
 }

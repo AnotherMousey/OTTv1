@@ -20,6 +20,10 @@
             <option value="brawl">⚔️ Hỗn chiến: sau hạn chót, các bot đấu với nhau qua các vòng loại trực tiếp</option>
             <option value="campaign">🗺️ Chiến dịch: đua hạ hết các bot đấu tập, ai về đích sớm nhất thắng</option>
           </select></label>
+          <label><span>ai được tham gia</span><select name="access" style="width:100%">
+            <option value="open">🌍 Mọi người chơi đều được nộp bài</option>
+            <option value="invite">🔒 Chỉ những đội được trọng tài chỉ định (chọn sau khi tạo giải)</option>
+          </select></label>
           <label><span>mô tả (không bắt buộc)</span><input name="description" style="width:100%" placeholder="Mang theo những bot xịn nhất"></label>
           <label><span>hạn chót nộp bài (theo giờ máy bạn)</span><input name="deadline" type="datetime-local" required style="width:100%"></label>
           <button class="btn red">Tạo giải 🏁</button>
@@ -30,6 +34,7 @@
     <div class="squiggle"></div>
     <h2>Các giải đấu</h2>
     <div class="box"><table class="plain"><thead><tr><th>tên</th><th>chế độ</th><th>trạng thái</th><th>hạn chót</th><th>số đội</th><th></th></tr></thead><tbody id="tbody"></tbody></table></div>
+    <div id="membersPanel" class="hidden" style="margin-top:20px"></div>
     <div id="botsPanel" class="hidden" style="margin-top:20px"></div>
     <div id="subsPanel" class="hidden" style="margin-top:20px"></div>
 
@@ -48,6 +53,23 @@
         <label><span>vai trò</span><select name="role" style="width:100%"><option value="player">người chơi</option><option value="judge">trọng tài</option></select></label>
         <div style="flex:0 0 auto;margin-bottom:10px"><button class="btn red">Thêm 👤</button></div>
       </form>
+      <details id="bulk" style="margin-top:6px">
+        <summary style="cursor:pointer;font-size:22px">➕ Thêm nhiều tài khoản cùng lúc</summary>
+        <p class="muted" style="font-size:17px;margin:6px 0">Mỗi dòng một tài khoản: <code>tên đăng nhập, mật khẩu, tên đội</code> (có thể dán thẳng từ Excel). Mật khẩu và tên đội có thể bỏ trống: mật khẩu sẽ được tạo ngẫu nhiên, tên đội lấy theo tên đăng nhập. Nếu có dòng lỗi thì chưa tài khoản nào được tạo.</p>
+        <div class="row" style="gap:8px;margin-bottom:8px;font-size:18px">
+          tạo nhanh: <input id="genPrefix" value="team" style="width:110px" title="tiền tố tên đăng nhập">
+          từ số <input id="genFrom" type="number" value="1" min="0" style="width:80px">
+          đến <input id="genTo" type="number" value="20" min="0" style="width:80px">
+          <button class="btn small" type="button" id="genBtn">điền danh sách</button>
+        </div>
+        <textarea id="bulkText" class="code" spellcheck="false" style="min-height:180px" placeholder="alice, s3cret, Team Alice&#10;bob, , Bobcats&#10;carol"></textarea>
+        <div class="row" style="margin-top:8px">
+          <label class="row" style="gap:6px;margin:0"><span style="display:inline;color:var(--ink)">vai trò</span><select id="bulkRole"><option value="player">người chơi</option><option value="judge">trọng tài</option></select></label>
+          <button class="btn red" type="button" id="bulkBtn">Tạo tất cả 👥</button>
+          <span class="muted" id="bulkCount" style="font-size:17px"></span>
+        </div>
+        <div id="bulkResult" style="margin-top:10px"></div>
+      </details>
     </section>
     <div class="box alt"><table class="plain"><thead><tr><th></th><th>tên đăng nhập</th><th>đội</th><th>vai trò</th><th></th></tr></thead><tbody id="ubody"></tbody></table></div>
   </main>
@@ -71,11 +93,12 @@
         const open = t.status === 'open';
         return `<tr>
           <td>${esc(t.name)}</td>
-          <td>${t.mode === 'campaign' ? '🗺️ chiến dịch' : '⚔️ hỗn chiến'}</td>
+          <td>${t.mode === 'campaign' ? '🗺️ chiến dịch' : '⚔️ hỗn chiến'}${t.access === 'invite' ? `<br><span class="muted" style="font-size:16px">🔒 ${t.members} đội được chỉ định</span>` : ''}</td>
           <td><span class="tag ${t.status}">${STATUS_VI[t.status] || t.status}</span></td>
           <td>${open ? `<input type="datetime-local" data-dl="${t.id}" value="${toLocalInput(new Date(t.deadline))}" style="font-size:16px;padding:2px 6px">` : esc(fmtDate(t.deadline))}</td>
           <td>${t.teamsReady}</td>
           <td class="row" style="gap:6px">
+            <button class="btn small" data-members="${t.id}">${t.access === 'invite' ? '🔒 ' : ''}người chơi</button>
             ${t.mode === 'campaign' ? `<button class="btn small" data-bots="${t.id}">bot đấu tập</button>` : ''}
             <button class="btn small" data-subs="${t.id}">bài nộp</button>
             ${open ? `<button class="btn small yellow" data-now="${t.id}">bắt đầu ngay</button>` : `<a class="btn small" href="/tournament/${id}/live">xem</a>`}
@@ -107,6 +130,73 @@
       $$('[data-bots]').forEach(b => b.onclick = () => showBots(tournaments.find(t => t.id === b.dataset.bots)));
       // keep an open bots panel in sync (e.g. a bot finished compiling)
       if (botsOpen) { const t = tournaments.find(x => x.id === botsOpen.id); if (t) showBots(t, true); else $('#botsPanel').classList.add('hidden'); }
+      $$('[data-members]').forEach(b => b.onclick = () => showMembers(tournaments.find(t => t.id === b.dataset.members)));
+      if (membersOpen && !tournaments.some(x => x.id === membersOpen.t.id)) { membersOpen = null; $('#membersPanel').classList.add('hidden'); }
+    }
+
+    // ---------- who may play (invite-only tournaments) ----------
+    // membersOpen = { t, access, picked: Set of user ids, players, filter } while the panel is open.
+    // It keeps the judge's unsaved ticks; nothing is sent until "Lưu".
+    let membersOpen = null;
+    async function showMembers(t) {
+      let data;
+      try { data = await api(`/api/admin/tournaments/${encodeURIComponent(t.id)}/members`); }
+      catch (e) { return toast(e.message, 'error'); }
+      membersOpen = { t, access: data.access, picked: new Set(data.members), players: data.players, filter: '' };
+      renderMembers();
+      $('#membersPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    function renderMembers() {
+      const m = membersOpen, panel = $('#membersPanel');
+      const editable = m.t.status === 'open';
+      const q = m.filter.toLowerCase();
+      const shown = m.players.filter(u => !q || u.username.toLowerCase().includes(q) || u.teamName.toLowerCase().includes(q));
+      const invite = m.access === 'invite';
+      panel.classList.remove('hidden');
+      panel.innerHTML = `<div class="box">
+        <div class="row" style="justify-content:space-between"><h3 style="margin:0">Ai được tham gia ${esc(m.t.name)}?</h3><button class="btn small" id="closeMembers">đóng</button></div>
+        <div class="row" style="margin:8px 0">
+          <label class="row" style="gap:6px;margin:0;cursor:pointer"><input type="radio" name="acc" value="open" ${invite ? '' : 'checked'} ${editable ? '' : 'disabled'}> 🌍 mọi người chơi</label>
+          <label class="row" style="gap:6px;margin:0;cursor:pointer"><input type="radio" name="acc" value="invite" ${invite ? 'checked' : ''} ${editable ? '' : 'disabled'}> 🔒 chỉ những đội được chọn</label>
+        </div>
+        ${!invite ? '<p class="muted" style="font-size:17px">Mọi người chơi đều thấy giải này và được nộp bài.</p>' : `
+        <p class="muted" style="font-size:17px;margin:0 0 8px">Chỉ những đội được tick mới thấy giải, nộp bài và xem bảng xếp hạng. Bỏ tick một đội đã nộp bài thì bài của họ không còn được tính.</p>
+        <div class="row" style="gap:8px;margin-bottom:8px">
+          <input id="mFilter" placeholder="🔍 tìm tên đăng nhập / đội" value="${esc(m.filter)}" style="flex:1;min-width:180px">
+          ${editable ? `<button class="btn small" id="mAll">chọn ${q ? 'các đội đang hiện' : 'tất cả'}</button><button class="btn small" id="mNone">bỏ ${q ? 'các đội đang hiện' : 'tất cả'}</button>` : ''}
+          <b id="mCount">${m.picked.size} đội được chọn</b>
+        </div>
+        <div class="member-grid">${shown.map(u => `<label class="member ${m.picked.has(u.id) ? 'on' : ''}">
+            <input type="checkbox" data-uid="${u.id}" ${m.picked.has(u.id) ? 'checked' : ''} ${editable ? '' : 'disabled'}>
+            ${avatarSvg(u.avatar, 30, { still: true })}<span><b>${esc(u.teamName)}</b><small>@${esc(u.username)}${u.submitted ? ' · đã nộp bài' : ''}</small></span>
+          </label>`).join('') || '<span class="muted">không có người chơi nào khớp</span>'}</div>`}
+        ${editable ? '<div class="row" style="margin-top:12px"><button class="btn red" id="mSave">Lưu 💾</button></div>' : '<p class="muted" style="font-size:17px">Giải đã bắt đầu, không thể đổi danh sách nữa.</p>'}
+      </div>`;
+      $('#closeMembers').onclick = () => { membersOpen = null; panel.classList.add('hidden'); };
+      $$('input[name="acc"]', panel).forEach(r => r.onchange = () => { m.access = r.value; renderMembers(); });
+      const filter = $('#mFilter');
+      if (filter) filter.oninput = () => {
+        m.filter = filter.value;
+        const pos = filter.selectionStart;
+        renderMembers();
+        const f = $('#mFilter'); f.focus(); f.setSelectionRange(pos, pos);
+      };
+      $$('[data-uid]', panel).forEach(c => c.onchange = () => {
+        c.checked ? m.picked.add(c.dataset.uid) : m.picked.delete(c.dataset.uid);
+        c.closest('.member').classList.toggle('on', c.checked);
+        $('#mCount').textContent = `${m.picked.size} đội được chọn`;
+      });
+      if ($('#mAll')) $('#mAll').onclick = () => { shown.forEach(u => m.picked.add(u.id)); renderMembers(); };
+      if ($('#mNone')) $('#mNone').onclick = () => { shown.forEach(u => m.picked.delete(u.id)); renderMembers(); };
+      if ($('#mSave')) $('#mSave').onclick = async () => {
+        const id = encodeURIComponent(m.t.id);
+        try {
+          if (m.access === 'invite') await api(`/api/admin/tournaments/${id}/members`, { method: 'PUT', body: { userIds: [...m.picked] } });
+          await api(`/api/admin/tournaments/${id}`, { method: 'PATCH', body: { access: m.access } });
+          toast(m.access === 'invite' ? `Đã lưu: ${m.picked.size} đội được tham gia 🔒` : 'Giải mở cho mọi người chơi 🌍');
+          loadTournaments();
+        } catch (e) { toast(e.message, 'error'); }
+      };
     }
 
     // ---------- campaign sparring bots ----------
@@ -247,12 +337,85 @@ public class Bot {
       } catch (ex) { toast(ex.message, 'error'); }
     });
 
+    // ---------- bulk accounts ----------
+    // Each non-empty line -> { username, password, teamName, line }. Tab-separated if the line has
+    // tabs (pasted from a spreadsheet), else comma-separated; the team name may contain the separator.
+    function parseBulk(text) {
+      return text.split(/\r?\n/).map((raw, i) => ({ raw: raw.trim(), line: i + 1 })).filter(x => x.raw && !x.raw.startsWith('#')).map(({ raw, line }) => {
+        const sep = raw.includes('\t') ? '\t' : ',';
+        const [username = '', password = '', ...team] = raw.split(sep).map(x => x.trim());
+        return { username, password, teamName: team.join(sep === ',' ? ', ' : ' ').trim(), line };
+      });
+    }
+    const updateBulkCount = () => { const n = parseBulk($('#bulkText').value).length; $('#bulkCount').textContent = n ? `${n} tài khoản` : ''; };
+    $('#bulkText').addEventListener('input', updateBulkCount);
+    $('#genBtn').onclick = () => {
+      const prefix = $('#genPrefix').value.trim(), from = +$('#genFrom').value, to = +$('#genTo').value;
+      if (!/^[A-Za-z0-9_.-]*$/.test(prefix)) return toast('Tiền tố chỉ gồm chữ không dấu, số, _ . -', 'error');
+      if (!(to >= from) || to - from >= 500) return toast('Khoảng số không hợp lệ (tối đa 500 tài khoản)', 'error');
+      const width = String(to).length < 2 ? 2 : String(to).length;
+      const lines = [];
+      for (let k = from; k <= to; k++) lines.push(prefix + String(k).padStart(width, '0'));
+      const ta = $('#bulkText');
+      ta.value = (ta.value.trim() ? ta.value.trimEnd() + '\n' : '') + lines.join('\n');
+      updateBulkCount();
+    };
+    function csvCell(v) { v = String(v); return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; }
+    $('#bulkBtn').onclick = async () => {
+      const rows = parseBulk($('#bulkText').value);
+      const out = $('#bulkResult');
+      out.innerHTML = '';
+      if (!rows.length) return toast('Danh sách đang trống', 'error');
+      const role = $('#bulkRole').value;
+      $('#bulkBtn').disabled = true;
+      try {
+        const res = await fetch('/api/admin/users/bulk', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ users: rows.map(({ username, password, teamName }) => ({ username, password, teamName, role })) }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          // errors[].line is the position in `rows`; show the textarea line instead
+          out.innerHTML = `<div style="color:var(--red)">${esc(data.error || res.statusText)}</div>` + (data.errors || []).map(e =>
+            `<div style="font-size:17px">dòng ${rows[e.line - 1].line} (<code>${esc(rows[e.line - 1].username || '…')}</code>): ${esc(e.error)}</div>`).join('');
+          return;
+        }
+        const created = data.created;
+        const csv = 'username,password,team\n' + created.map(u => [u.username, u.password, u.teamName].map(csvCell).join(',')).join('\n') + '\n';
+        out.innerHTML = `<div class="box alt">
+          <div class="row" style="justify-content:space-between"><b>✅ Đã tạo ${created.length} tài khoản</b>
+            <span class="row" style="gap:6px"><button class="btn small" id="bulkCsv">⬇ tải CSV</button><button class="btn small" id="bulkCopy">📋 sao chép</button></span></div>
+          <p style="color:var(--red);font-size:17px;margin:4px 0">Mật khẩu chỉ hiện một lần này thôi. Hãy tải về hoặc sao chép trước khi rời trang!</p>
+          <table class="plain"><thead><tr><th>tên đăng nhập</th><th>mật khẩu</th><th>đội</th></tr></thead><tbody>
+          ${created.map(u => `<tr><td>${esc(u.username)}</td><td><code>${esc(u.password)}</code></td><td>${esc(u.teamName)}</td></tr>`).join('')}
+          </tbody></table></div>`;
+        $('#bulkCsv').onclick = () => {
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' }));
+          a.download = `tai-khoan-${new Date().toISOString().slice(0, 10)}.csv`;
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+        };
+        $('#bulkCopy').onclick = () => navigator.clipboard.writeText(created.map(u => `${u.username}\t${u.password}\t${u.teamName}`).join('\n'))
+          .then(() => toast('Đã sao chép 📋'), () => toast('Không sao chép được, hãy tải CSV', 'error'));
+        $('#bulkText').value = '';
+        updateBulkCount();
+        loadUsers();
+      } catch (e) {
+        out.innerHTML = `<div style="color:var(--red)">${esc(e.message)}</div>`;
+      } finally {
+        $('#bulkBtn').disabled = false;
+      }
+    };
+
     $('#tform').addEventListener('submit', async e => {
       e.preventDefault();
       const f = new FormData(e.target);
       try {
-        await api('/api/admin/tournaments', { method: 'POST', body: { name: f.get('name'), mode: f.get('mode'), description: f.get('description'), deadline: new Date(f.get('deadline')).toISOString() } });
+        const { tournament } = await api('/api/admin/tournaments', { method: 'POST', body: { name: f.get('name'), mode: f.get('mode'), access: f.get('access'), description: f.get('description'), deadline: new Date(f.get('deadline')).toISOString() } });
         e.target.reset();
+        // invite-only: go straight to picking the players
+        if (tournament.access === 'invite') showMembers(tournament);
         e.target.deadline.value = toLocalInput(new Date(Date.now() + 3600e3));
         toast('Đã tạo giải đấu 🏁');
         loadTournaments();
