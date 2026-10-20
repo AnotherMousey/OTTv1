@@ -1,14 +1,13 @@
 // Campaign mode: players submit as many bots as they like; every working
-// submission plays up to 5 games against each of the 10 house bots, and only
-// beats a bot by winning all 5 (strictly more points each game). A player finishes
-// once each house bot has been beaten by at least one of their submissions.
+// submission picks one sparring bot (the 10 built-in ones plus any the judge added) and
+// plays up to 5 games against it, and only beats it by winning all 5 (strictly more points
+// each game). A player finishes once every sparring bot has been beaten by at least one of
+// their submissions.
 // Ranking: finishers by finish time, then everyone else by bots beaten.
 const db = require('./db');
-const { HOUSE_BOTS } = require('./grader/house');
-const { CAMPAIGN_GAMES } = require('./grader/practice');
+const { CAMPAIGN_GAMES, botsFor } = require('./grader/practice');
 const { avatarOf } = require('./auth');
 
-const TOTAL = HOUSE_BOTS.length;
 const PEN_PER_SUBMISSION = 20;
 
 // Penalty (PEN), ICPC-style: 20 for every submission made before the one that finished
@@ -28,6 +27,8 @@ function progressOf(t, userId) {
   const subs = db.data.submissions
     .filter(s => s.tournamentId === t.id && s.userId === userId)
     .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
+  // only bots still in the campaign count (a bot the judge removed no longer does)
+  const live = new Set(botsFor(t).map(h => h.id));
   const beaten = {}; // botId -> { at, number } (earliest submission that beat it)
   const best = {};   // botId -> best attempt { score, botScore, number }
   let busy = false;
@@ -37,7 +38,7 @@ function progressOf(t, userId) {
     if (s.status !== 'ok' || !s.practice) return;
     if (s.practice.status === 'running') busy = true;
     for (const r of s.practice.results) {
-      if (r.status !== 'done') continue;
+      if (r.status !== 'done' || !live.has(r.bot)) continue;
       if (r.winner === 'A' && !beaten[r.bot]) beaten[r.bot] = { at: s.createdAt, number };
       // best attempt so far: most games won, then best point margin
       const attempt = {
@@ -62,7 +63,7 @@ function progressOf(t, userId) {
     best,
     busy,
     count,
-    finishedAt: count === TOTAL ? times[times.length - 1] : null,
+    finishedAt: count === live.size ? times[times.length - 1] : null,
     lastProgressAt: count ? times[times.length - 1] : null,
   };
 }
@@ -76,6 +77,7 @@ function participants(t) {
 // Public leaderboard: which sparring bots each team has beaten (square i = bot i) and
 // finish times. Never code, submission numbers or game-by-game results.
 function board(t) {
+  const bots = botsFor(t);
   const rows = participants(t).map(u => {
     const p = progressOf(t, u.id);
     const pen = penaltyOf(t, p);
@@ -84,8 +86,8 @@ function board(t) {
       teamName: u.teamName,
       avatar: avatarOf(u),
       beaten: p.count,
-      beatenBots: HOUSE_BOTS.map(h => !!p.beaten[h.id]),
-      total: TOTAL,
+      beatenBots: bots.map(h => !!p.beaten[h.id]),
+      total: bots.length,
       finishedAt: p.finishedAt,
       lastProgressAt: p.lastProgressAt,
       submissions: p.subs.length,
@@ -110,9 +112,9 @@ function board(t) {
     status: t.status,
     deadline: t.deadline,
     startedAt: t.startsAt || t.createdAt,
-    total: TOTAL,
+    total: bots.length,
     gamesNeeded: CAMPAIGN_GAMES,
-    bots: HOUSE_BOTS.map(h => h.name),
+    bots: bots.map(h => h.name),
     finishers: rows.filter(r => r.finishedAt).length,
     rows,
   };
@@ -140,7 +142,7 @@ function details(t, userId) {
     gamesNeeded: CAMPAIGN_GAMES,
     beatenCount: p.count,
     finishedAt: p.finishedAt,
-    bots: HOUSE_BOTS.map(h => ({
+    bots: botsFor(t).map(h => ({
       bot: h.id,
       name: h.name,
       beaten: !!p.beaten[h.id],
@@ -153,4 +155,4 @@ function details(t, userId) {
   };
 }
 
-module.exports = { board, details, TOTAL };
+module.exports = { board, details };

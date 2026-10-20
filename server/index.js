@@ -190,7 +190,7 @@ app.get('/api/tournaments/:id', apiAuth, (req, res) => {
     tournament: publicTournament(t, req.user),
     submissions: mine,
     languages: grader.LANGS,
-    bots: grader.practice.HOUSE_BOTS.map(h => ({ id: h.id, name: h.name })),
+    bots: grader.practice.botsFor(t).map(h => ({ id: h.id, name: h.name })),
     turns: TURNS,
     gamesNeeded: grader.practice.CAMPAIGN_GAMES,
     cooldownMs: SUBMIT_COOLDOWN_MS,
@@ -208,7 +208,7 @@ app.post('/api/tournaments/:id/submissions', apiAuth, (req, res) => {
   if (!grader.LANGS[language]) return fail(res, 400, 'Hãy chọn ngôn ngữ: cpp, java hoặc python');
   // Campaign: each submission is aimed at one sparring bot.
   const isCampaign = t.mode === 'campaign';
-  if (isCampaign && !grader.practice.HOUSE_BOTS.some(h => h.id === target)) return fail(res, 400, 'Hãy chọn bot đấu tập mà bài nộp này sẽ đấu');
+  if (isCampaign && !grader.practice.botsFor(t).some(h => h.id === target)) return fail(res, 400, 'Hãy chọn bot đấu tập mà bài nộp này sẽ đấu');
   if (typeof code !== 'string' || !code.trim()) return fail(res, 400, 'Code của bạn đang trống');
   if (code.length > MAX_CODE_LENGTH) return fail(res, 400, `Code quá dài (tối đa ${MAX_CODE_LENGTH} ký tự)`);
   const busy = db.data.submissions.some(s => s.tournamentId === t.id && s.userId === req.user.id && s.status === 'pending');
@@ -312,6 +312,30 @@ app.get('/api/tournaments/:id/matches/:name', apiAuth, (req, res) => {
 app.get('/api/admin/users', apiAuth, apiJudge, (req, res) => {
   res.json({ users: db.data.users.map(auth.publicUser) });
 });
+app.post('/api/admin/users', apiAuth, apiJudge, (req, res) => {
+  const { username, password, teamName, role = 'player' } = req.body || {};
+  let user;
+  try {
+    user = auth.createUser({ username, password, teamName, role });
+  } catch (e) {
+    return fail(res, 400, e.message);
+  }
+  console.log(`[users] judge "${req.user.username}" added ${user.role} "${user.username}" (team "${user.teamName}")`);
+  io.to('judge').emit('users:changed');
+  res.json({ user: auth.publicUser(user) });
+});
+app.patch('/api/admin/users/:id', apiAuth, apiJudge, (req, res) => {
+  const u = findUser(req.params.id);
+  if (!u) return fail(res, 404, 'Không tìm thấy người dùng');
+  try {
+    auth.renameTeam(u, (req.body || {}).teamName);
+  } catch (e) {
+    return fail(res, 400, e.message);
+  }
+  io.to('judge').emit('users:changed');
+  io.to('users').emit('tournaments:changed');
+  res.json({ user: auth.publicUser(u) });
+});
 app.post('/api/admin/users/:id/password', apiAuth, apiJudge, (req, res) => {
   const u = findUser(req.params.id);
   if (!u) return fail(res, 404, 'Không tìm thấy người dùng');
@@ -373,6 +397,52 @@ app.delete('/api/admin/tournaments/:id', apiAuth, apiJudge, (req, res) => {
   io.to('users').emit('tournaments:changed');
   res.json({ ok: true });
 });
+// Campaign sparring bots added by the judge (on top of the 10 built-in ones).
+const publicBot = b => ({ id: b.id, name: b.name, language: b.language, code: b.code, status: b.status, message: b.message || '', createdAt: b.createdAt });
+// A judge bot finished compiling: refresh pickers, campaign boards and the judge desk.
+function botChanged(t) {
+  io.to('users').emit('tournaments:changed');
+  io.to('users').emit('practice:updated', { tournamentId: t.id });
+  manager.broadcast(t);
+}
+function checkBot(t, bot) {
+  grader.checkBot(bot).then(() => botChanged(t));
+}
+app.get('/api/admin/tournaments/:id/bots', apiAuth, apiJudge, (req, res) => {
+  const t = findTournament(req.params.id);
+  if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
+  res.json({ builtIn: grader.practice.HOUSE_BOTS.map(h => ({ id: h.id, name: h.name, desc: h.desc })), bots: (t.bots || []).map(publicBot), languages: grader.LANGS });
+});
+app.post('/api/admin/tournaments/:id/bots', apiAuth, apiJudge, (req, res) => {
+  const t = findTournament(req.params.id);
+  if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
+  if (t.mode !== 'campaign') return fail(res, 400, 'Chỉ giải chiến dịch mới thêm được bot đấu tập');
+  if (t.status !== 'open') return fail(res, 400, 'Chỉ thêm được bot khi giải còn đang mở');
+  const { language, code } = req.body || {};
+  const name = String((req.body || {}).name || '').trim().slice(0, 40);
+  if (!name) return fail(res, 400, 'Hãy đặt tên cho bot');
+  if ([...grader.practice.HOUSE_BOTS, ...(t.bots || [])].some(h => h.name.toLowerCase() === name.toLowerCase())) return fail(res, 400, 'Đã có bot đấu tập tên này');
+  if (!grader.LANGS[language]) return fail(res, 400, 'Hãy chọn ngôn ngữ: cpp, java hoặc python');
+  if (typeof code !== 'string' || !code.trim()) return fail(res, 400, 'Code của bot đang trống');
+  if (code.length > MAX_CODE_LENGTH) return fail(res, 400, `Code quá dài (tối đa ${MAX_CODE_LENGTH} ký tự)`);
+  const bot = { id: 'bot-' + db.id(), name, language, code, status: 'pending', message: '', createdAt: new Date().toISOString() };
+  (t.bots = t.bots || []).push(bot);
+  db.save();
+  checkBot(t, bot);
+  res.json({ bot: publicBot(bot) });
+});
+app.delete('/api/admin/tournaments/:id/bots/:botId', apiAuth, apiJudge, (req, res) => {
+  const t = findTournament(req.params.id);
+  if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
+  if (t.status !== 'open') return fail(res, 400, 'Chỉ xóa được bot khi giải còn đang mở');
+  const bot = (t.bots || []).find(b => b.id === req.params.botId);
+  if (!bot) return fail(res, 404, 'Không tìm thấy bot');
+  t.bots = t.bots.filter(b => b !== bot);
+  db.save();
+  grader.removeBuild(bot);
+  botChanged(t);
+  res.json({ ok: true });
+});
 app.get('/api/admin/tournaments/:id/submissions', apiAuth, apiJudge, (req, res) => {
   const subs = db.data.submissions.filter(s => s.tournamentId === req.params.id).map(s => ({
     ...publicSubmission(s, true), teamName: (findUser(s.userId) || {}).teamName || '(deleted user)',
@@ -394,6 +464,8 @@ grader.practice.onUpdate(sub => {
   }, 500));
 });
 grader.resumePractice();
+// Judge bots that were still compiling when the server stopped.
+for (const t of db.data.tournaments) for (const b of t.bots || []) if (b.status === 'pending') checkBot(t, b);
 
 // ---------- sockets ----------
 io.engine.use(sessionMiddleware);

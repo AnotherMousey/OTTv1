@@ -152,8 +152,8 @@ public class Bot {
     function rulesFor(mode) {
       if (mode === 'campaign') {
         return `<ul>${commonRules()}
-        <li><b>Chế độ chiến dịch:</b> mỗi bài nộp <b>chọn một</b> trong 10 bot đấu tập làm đối thủ và đấu với nó tối đa <b>${GAMES} ván</b> (mỗi ván ${TURNS} lượt). Để <b>hạ</b> bot đó, bạn phải <b>thắng cả ${GAMES} ván</b> (nhiều điểm hơn nó trong mỗi ván). Chỉ cần thua hoặc hòa một ván là bài nộp đó thất bại, và các ván còn lại bị bỏ qua.</li>
-        <li>Nộp bao nhiêu bài cũng được, mỗi bài cho một đối thủ, theo thứ tự tùy ý. Hạ đủ cả 10 bot đấu tập là hoàn thành chiến dịch.</li>
+        <li><b>Chế độ chiến dịch:</b> mỗi bài nộp <b>chọn một</b> trong ${bots.length} bot đấu tập làm đối thủ và đấu với nó tối đa <b>${GAMES} ván</b> (mỗi ván ${TURNS} lượt). Để <b>hạ</b> bot đó, bạn phải <b>thắng cả ${GAMES} ván</b> (nhiều điểm hơn nó trong mỗi ván). Chỉ cần thua hoặc hòa một ván là bài nộp đó thất bại, và các ván còn lại bị bỏ qua.</li>
+        <li>Nộp bao nhiêu bài cũng được, mỗi bài cho một đối thủ, theo thứ tự tùy ý. Hạ đủ cả ${bots.length} bot đấu tập là hoàn thành chiến dịch.</li>
         <li>Thời điểm về đích là lúc bạn <b>nộp</b> bot hạ được bot đấu tập cuối cùng còn lại. Ai về đích sớm nhất xếp đầu; các đội chưa về đích xếp theo số bot đã hạ.</li>
         <li><b>Điểm phạt (PEN):</b> mỗi bài nộp trước khi về đích tính <b>20</b> điểm phạt (kể cả bài bị lỗi). Khi về đích, PEN được cộng thêm <b>số phút</b> từ lúc giải mở đến lúc bạn nộp bài về đích. Bài về đích và các bài nộp sau đó không bị phạt.</li>
         <li>Trên bảng chiến dịch, ô thứ <i>i</i> sáng lên khi bot đấu tập thứ <i>i</i> bị hạ, nên mọi người đều thấy bạn đã hạ những bot nào. Code và kết quả từng ván của bạn thì chỉ mình bạn xem được.</li>
@@ -219,6 +219,7 @@ public class Bot {
       if (data.gamesNeeded) GAMES = data.gamesNeeded;
       if (data.cooldownMs) COOLDOWN = data.cooldownMs;
       if (firstLoad) setupMode();
+      else $('#docs').innerHTML = DOCS[lang] + rulesFor(tournament.mode); // the bot count may have changed
       $('#tname').textContent = tournament.name;
       $('#tdesc').textContent = tournament.description;
       document.title = `Nộp bài · ${tournament.name}`;
@@ -405,6 +406,11 @@ public class Bot {
       if (ME.role !== 'judge') openUser = ME.id;
       await loadPractice();
       socket.on('practice:updated', ({ tournamentId }) => { if (tournamentId === tid) refreshPractice(); });
+      // the judge may add or remove campaign sparring bots: refresh the list and the picker
+      socket.on('tournaments:changed', () => load().then(() => {
+        if (target && !bots.some(b => b.id === target)) target = null;
+        refreshPractice();
+      }).catch(() => {}));
       if (ME.role === 'judge') toast('Trọng tài chỉ được xem, chỉ người chơi mới được nộp bài 🎩');
       tick();
       setInterval(tick, 250);

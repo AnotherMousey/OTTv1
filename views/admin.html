@@ -18,7 +18,7 @@
           <label><span>tên giải</span><input name="name" required style="width:100%" placeholder="Đại chiến OTTv1"></label>
           <label><span>chế độ</span><select name="mode" style="width:100%">
             <option value="brawl">⚔️ Hỗn chiến: sau hạn chót, các bot đấu với nhau qua các vòng loại trực tiếp</option>
-            <option value="campaign">🗺️ Chiến dịch: đua hạ cả 10 bot đấu tập, ai về đích sớm nhất thắng</option>
+            <option value="campaign">🗺️ Chiến dịch: đua hạ hết các bot đấu tập, ai về đích sớm nhất thắng</option>
           </select></label>
           <label><span>mô tả (không bắt buộc)</span><input name="description" style="width:100%" placeholder="Mang theo những bot xịn nhất"></label>
           <label><span>hạn chót nộp bài (theo giờ máy bạn)</span><input name="deadline" type="datetime-local" required style="width:100%"></label>
@@ -30,6 +30,7 @@
     <div class="squiggle"></div>
     <h2>Các giải đấu</h2>
     <div class="box"><table class="plain"><thead><tr><th>tên</th><th>chế độ</th><th>trạng thái</th><th>hạn chót</th><th>số đội</th><th></th></tr></thead><tbody id="tbody"></tbody></table></div>
+    <div id="botsPanel" class="hidden" style="margin-top:20px"></div>
     <div id="subsPanel" class="hidden" style="margin-top:20px"></div>
 
     <div class="squiggle"></div>
@@ -37,7 +38,17 @@
       <h2>Tài khoản</h2>
       <label class="row" style="gap:8px;margin:0;cursor:pointer"><input type="checkbox" id="regOpen" style="width:22px;height:22px"> <span style="font-size:20px;color:var(--ink)">cho phép người chơi tự đăng ký</span></label>
     </div>
-    <p class="muted" style="font-size:17px;margin-top:-6px">Khi bật đăng ký, người chơi có thể tự tạo tài khoản tại <code>/register</code>. Bạn cũng có thể thêm tài khoản trong <code>data/db.json</code> (xem README).</p>
+    <p class="muted" style="font-size:17px;margin-top:-6px">Khi bật đăng ký, người chơi có thể tự tạo tài khoản tại <code>/register</code>. Bạn cũng có thể thêm tài khoản ngay dưới đây.</p>
+    <section class="box" style="margin-bottom:16px">
+      <h3 style="margin-top:0">Thêm tài khoản</h3>
+      <form id="uform" class="form-row" style="align-items:flex-end">
+        <label><span>tên đăng nhập</span><input name="username" required pattern="[A-Za-z0-9_.\-]{2,32}" title="2–32 ký tự: chữ không dấu, số, _ . -" style="width:100%"></label>
+        <label><span>tên đội (tên hiển thị)</span><input name="teamName" maxlength="32" placeholder="mặc định: tên đăng nhập" style="width:100%"></label>
+        <label><span>mật khẩu</span><input name="password" required minlength="3" style="width:100%"></label>
+        <label><span>vai trò</span><select name="role" style="width:100%"><option value="player">người chơi</option><option value="judge">trọng tài</option></select></label>
+        <div style="flex:0 0 auto;margin-bottom:10px"><button class="btn red">Thêm 👤</button></div>
+      </form>
+    </section>
     <div class="box alt"><table class="plain"><thead><tr><th></th><th>tên đăng nhập</th><th>đội</th><th>vai trò</th><th></th></tr></thead><tbody id="ubody"></tbody></table></div>
   </main>
 
@@ -65,7 +76,8 @@
           <td>${open ? `<input type="datetime-local" data-dl="${t.id}" value="${toLocalInput(new Date(t.deadline))}" style="font-size:16px;padding:2px 6px">` : esc(fmtDate(t.deadline))}</td>
           <td>${t.teamsReady}</td>
           <td class="row" style="gap:6px">
-            <button class="btn small" data-subs="${t.id}">bot</button>
+            ${t.mode === 'campaign' ? `<button class="btn small" data-bots="${t.id}">bot đấu tập</button>` : ''}
+            <button class="btn small" data-subs="${t.id}">bài nộp</button>
             ${open ? `<button class="btn small yellow" data-now="${t.id}">bắt đầu ngay</button>` : `<a class="btn small" href="/tournament/${id}/live">xem</a>`}
             ${t.status !== 'running' ? `<button class="btn small" data-del="${t.id}">🗑</button>` : ''}
           </td>
@@ -92,6 +104,90 @@
         } catch (e) { toast(e.message, 'error'); }
       });
       $$('[data-subs]').forEach(b => b.onclick = () => showSubs(b.dataset.subs, tournaments.find(t => t.id === b.dataset.subs).name));
+      $$('[data-bots]').forEach(b => b.onclick = () => showBots(tournaments.find(t => t.id === b.dataset.bots)));
+      // keep an open bots panel in sync (e.g. a bot finished compiling)
+      if (botsOpen) { const t = tournaments.find(x => x.id === botsOpen.id); if (t) showBots(t, true); else $('#botsPanel').classList.add('hidden'); }
+    }
+
+    // ---------- campaign sparring bots ----------
+    let botsOpen = null; // the tournament whose bots panel is open
+    const BOT_TEMPLATE = {
+      python: `# A sparring bot: same interface as a player's bot.
+def play(my_moves, opponent_moves):
+    return 'R'
+`,
+      cpp: `#include <vector>
+using namespace std;
+
+// A sparring bot: same interface as a player's bot.
+char play(const vector<char>& myMoves, const vector<char>& opponentMoves) {
+    return 'R';
+}
+`,
+      java: `import java.util.*;
+
+// A sparring bot: same interface as a player's bot.
+public class Bot {
+    public char play(List<Character> myMoves, List<Character> opponentMoves) {
+        return 'R';
+    }
+}
+`,
+    };
+    async function showBots(t, refresh = false) {
+      const panel = $('#botsPanel');
+      let data;
+      try { data = await api(`/api/admin/tournaments/${encodeURIComponent(t.id)}/bots`); }
+      catch (e) { return toast(e.message, 'error'); }
+      // don't wipe a half-written bot when the panel refreshes itself
+      const form = $('#bform');
+      const keep = refresh && form ? { name: form.botName.value, language: form.language.value, code: form.code.value } : null;
+      botsOpen = t;
+      const open = t.status === 'open';
+      const n = data.builtIn.length;
+      panel.classList.remove('hidden');
+      panel.innerHTML = `<div class="box alt">
+        <div class="row" style="justify-content:space-between"><h3 style="margin:0">Bot đấu tập của ${esc(t.name)}</h3><button class="btn small" id="closeBots">đóng</button></div>
+        <p class="muted" style="font-size:17px;margin:4px 0 8px">${n} bot có sẵn: ${data.builtIn.map((h, i) => `<span title="${esc(h.desc)}">${i + 1}. ${esc(h.name)}</span>`).join(' · ')}. Bot bạn thêm sẽ đứng sau, và người chơi phải hạ cả chúng mới về đích. Chỉ bot ✅ mới được tính.</p>
+        <table class="plain"><thead><tr><th>#</th><th>tên</th><th>ngôn ngữ</th><th>trạng thái</th><th></th></tr></thead><tbody>
+        ${data.bots.map((b, i) => `<tr><td>${n + i + 1}</td><td>${esc(b.name)}</td><td>${LANG_LABEL[b.language]}</td><td><span class="tag ${b.status}">${STATUS_VI[b.status] || b.status}</span></td>
+          <td><div class="row" style="gap:6px"><details><summary style="cursor:pointer">xem code</summary><pre class="msg">${esc(b.code)}</pre>${b.message ? `<pre class="msg">${esc(b.message)}</pre>` : ''}</details>
+          ${open ? `<button class="btn small" data-botdel="${b.id}">🗑</button>` : ''}</div></td></tr>`).join('') || '<tr><td colspan="5" class="muted">chưa thêm bot nào</td></tr>'}
+        </tbody></table>
+        ${open ? `<form id="bform" style="margin-top:14px">
+          <h3 style="margin:0 0 6px">Thêm bot đấu tập</h3>
+          <div class="form-row">
+            <label><span>tên bot</span><input name="botName" required maxlength="40" style="width:100%"></label>
+            <label><span>ngôn ngữ</span><select name="language" style="width:100%">${Object.keys(BOT_TEMPLATE).map(l => `<option value="${l}">${LANG_LABEL[l]}</option>`).join('')}</select></label>
+          </div>
+          <label><span>code (giống hệt bot của người chơi: hàm <code>play</code>)</span><textarea class="code" name="code" required spellcheck="false" style="min-height:220px"></textarea></label>
+          <button class="btn red">Thêm bot 🤖</button>
+        </form>` : '<p class="muted" style="font-size:17px">Giải đã đóng, không thể thay đổi bot đấu tập nữa.</p>'}
+      </div>`;
+      $('#closeBots').onclick = () => { botsOpen = null; panel.classList.add('hidden'); };
+      $$('[data-botdel]', panel).forEach(b => b.onclick = async () => {
+        if (!confirm('Xóa bot này? Những lần người chơi đã hạ nó sẽ không còn được tính.')) return;
+        try { await api(`/api/admin/tournaments/${encodeURIComponent(t.id)}/bots/${encodeURIComponent(b.dataset.botdel)}`, { method: 'DELETE' }); showBots(t, true); }
+        catch (e) { toast(e.message, 'error'); }
+      });
+      const f = $('#bform');
+      if (!f) return;
+      if (keep) { f.botName.value = keep.name; f.language.value = keep.language; f.code.value = keep.code; }
+      else f.code.value = BOT_TEMPLATE[f.language.value];
+      f.language.onchange = () => { if (!f.code.value.trim() || Object.values(BOT_TEMPLATE).includes(f.code.value)) f.code.value = BOT_TEMPLATE[f.language.value]; };
+      f.code.addEventListener('keydown', e => {
+        if (e.key !== 'Tab') return;
+        e.preventDefault();
+        f.code.setRangeText('    ', f.code.selectionStart, f.code.selectionEnd, 'end');
+      });
+      f.onsubmit = async e => {
+        e.preventDefault();
+        try {
+          await api(`/api/admin/tournaments/${encodeURIComponent(t.id)}/bots`, { method: 'POST', body: { name: f.botName.value, language: f.language.value, code: f.code.value } });
+          toast('Đã thêm bot, đang biên dịch… 🔧');
+          showBots(t);
+        } catch (ex) { toast(ex.message, 'error'); }
+      };
     }
 
     async function showSubs(id, name) {
@@ -112,9 +208,21 @@
         <td>${avatarSvg(u.avatar, 34)}</td>
         <td>${esc(u.username)}</td><td>${esc(u.teamName)}</td><td>${u.role === 'judge' ? 'trọng tài' : 'người chơi'}</td>
         <td class="row" style="gap:6px">
+          <button class="btn small" data-rename="${u.id}">đổi tên đội</button>
           <button class="btn small" data-pw="${u.id}">đặt lại mật khẩu</button>
           ${u.id !== ME.id ? `<button class="btn small" data-udel="${u.id}">🗑</button>` : ''}
         </td></tr>`).join('');
+      $$('[data-rename]').forEach(b => b.onclick = async () => {
+        const u = users.find(x => x.id === b.dataset.rename);
+        const name = prompt(`Tên đội mới cho @${u.username}:`, u.teamName);
+        if (name === null || name.trim() === u.teamName) return;
+        try {
+          await api(`/api/admin/users/${u.id}`, { method: 'PATCH', body: { teamName: name } });
+          toast('Đã đổi tên đội ✏️');
+          loadUsers();
+          if (u.id === ME.id) { ME.teamName = name.trim(); renderTopbar(); }
+        } catch (e) { toast(e.message, 'error'); }
+      });
       $$('[data-pw]').forEach(b => b.onclick = async () => {
         const pw = prompt('Mật khẩu mới:');
         if (!pw) return;
@@ -127,6 +235,17 @@
         catch (e) { toast(e.message, 'error'); }
       });
     }
+
+    $('#uform').addEventListener('submit', async e => {
+      e.preventDefault();
+      const f = new FormData(e.target);
+      try {
+        const { user } = await api('/api/admin/users', { method: 'POST', body: Object.fromEntries(f) });
+        e.target.reset();
+        toast(`Đã thêm @${user.username} 👤`);
+        loadUsers();
+      } catch (ex) { toast(ex.message, 'error'); }
+    });
 
     $('#tform').addEventListener('submit', async e => {
       e.preventDefault();

@@ -106,16 +106,33 @@ async function smokeTest(sub) {
 
 const pending = new Map(); // submissionId -> { tournamentId, promise }
 
+// Compile + smoke test. Works for anything shaped like { id, language, code }.
+async function check(sub) {
+  try {
+    await ensureBuilt(sub, true);
+    return await smokeTest(sub);
+  } catch (e) {
+    return { ok: false, message: 'Lỗi biên dịch:\n' + e.message };
+  }
+}
+
+// A sparring bot the judge added to a campaign: same checks as a submission, but no practice games.
+async function checkBot(bot) {
+  const result = await check(bot);
+  bot.status = result.ok ? 'ok' : 'error';
+  bot.message = result.message;
+  db.save();
+  return result;
+}
+
+function removeBuild(item) {
+  fs.rmSync(buildDir(item), { recursive: true, force: true });
+}
+
 // Compile + smoke test; writes the result onto the submission record.
 function validate(sub) {
   const promise = (async () => {
-    let result;
-    try {
-      await ensureBuilt(sub, true);
-      result = await smokeTest(sub);
-    } catch (e) {
-      result = { ok: false, message: 'Lỗi biên dịch:\n' + e.message };
-    }
+    const result = await check(sub);
     sub.status = result.ok ? 'ok' : 'error';
     sub.message = result.message;
     sub.checkedAt = new Date().toISOString();
@@ -165,4 +182,4 @@ function resumePractice() {
   }
 }
 
-module.exports = { LANGS, validate, ensureBuilt, waitForValidations, activeSubmission, resumePractice, practice };
+module.exports = { LANGS, validate, checkBot, removeBuild, ensureBuilt, waitForValidations, activeSubmission, resumePractice, practice };

@@ -2,7 +2,7 @@
 // against each of the 10 house bots. Results live on submission.practice.
 const db = require('../db');
 const { HOUSE_BOTS } = require('./house');
-const { runVsHouse } = require('./match');
+const { runVsHouse, runMatch } = require('./match');
 
 const PARALLEL = +process.env.PRACTICE_PARALLEL || 2;
 // Campaign: a sparring bot only counts as beaten if the submission wins this many games
@@ -31,6 +31,14 @@ async function withSlot(fn) {
 const tournamentOf = sub => db.data.tournaments.find(x => x.id === sub.tournamentId);
 const isCampaign = sub => (tournamentOf(sub) || {}).mode === 'campaign';
 
+// The sparring bots of a tournament: the 10 built-in ones, plus (campaign only) the working
+// bots the judge added to it. Judge bots carry `custom`: their record ({ id, language, code }),
+// which is compiled and run like a submission.
+function botsFor(t) {
+  const extra = t && t.mode === 'campaign' ? (t.bots || []).filter(b => b.status === 'ok') : [];
+  return [...HOUSE_BOTS, ...extra.map(b => ({ id: b.id, name: b.name, custom: b }))];
+}
+
 // Brawl: practice only matters while submissions are open.
 // Campaign: every submission made before the deadline gets fully evaluated, even after it.
 const canEvaluate = sub => {
@@ -54,7 +62,13 @@ function evaluate(sub, ensureBuilt) {
   if (running.has(sub.id)) return running.get(sub.id).promise;
   supersede(sub);
   // Campaign submissions aimed at one sparring bot only fight that bot.
-  const opponents = isCampaign(sub) && sub.target ? HOUSE_BOTS.filter(h => h.id === sub.target) : HOUSE_BOTS;
+  const all = botsFor(tournamentOf(sub));
+  const opponents = isCampaign(sub) && sub.target ? all.filter(h => h.id === sub.target) : all;
+  const play = async house => {
+    if (!house.custom) return runVsHouse(sub, house, ensureBuilt);
+    const r = await runMatch(sub, house.custom, ensureBuilt);
+    return { ...r, issue: r.issues.A };
+  };
   sub.practice = {
     status: 'running',
     total: 0,
@@ -69,14 +83,14 @@ function evaluate(sub, ensureBuilt) {
     if (sub.practice.cancelled || !canEvaluate(sub)) { slot.status = 'skipped'; return; }
     slot.status = 'playing';
     if (!isCampaign(sub)) {
-      const r = await runVsHouse(sub, house, ensureBuilt);
+      const r = await play(house);
       Object.assign(slot, { status: 'done', score: r.scoreA, botScore: r.scoreB, winner: r.winner, issue: r.issue });
     } else {
       const games = [];
       slot.games = games;
       slot.needed = CAMPAIGN_GAMES;
       while (games.length < CAMPAIGN_GAMES) {
-        const r = await runVsHouse(sub, house, ensureBuilt);
+        const r = await play(house);
         games.push({ score: r.scoreA, botScore: r.scoreB, winner: r.winner });
         if (r.issue && !slot.issue) slot.issue = r.issue;
         listener(sub);
@@ -119,4 +133,4 @@ function waitFor(tournamentId) {
   return Promise.all([...running.values()].filter(r => r.tournamentId === tournamentId).map(r => r.promise));
 }
 
-module.exports = { evaluate, waitFor, onUpdate, HOUSE_BOTS, CAMPAIGN_GAMES };
+module.exports = { evaluate, waitFor, onUpdate, botsFor, HOUSE_BOTS, CAMPAIGN_GAMES };

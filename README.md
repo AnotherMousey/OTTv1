@@ -62,6 +62,11 @@ The judge picks a mode when creating a tournament (older tournaments without one
   their game-by-game results. At the deadline submissions close, bots
   submitted before it finish grading, and the results freeze. No elimination matches are played.
 
+  While a campaign is open the judge can add extra sparring bots to it on the Judge desk
+  (**bot đấu tập** button): a name plus code in any of the three languages, written exactly like a
+  player's bot. Each is compiled and smoke-tested; once ✅ it joins the list after the 10 built-in
+  bots and players must beat it too to finish. Removing a bot also removes the credit for beating it.
+
 ## How a tournament works (brawl)
 
 1. The judge creates a tournament with a deadline. The main page lists it with a countdown.

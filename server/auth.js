@@ -16,18 +16,36 @@ function verifyPassword(password, stored) {
   return got.length === want.length && crypto.timingSafeEqual(got, want);
 }
 
+// Team names are shown everywhere and must be unique (case-insensitive). `except` = the user being renamed.
+function checkTeamName(teamName, except = null) {
+  if (!teamName) throw new Error('Tên đội không được để trống');
+  if (teamName.length > 32) throw new Error('Tên đội tối đa 32 ký tự');
+  if (db.data.users.some(u => u !== except && u.teamName.toLowerCase() === teamName.toLowerCase())) throw new Error('Tên đội đã có người dùng');
+}
+
 function createUser({ username, password, teamName, role = 'player' }) {
   username = String(username || '').trim();
   teamName = String(teamName || '').trim() || username;
   if (!/^[A-Za-z0-9_.-]{2,32}$/.test(username)) throw new Error('Tên đăng nhập phải có 2–32 ký tự: chữ không dấu, số, _ . hoặc -');
   if (String(password || '').length < 3) throw new Error('Mật khẩu phải có ít nhất 3 ký tự');
-  if (teamName.length > 32) throw new Error('Tên đội tối đa 32 ký tự');
   if (!['player', 'judge'].includes(role)) throw new Error('Vai trò phải là player hoặc judge');
   const users = db.data.users;
   if (users.some(u => u.username.toLowerCase() === username.toLowerCase())) throw new Error('Tên đăng nhập đã có người dùng');
-  if (users.some(u => u.teamName.toLowerCase() === teamName.toLowerCase())) throw new Error('Tên đội đã có người dùng');
+  checkTeamName(teamName);
   const user = { id: db.id(), username, teamName, role, passwordHash: hashPassword(password), createdAt: new Date().toISOString() };
   users.push(user);
+  db.save();
+  return user;
+}
+
+// Change a user's team (display) name. Brawl entries and match records keep the name the
+// team had when the tournament started, so finished results and replays stay unchanged.
+function renameTeam(user, teamName) {
+  teamName = String(teamName || '').trim();
+  checkTeamName(teamName, user);
+  // An uncustomised avatar takes its hat colour from the team name: pin it so the look doesn't change.
+  if (!user.avatar) user.avatar = avatarOf(user);
+  user.teamName = teamName;
   db.save();
   return user;
 }
@@ -78,4 +96,4 @@ function publicUser(u) {
   return u && { id: u.id, username: u.username, teamName: u.teamName, role: u.role, avatar: avatarOf(u) };
 }
 
-module.exports = { hashPassword, verifyPassword, createUser, prepareUsers, ensureJudge, publicUser, avatarOf };
+module.exports = { hashPassword, verifyPassword, createUser, renameTeam, prepareUsers, ensureJudge, publicUser, avatarOf };
