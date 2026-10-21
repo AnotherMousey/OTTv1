@@ -7,9 +7,12 @@ const Bot = require('./bot');
 const { IS_WIN, TOOLS, LANGS, buildDir } = require('./languages');
 const { normalize, FIRST_MOVE_TIMEOUT_MS, MOVE_TIMEOUT_MS } = require('./match');
 const practice = require('./practice');
+const { restrict } = require('./restrict');
 
 const HARNESS = path.join(__dirname, 'harness');
 const MAX_PARALLEL_BUILDS = 2;
+// Written into .ok; a build made under older rules is rebuilt (and so re-checked) before it plays.
+const BUILD_VERSION = 'v2-restricted';
 
 function exec(cmd, args, cwd, timeoutMs = 90000) {
   return new Promise(resolve => {
@@ -45,32 +48,50 @@ async function withBuildSlot(fn) {
 
 const stripDir = (text, dir) => String(text).split(dir + path.sep).join('').trim();
 
+// Player code (anything not marked `trusted`, i.e. not a built-in or judge bot) is restricted:
+// see restrict.js for C++/Java and harness/runner.py for Python.
 async function build(sub) {
   const dir = buildDir(sub);
   fs.rmSync(dir, { recursive: true, force: true });
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, LANGS[sub.language].file), sub.code);
+  let code = sub.code;
+  if (!sub.trusted) {
+    const checked = restrict(sub.language, code);
+    if (checked.error) throw new Error(checked.error);
+    code = checked.code;
+  }
+  fs.writeFileSync(path.join(dir, LANGS[sub.language].file), code);
   let r;
   if (sub.language === 'cpp') {
     fs.copyFileSync(path.join(HARNESS, 'main.cpp'), path.join(dir, 'harness_main.cpp'));
-    r = await exec(TOOLS.cxx, ['-O2', '-std=c++17', ...(IS_WIN ? ['-static'] : []), '-o', IS_WIN ? 'bot.exe' : 'bot', 'harness_main.cpp', 'bot.cpp'], dir);
+    const prelude = [];
+    if (!sub.trusted) {
+      fs.copyFileSync(path.join(HARNESS, 'prelude.hpp'), path.join(dir, 'prelude.hpp'));
+      prelude.push('-include', 'prelude.hpp');
+    }
+    r = await exec(TOOLS.cxx, ['-O2', '-std=c++17', ...(IS_WIN ? ['-static'] : []), ...prelude, '-o', IS_WIN ? 'bot.exe' : 'bot', 'harness_main.cpp', 'bot.cpp'], dir);
   } else if (sub.language === 'java') {
     fs.copyFileSync(path.join(HARNESS, 'Main.java'), path.join(dir, 'Main.java'));
     fs.mkdirSync(path.join(dir, 'out'));
     r = await exec(TOOLS.javac, ['-encoding', 'UTF-8', '-d', 'out', 'Main.java', 'Bot.java'], dir);
   } else if (sub.language === 'python') {
     fs.copyFileSync(path.join(HARNESS, 'runner.py'), path.join(dir, '_runner.py'));
-    r = await exec(TOOLS.python, ['-c', 'import ast,sys; ast.parse(open(sys.argv[1], encoding="utf-8").read(), sys.argv[1])', 'bot.py'], dir);
+    r = sub.trusted
+      ? await exec(TOOLS.python, ['-c', 'import ast,sys; ast.parse(open(sys.argv[1], encoding="utf-8").read(), sys.argv[1])', 'bot.py'], dir)
+      : await exec(TOOLS.python, ['-X', 'utf8', '_runner.py', '--check', 'bot.py'], dir);
   } else {
     throw new Error('Unknown language');
   }
   if (r.code !== 0) throw new Error(stripDir(r.out, dir) || 'Biên dịch thất bại');
-  fs.writeFileSync(path.join(dir, '.ok'), new Date().toISOString());
+  fs.writeFileSync(path.join(dir, '.ok'), BUILD_VERSION + ' ' + new Date().toISOString());
 }
 
 const inFlightBuilds = new Map();
+function isBuilt(sub) {
+  try { return fs.readFileSync(path.join(buildDir(sub), '.ok'), 'utf8').startsWith(BUILD_VERSION + ' '); } catch { return false; }
+}
 function ensureBuilt(sub, force = false) {
-  if (!force && fs.existsSync(path.join(buildDir(sub), '.ok'))) return Promise.resolve();
+  if (!force && isBuilt(sub)) return Promise.resolve();
   if (inFlightBuilds.has(sub.id)) return inFlightBuilds.get(sub.id);
   const p = withBuildSlot(() => build(sub)).finally(() => inFlightBuilds.delete(sub.id));
   inFlightBuilds.set(sub.id, p);
@@ -121,7 +142,7 @@ async function check(sub) {
 // (`buildId`, `language`, `code`). If it passes it becomes the live one that plays; if not, the
 // previous live version keeps playing. A result for a version the judge has since replaced is dropped.
 async function checkBot(item) {
-  const version = { id: item.buildId || item.id, language: item.language || 'python', code: item.code };
+  const version = { id: item.buildId || item.id, language: item.language || 'python', code: item.code, trusted: true };
   const result = await check(version);
   if ((item.buildId || item.id) !== version.id) { removeBuild(version); return result; } // superseded meanwhile
   item.status = result.ok ? 'ok' : 'error';

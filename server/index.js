@@ -279,6 +279,7 @@ app.get('/api/tournaments/:id/practice', apiAuth, (req, res) => {
     return {
       userId: uid,
       teamName: u.teamName,
+      username: u.username,
       avatar: auth.avatarOf(u),
       language: s ? s.language : null,
       status: !s ? 'no-bot' : p ? p.status : 'queued',

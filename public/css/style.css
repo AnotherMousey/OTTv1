@@ -296,6 +296,7 @@ pre.msg { white-space: pre; background: #f4f2ea; border-radius: 8px; padding: 10
 .board tr { position: relative; }
 .board .rank { font-family: 'Pangolin', cursive; font-size: 30px; width: 60px; text-align: center; }
 .board .team { display: flex; align-items: center; gap: 10px; font-size: 23px; }
+.board .team .uname { color: var(--muted); font-size: 15px; }
 .board .pts { font-family: 'Pangolin', cursive; font-size: 30px; }
 .board tr.me td { background: #fff8d6; }
 .board tr.eliminated td { background: #f0efea; color: #999; }

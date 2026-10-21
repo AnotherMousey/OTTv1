@@ -60,7 +60,7 @@ function renderCampaignTable(tbody, board, state, onOpen) {
     const open = state.openUser === r.userId;
     const row = `<tr class="clickable ${mine ? 'me' : ''} ${r.finishedAt ? 'finished' : ''} ${open ? 'open' : ''}" data-user="${r.userId}" title="${canOpen(r) ? 'xem chi tiết' : 'không được nhìn trộm!'}">
       <td class="rank">${r.finishedAt && r.rank <= 3 ? ['🥇', '🥈', '🥉'][r.rank - 1] : r.rank}</td>
-      <td><div class="team">${avatarSvg(r.avatar, 38)}<span>${esc(r.teamName)}</span>${mine ? '<span class="muted" style="font-size:16px">← bạn!</span>' : ''}${canOpen(r) ? `<span class="caret">${open ? '▾' : '▸'}</span>` : ''}</div></td>
+      <td><div class="team">${avatarSvg(r.avatar, 38)}<span>${esc(r.teamName)}</span>${r.username ? `<small class="uname">@${esc(r.username)}</small>` : ''}${mine ? '<span class="muted" style="font-size:16px">← bạn!</span>' : ''}${canOpen(r) ? `<span class="caret">${open ? '▾' : '▸'}</span>` : ''}</div></td>
       <td>${campaignPips(r, board.bots)} <span class="pts" style="font-size:24px">${r.beaten}/${r.total}</span></td>
       <td class="pen" title="${esc(penTitle(r))}">${r.pen}</td>
       <td class="hide-sm muted">${r.submissions}</td>

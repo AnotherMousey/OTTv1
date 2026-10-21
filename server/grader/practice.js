@@ -1,8 +1,8 @@
 // Practice evaluation: every working submission plays one 100-turn game
 // against each of the 10 house bots. Results live on submission.practice.
 const db = require('../db');
-const { HOUSE_BOTS } = require('./house');
-const { runVsHouse, runMatch } = require('./match');
+const { HOUSE_BOTS, defaultRunnable } = require('./house');
+const { runMatch } = require('./match');
 
 const PARALLEL = +process.env.PRACTICE_PARALLEL || 2;
 // Campaign: a sparring bot only counts as beaten if the submission wins this many games
@@ -38,16 +38,16 @@ function liveOf(b) {
   if (b.live) return b.live;
   return b.status === 'ok' ? { buildId: b.id, language: b.language, code: b.code } : null; // added before `live` existed
 }
-const runnable = live => ({ id: live.buildId, language: live.language || 'python', code: live.code });
+const runnable = live => ({ id: live.buildId, language: live.language || 'python', code: live.code, trusted: true });
 
 // The sparring bots of a tournament: the 10 built-in ones (or the judge's edited Python copy of
-// one, once it works), plus (campaign only) the working bots the judge added. Bots run from
-// judge code carry `custom`: something shaped like a submission, compiled and run as a process.
+// one, once it works), plus (campaign only) the working bots the judge added. Every bot carries
+// `custom`: something shaped like a submission, compiled and run as a process by the grader.
 function botsFor(t) {
   const edits = (t && t.houseEdits) || {};
   const house = HOUSE_BOTS.map(h => {
     const live = edits[h.id] && edits[h.id].live;
-    return live ? { id: h.id, name: h.name, desc: h.desc, custom: runnable(live) } : h;
+    return { id: h.id, name: h.name, desc: h.desc, custom: live ? runnable(live) : defaultRunnable(h.id) };
   });
   const extra = t && t.mode === 'campaign' ? (t.bots || []).filter(liveOf) : [];
   return [...house, ...extra.map(b => ({ id: b.id, name: b.name, custom: runnable(liveOf(b)) }))];
@@ -79,7 +79,6 @@ function evaluate(sub, ensureBuilt) {
   const all = botsFor(tournamentOf(sub));
   const opponents = isCampaign(sub) && sub.target ? all.filter(h => h.id === sub.target) : all;
   const play = async house => {
-    if (!house.custom) return runVsHouse(sub, house, ensureBuilt);
     const r = await runMatch(sub, house.custom, ensureBuilt);
     return { ...r, issue: r.issues.A };
   };

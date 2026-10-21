@@ -69,9 +69,9 @@ The judge picks a mode when creating a tournament (older tournaments without one
 
 ### Editing the sparring bots
 
-Each of the 10 built-in bots also has a Python version
+The 10 built-in bots are written in Python
 ([server/grader/house_py/](server/grader/house_py/), assembled from shared pieces `_base.py`,
-`_predictors.py`, `_meta.py`, `_bayes.py`) that plays the same way as the JavaScript original. On the
+`_predictors.py`, `_meta.py`, `_bayes.py`) and are run by the grader on the server like any other bot. On the
 Judge desk (**bot đấu tập** on any open tournament) the judge can open that Python code, change it and
 save: it is compiled and given the 5-turn test, and once it passes, *that tournament* uses it instead
 of the built-in bot (other tournaments are unaffected; in a brawl it only changes the practice games).
@@ -97,7 +97,7 @@ When creating a tournament the judge also picks who may enter it:
 2. Players press **Submit code**, pick a language and paste or upload their bot. Each submission
    is compiled and given a 5-turn test run. The newest ✅ submission is the one that plays.
    Every ✅ bot also plays a practice game (100 turns) against each of 10 built-in sparring bots
-   ([server/grader/house.js](server/grader/house.js)): Kiên Định (one fixed move), Luân Hồi (R→P→S cycle),
+   ([server/grader/house_py/](server/grader/house_py/)): Kiên Định (one fixed move), Luân Hồi (R→P→S cycle),
    Vô Chiêu (random), Tâm Ma (copies you), Tùy Duyên (win-stay/lose-shift), Liệu Địch (frequency analysis),
    Thức Thời (decay/window), Thiên Cơ (Markov chain), Mưu Lược (n-gram) and Minh Triết (Bayesian inference).
    The submit page shows a practice board with every team's total (max 3000). Only you (and the judge)
@@ -121,8 +121,28 @@ When creating a tournament the judge also picks who may enter it:
 | Java | `Bot.java` | `public class Bot { public char play(List<Character> myMoves, List<Character> opponentMoves) }` |
 
 The histories hold every previous turn, oldest first (`'R'`, `'P'`, `'S'`; `'X'` = a forfeited turn).
-Return `R`, `P` or `S`. The bot process lives for the whole match, so globals, statics and fields keep
-their state. Printing is allowed: only lines starting with `MOVE ` are read. You get 1 s per move
+Return `R`, `P` or `S`. The bot process lives for the whole match, so statics, fields and (Python) a
+default argument like `memo={}` keep their state.
+
+Player code is restricted so it can only compute a move. It can't read files (other bots' code,
+`data/db.json`), start processes or use the network:
+
+- **Python:** only `import math` / `import random` and one `def play(...)`. Everything else goes inside
+  `play`. No other imports, classes, generators, `match`, names starting with `__`, attributes other
+  than methods of the basic types and `math`/`random`, and only safe builtins (no `open`, `eval`,
+  `getattr`, ...). Checked by [runner.py](server/grader/harness/runner.py) on submit and again at
+  run time, where the code also runs with a restricted builtins table.
+- **C++:** just the functions. The headers in [prelude.hpp](server/grader/harness/prelude.hpp) are
+  always available. `#include` of one of them (or `bits/stdc++.h`) is accepted, and any other
+  preprocessor line is rejected. So are `extern`, `asm`, `reinterpret_cast`, names starting with `_`
+  and file/process/network functions.
+- **Java:** just the `Bot` class. `java.util.*` and `Math` are available, nothing else may be
+  imported, and fully-qualified `java.` names, reflection (`getClass`, `.class`, `Class`), `Runtime`,
+  `Thread` and `System` (except `System.out`/`err` printing and the clocks) are rejected.
+
+C++ and Java are checked in [restrict.js](server/grader/restrict.js). Built-in and judge-written
+bots are trusted and not restricted. Builds made before these rules existed are rebuilt (and
+re-checked) before they play. Printing is allowed: only lines starting with `MOVE ` are read. You get 1 s per move
 (10 s for the first). A crash or timeout forfeits the rest of the match.
 See [examples/](examples/) for sample bots.
 

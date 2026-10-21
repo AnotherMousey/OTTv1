@@ -8,6 +8,7 @@ const { avatarOf } = require('./auth');
 const campaign = require('./campaign');
 const { isInviteOnly, canPlay } = require('./access');
 const avatarById = id => avatarOf(db.data.users.find(u => u.id === id) || { teamName: '' });
+const usernameById = id => (db.data.users.find(u => u.id === id) || {}).username || '';
 
 const PARALLEL_MATCHES = +process.env.PARALLEL_MATCHES || Math.max(1, Math.floor(os.cpus().length / 2));
 const MATCH_PACE_MS = process.env.MATCH_PACE_MS !== undefined ? +process.env.MATCH_PACE_MS : 1500;
@@ -242,7 +243,7 @@ class TournamentManager {
     const cur = rounds[rounds.length - 1];
     const lang = id => this.entry(t, id).language;
     if (!cur) {
-      info.rows = t.entries.map(e => ({ userId: e.userId, teamName: e.teamName, avatar: avatarById(e.userId), language: e.language, status: 'alive', round: 0, points: 0, w: 0, d: 0, l: 0, played: 0, total: 0 }));
+      info.rows = t.entries.map(e => ({ userId: e.userId, teamName: e.teamName, username: usernameById(e.userId), avatar: avatarById(e.userId), language: e.language, status: 'alive', round: 0, points: 0, w: 0, d: 0, l: 0, played: 0, total: 0 }));
     } else {
       const n = cur.participants.length;
       info.round = {
@@ -261,7 +262,7 @@ class TournamentManager {
           let status = out ? 'eliminated' : 'alive';
           if (t.championId === s.userId) status = 'champion';
           else if (isCur && round.status === 'done' && !out && n <= 2) status = 'runner-up';
-          info.rows.push({ ...s, avatar: avatarById(s.userId), language: lang(s.userId), status, round: round.number, total: totals[s.userId] || 0 });
+          info.rows.push({ ...s, username: usernameById(s.userId), avatar: avatarById(s.userId), language: lang(s.userId), status, round: round.number, total: totals[s.userId] || 0 });
         }
       }
     }

@@ -78,16 +78,17 @@
 
 # my_moves / opponent_moves: lists of 'R', 'P', 'S' from the previous turns
 # (oldest first, empty on turn 1). Return 'R', 'P' or 'S'.
-# Module-level variables survive between turns, so you can keep state.
+# Only "import math" / "import random" and the play function are allowed;
+# helpers and constants go inside play. To keep state between turns, use a
+# default argument such as memo={} (it lives for the whole game).
 # print() is fine for debugging - it never reaches the grader.
 
-BEATS = {'R': 'P', 'P': 'S', 'S': 'R'}  # move -> what beats it
-
-def play(my_moves, opponent_moves):
+def play(my_moves, opponent_moves, memo={}):
+    BEATS = {'R': 'P', 'P': 'S', 'S': 'R'}  # move -> what beats it
     if not opponent_moves:
         return random.choice('RPS')
     # beat whatever the opponent threw last time
-    return BEATS[opponent_moves[-1]]
+    return BEATS.get(opponent_moves[-1], 'R')
 `,
       cpp: `#include <vector>
 #include <cstdlib>
@@ -132,13 +133,16 @@ public class Bot {
 
     const DOCS = {
       python: `<p>Tệp: <code>bot.py</code>, viết một hàm:</p>
-        <pre>def play(my_moves: list[str], opponent_moves: list[str]) -> str</pre>`,
+        <pre>def play(my_moves: list[str], opponent_moves: list[str]) -> str</pre>
+        <p>Chỉ được có dòng <code>import math</code> / <code>import random</code> và hàm <code>play</code> (hàm phụ, hằng số đặt bên trong <code>play</code>). Không dùng được thư viện khác, <code>open</code>, <code>eval</code>, class hay tên bắt đầu bằng <code>__</code>.</p>`,
       cpp: `<p>Tệp: <code>bot.cpp</code> (C++17, biên dịch bằng g++ -O2), viết một hàm:</p>
         <pre>char play(const std::vector&lt;char&gt;&amp; myMoves,
-          const std::vector&lt;char&gt;&amp; opponentMoves);</pre>`,
+          const std::vector&lt;char&gt;&amp; opponentMoves);</pre>
+        <p>Chỉ viết hàm (và hàm phụ, struct, biến toàn cục nếu cần). Các thư viện chuẩn thường dùng (<code>vector</code>, <code>algorithm</code>, <code>cmath</code>, <code>random</code>, <code>map</code>, <code>iostream</code>, ... hoặc <code>bits/stdc++.h</code>) đã có sẵn. Không được dùng <code>#define</code>/<code>#pragma</code>, include thư viện khác, đọc ghi tệp hay gọi hệ thống.</p>`,
       java: `<p>Tệp: <code>Bot.java</code>, một lớp public tên <code>Bot</code> (không có dòng <code>package</code>) với phương thức:</p>
         <pre>public char play(List&lt;Character&gt; myMoves,
-                 List&lt;Character&gt; opponentMoves)</pre>`,
+                 List&lt;Character&gt; opponentMoves)</pre>
+        <p>Chỉ viết lớp <code>Bot</code>. <code>java.util.*</code> và <code>Math</code> luôn có sẵn; không được import gì khác. Trong <code>System</code> chỉ dùng được <code>System.out.println</code>/<code>print</code>/<code>printf</code>, <code>System.nanoTime</code>, <code>System.currentTimeMillis</code>. Không dùng reflection, luồng, tệp hay tiến trình.</p>`,
     };
     let TURNS = 100, GAMES = 5, COOLDOWN = 90000; // updated from the server on load
     const commonRules = () => `
@@ -299,7 +303,7 @@ public class Bot {
         const pct = r.total ? Math.round((100 * r.total) / d.maxTotal) : 0;
         const row = `<tr class="clickable ${mine ? 'me' : ''} ${openUser === r.userId ? 'open' : ''}" data-user="${r.userId}" title="${canOpen(r) ? 'xem chi tiết' : 'không được nhìn trộm!'}">
           <td class="rank">${r.total === null ? '–' : r.rank}</td>
-          <td><div class="team">${avatarSvg(r.avatar, 36)}<span>${esc(r.teamName)}</span>${mine ? '<span class="muted" style="font-size:16px">← bạn!</span>' : ''}${canOpen(r) ? `<span class="caret">${openUser === r.userId ? '▾' : '▸'}</span>` : ''}</div></td>
+          <td><div class="team">${avatarSvg(r.avatar, 36)}<span>${esc(r.teamName)}</span>${r.username ? `<small class="uname">@${esc(r.username)}</small>` : ''}${mine ? '<span class="muted" style="font-size:16px">← bạn!</span>' : ''}${canOpen(r) ? `<span class="caret">${openUser === r.userId ? '▾' : '▸'}</span>` : ''}</div></td>
           <td class="hide-sm">${r.language ? LANG_LABEL[r.language] : ''}</td>
           <td class="pts">${r.total === null ? '–' : r.total} ${statusText(r)}</td>
           <td class="hide-sm"><div class="pbar"><div style="width:${pct}%"></div></div></td>

@@ -162,7 +162,7 @@
         const cls = [row.status, danger ? 'danger' : '', ME && row.userId === ME.id ? 'me' : '', prevPoints[row.userId] !== undefined && prevPoints[row.userId] !== row.total ? 'flash' : ''].join(' ');
         return `<tr class="${cls}" data-id="${row.userId}">
           <td class="rank">${statusCell(row)}</td>
-          <td><div class="team">${avatarSvg(row.avatar, 40, { mouth: row.status === 'eliminated' ? 'frown' : row.status === 'champion' ? 'smile' : undefined })}<span class="n">${esc(row.teamName)}</span>${ME && row.userId === ME.id ? '<span class="muted" style="font-size:16px">← bạn!</span>' : ''}${danger ? ' <span title="vùng nguy hiểm">😬</span>' : ''}</div></td>
+          <td><div class="team">${avatarSvg(row.avatar, 40, { mouth: row.status === 'eliminated' ? 'frown' : row.status === 'champion' ? 'smile' : undefined })}<span class="n">${esc(row.teamName)}</span>${row.username ? `<small class="uname">@${esc(row.username)}</small>` : ''}${ME && row.userId === ME.id ? '<span class="muted" style="font-size:16px">← bạn!</span>' : ''}${danger ? ' <span title="vùng nguy hiểm">😬</span>' : ''}</div></td>
           <td class="hide-sm">${LANG_LABEL[row.language] || ''}</td>
           <td class="pts">${row.points}</td>
           <td class="hide-sm">${row.w} · ${row.d} · ${row.l}</td>

@@ -85,6 +85,7 @@ function board(t) {
     return {
       userId: u.id,
       teamName: u.teamName,
+      username: u.username,
       avatar: avatarOf(u),
       beaten: p.count,
       beatenBots: bots.map(h => !!p.beaten[h.id]),

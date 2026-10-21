@@ -54,34 +54,4 @@ async function runMatch(subA, subB, ensureBuilt) {
   };
 }
 
-// A submission against one of the built-in house bots (which runs in-process).
-async function runVsHouse(sub, house, ensureBuilt) {
-  const bot = new Bot(sub);
-  try {
-    await ensureBuilt(sub);
-    bot.start();
-  } catch (e) {
-    bot.dead = true;
-    bot.reason = 'biên dịch thất bại: ' + e.message;
-  }
-  const brain = house.create();
-  let mine = '', theirs = '', scoreA = 0, scoreB = 0, issue = null;
-  try {
-    for (let t = 0; t < TURNS; t++) {
-      const timeout = t === 0 ? FIRST_MOVE_TIMEOUT_MS : MOVE_TIMEOUT_MS;
-      const raw = await bot.move(mine.slice(-1) || '-', theirs.slice(-1) || '-', timeout);
-      const a = normalize(raw);
-      const b = normalize(brain(theirs, mine));
-      if (a === 'X' && !issue) {
-        issue = raw === null ? `Lượt ${t + 1}: bot ${bot.reason || 'không phản hồi'}` : `Lượt ${t + 1}: nước đi không hợp lệ "${String(raw).slice(0, 20)}"`;
-      }
-      const [pa, pb] = points(a, b);
-      mine += a; theirs += b; scoreA += pa; scoreB += pb;
-    }
-  } finally {
-    bot.stop();
-  }
-  return { movesA: mine, movesB: theirs, scoreA, scoreB, winner: scoreA > scoreB ? 'A' : scoreB > scoreA ? 'B' : 'draw', issue };
-}
-
-module.exports = { runMatch, runVsHouse, normalize, points, TURNS, FIRST_MOVE_TIMEOUT_MS, MOVE_TIMEOUT_MS };
+module.exports = { runMatch, normalize, points, TURNS, FIRST_MOVE_TIMEOUT_MS, MOVE_TIMEOUT_MS };

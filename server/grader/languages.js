@@ -28,7 +28,7 @@ function command(sub) {
     case 'java':
       return { cmd: TOOLS.java, args: ['-Xmx256m', '-XX:+UseSerialGC', '-XX:TieredStopAtLevel=1', '-cp', 'out', 'Main'], cwd };
     case 'python':
-      return { cmd: TOOLS.python, args: ['-u', '_runner.py', 'bot.py'], cwd };
+      return { cmd: TOOLS.python, args: ['-u', '-X', 'utf8', '_runner.py', ...(sub.trusted ? [] : ['--restricted']), 'bot.py'], cwd };
     default:
       throw new Error('Unknown language ' + sub.language);
   }

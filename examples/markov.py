@@ -1,17 +1,17 @@
 # Learns what the opponent tends to play after each of their moves.
 import random
-from collections import Counter, defaultdict
 
-BEATS = {"R": "P", "P": "S", "S": "R"}
 
 def play(my_moves, opponent_moves):
+    BEATS = {"R": "P", "P": "S", "S": "R"}
     if len(opponent_moves) < 2:
         return random.choice("RPS")
-    after = defaultdict(Counter)
+    after = {}
     for prev, nxt in zip(opponent_moves, opponent_moves[1:]):
-        after[prev][nxt] += 1
-    seen = after[opponent_moves[-1]]
+        seen = after.setdefault(prev, {})
+        seen[nxt] = seen.get(nxt, 0) + 1
+    seen = after.get(opponent_moves[-1])
     if not seen:
         return random.choice("RPS")
-    guess = seen.most_common(1)[0][0]
+    guess = max(seen, key=seen.get)
     return BEATS.get(guess, "R")
