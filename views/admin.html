@@ -24,6 +24,7 @@
             <option value="open">🌍 Mọi người chơi đều được nộp bài</option>
             <option value="invite">🔒 Chỉ những đội được trọng tài chỉ định (chọn sau khi tạo giải)</option>
           </select></label>
+          <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" name="hidden"><span>🙈 Ẩn giải với người chơi (chỉ trọng tài thấy, có thể hiện sau)</span></label>
           <label><span>mô tả (không bắt buộc)</span><input name="description" style="width:100%" placeholder="Mang theo những bot xịn nhất"></label>
           <div class="form-row">
             <label><span>bắt đầu nhận bài <small class="muted">(bỏ trống = mở ngay)</small></span><input name="startsAt" type="datetime-local" style="width:100%"></label>
@@ -109,7 +110,7 @@
           : t.startsAt ? esc(fmtDate(t.startsAt)) : '<span class="muted">–</span>';
         return `<tr>
           <td>${esc(t.name)}</td>
-          <td>${t.mode === 'campaign' ? '🗺️ chiến dịch' : '⚔️ hỗn chiến'}${t.access === 'invite' ? `<br><span class="muted" style="font-size:16px">🔒 ${t.members} đội được chỉ định</span>` : ''}</td>
+          <td>${t.mode === 'campaign' ? '🗺️ chiến dịch' : '⚔️ hỗn chiến'}${t.access === 'invite' ? `<br><span class="muted" style="font-size:16px">🔒 ${t.members} đội được chỉ định</span>` : ''}${t.hidden ? '<br><span class="muted" style="font-size:16px">🙈 đang ẩn với người chơi</span>' : ''}</td>
           <td><span class="tag ${waiting ? 'pending' : t.status}">${waiting ? 'chưa mở' : STATUS_VI[t.status] || t.status}</span></td>
           <td>${startCell}</td>
           <td>${open ? `<input type="datetime-local" data-dl="${t.id}" value="${toLocalInput(new Date(t.deadline))}" style="font-size:16px;padding:2px 6px">` : esc(fmtDate(t.deadline))}</td>
@@ -118,6 +119,7 @@
             <button class="btn small" data-members="${t.id}">${t.access === 'invite' ? '🔒 ' : ''}người chơi</button>
             <button class="btn small" data-bots="${t.id}">bot đấu tập</button>
             <button class="btn small" data-subs="${t.id}">bài nộp</button>
+            <button class="btn small" data-hide="${t.id}" title="${t.hidden ? 'cho người chơi thấy giải này' : 'chỉ trọng tài thấy giải này'}">${t.hidden ? '👁 hiện' : '🙈 ẩn'}</button>
             ${waiting ? `<button class="btn small yellow" data-opennow="${t.id}">mở nhận bài ngay</button>` : open ? `<button class="btn small yellow" data-now="${t.id}">đóng nộp bài ngay</button>` : `<a class="btn small" href="/tournament/${id}/live">xem</a>`}
             ${t.status !== 'running' ? `<button class="btn small" data-del="${t.id}">🗑</button>` : ''}
           </td>
@@ -136,6 +138,10 @@
       $$('[data-start]').forEach(inp => inp.onchange = () =>
         patch(inp.dataset.start, { startsAt: inp.value ? new Date(inp.value).toISOString() : '' }, inp.value ? 'Đã đổi giờ bắt đầu 🕘' : 'Đã bỏ giờ bắt đầu: nhận bài ngay 🚪'));
       $$('[data-nostart]').forEach(b => b.onclick = () => patch(b.dataset.nostart, { startsAt: '' }, 'Đã bỏ giờ bắt đầu: nhận bài ngay 🚪'));
+      $$('[data-hide]').forEach(b => b.onclick = () => {
+        const hide = !tournaments.find(t => t.id === b.dataset.hide).hidden;
+        patch(b.dataset.hide, { hidden: hide }, hide ? 'Đã ẩn giải với người chơi 🙈' : 'Người chơi đã thấy giải 👁');
+      });
       $$('[data-opennow]').forEach(b => b.onclick = () => {
         if (confirm('Mở nhận bài cho giải này ngay bây giờ?')) patch(b.dataset.opennow, { startsAt: new Date(serverNow()).toISOString() }, 'Đã mở nhận bài 🚪');
       });
@@ -554,7 +560,7 @@ public class Bot {
       e.preventDefault();
       const f = new FormData(e.target);
       try {
-        const { tournament } = await api('/api/admin/tournaments', { method: 'POST', body: { name: f.get('name'), mode: f.get('mode'), access: f.get('access'), description: f.get('description'), startsAt: f.get('startsAt') ? new Date(f.get('startsAt')).toISOString() : '', deadline: new Date(f.get('deadline')).toISOString() } });
+        const { tournament } = await api('/api/admin/tournaments', { method: 'POST', body: { name: f.get('name'), mode: f.get('mode'), access: f.get('access'), hidden: f.get('hidden') === 'on', description: f.get('description'), startsAt: f.get('startsAt') ? new Date(f.get('startsAt')).toISOString() : '', deadline: new Date(f.get('deadline')).toISOString() } });
         e.target.reset();
         // invite-only: go straight to picking the players
         if (tournament.access === 'invite') showMembers(tournament);
