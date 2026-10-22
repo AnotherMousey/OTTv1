@@ -112,6 +112,10 @@ const SCHEMA = `
   CREATE INDEX IF NOT EXISTS sessions_expires ON sessions (expires);
 `;
 const TABLES = ['users', 'tournaments', 'submissions'];
+// PostgreSQL text and JSON can't hold the NUL character (a bot can print one, and it ends up in a
+// check message), so it is dropped from everything written there.
+const noNul = s => (s.includes('\0') ? s.replace(/\0/g, '') : s);
+const toJson = v => JSON.stringify(v, (k, x) => (typeof x === 'string' ? noNul(x) : x));
 
 const pgBackend = {
   pool: null,
@@ -144,7 +148,7 @@ const pgBackend = {
       (raw.matches[r.tournament_id] = raw.matches[r.tournament_id] || {})[r.name] = r.summary;
     }
     const { data } = normalize(raw);
-    for (const t of TABLES) for (const doc of data[t]) this.written[t].set(doc.id, JSON.stringify(doc));
+    for (const t of TABLES) for (const doc of data[t]) this.written[t].set(doc.id, toJson(doc));
     return data;
   },
 
@@ -169,7 +173,7 @@ const pgBackend = {
     for (const t of TABLES) {
       next[t] = new Map();
       for (const doc of data[t]) {
-        const json = JSON.stringify(doc);
+        const json = toJson(doc);
         next[t].set(doc.id, json);
         if (this.written[t].get(doc.id) !== json) changes.push({ t, doc, json });
       }
@@ -179,7 +183,7 @@ const pgBackend = {
     try {
       await client.query('BEGIN');
       for (const [key, value] of Object.entries(data.meta)) {
-        await client.query('INSERT INTO meta (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value', [key, JSON.stringify(value)]);
+        await client.query('INSERT INTO meta (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value', [key, toJson(value)]);
       }
       for (const { t, doc, json } of changes) {
         if (t === 'submissions') {
@@ -203,7 +207,7 @@ const pgBackend = {
 
   async putCode(sub, code) {
     await this.pool.query(`INSERT INTO submissions (id, tournament_id, user_id, created_at, doc, code) VALUES ($1, $2, $3, $4, $5, $6)
-      ON CONFLICT (id) DO UPDATE SET code = EXCLUDED.code`, [sub.id, sub.tournamentId, sub.userId, sub.createdAt, JSON.stringify(sub), code]);
+      ON CONFLICT (id) DO UPDATE SET code = EXCLUDED.code`, [sub.id, sub.tournamentId, sub.userId, sub.createdAt, toJson(sub), noNul(code)]);
   },
   async getCodes(ids) {
     if (!ids.length) return {};
@@ -213,7 +217,7 @@ const pgBackend = {
   async putMatch(m, detail) {
     await this.pool.query(`INSERT INTO matches (tournament_id, name, played_at, summary, detail) VALUES ($1, $2, $3, $4, $5)
       ON CONFLICT (tournament_id, name) DO UPDATE SET played_at = EXCLUDED.played_at, summary = EXCLUDED.summary, detail = EXCLUDED.detail`,
-    [m.tournamentId, m.name, m.playedAt || null, JSON.stringify(m), JSON.stringify(detail)]);
+    [m.tournamentId, m.name, m.playedAt || null, toJson(m), toJson(detail)]);
   },
   async getDetail(tid, name) {
     const r = (await this.pool.query('SELECT detail FROM matches WHERE tournament_id = $1 AND name = $2', [tid, name])).rows[0];
