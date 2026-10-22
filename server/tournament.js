@@ -1,5 +1,9 @@
-// Runs tournaments: closes submissions at the deadline, plays round-robin
-// rounds, eliminates min(3, t - 2) teams per round, broadcasts the leaderboard.
+// Runs tournaments and broadcasts their leaderboards.
+//  - Brawl: a daily league (see daily.js): a round robin every day at the judge's time, results
+//    published 10 minutes later, until the deadline.
+//  - Brawls from before the daily league (t.rounds): round-robin rounds that eliminate
+//    min(3, t - 2) teams each, once the deadline closes submissions.
+//  - Campaign: closes at the deadline (see campaign.js).
 const os = require('os');
 const db = require('./db');
 const grader = require('./grader');
@@ -7,6 +11,8 @@ const { runMatch } = require('./grader/match');
 const { avatarOf } = require('./auth');
 const campaign = require('./campaign');
 const { isInviteOnly, canPlay } = require('./access');
+const daily = require('./daily');
+const { sampleBots, defaultRunnable } = require('./grader/house');
 const avatarById = id => avatarOf(db.data.users.find(u => u.id === id) || { teamName: '' });
 const usernameById = id => (db.data.users.find(u => u.id === id) || {}).username || '';
 
@@ -32,16 +38,118 @@ class TournamentManager {
     this.active = new Set();
     // Re-validate anything that was mid-check when the server stopped.
     for (const s of db.data.submissions) if (s.status === 'pending') grader.validate(s);
+    // Open brawls made before the daily league become daily, playing at their deadline's time of day.
+    for (const t of db.data.tournaments) {
+      if (t.mode === 'campaign' || t.format || t.status !== 'open' || t.entries) continue;
+      const dl = new Date(t.deadline);
+      Object.assign(t, { format: 'daily', dailyTime: `${String(dl.getHours()).padStart(2, '0')}:${String(dl.getMinutes()).padStart(2, '0')}`, tzOffset: dl.getTimezoneOffset(), dailySince: new Date().toISOString() });
+      db.save();
+    }
     // Resume tournaments that were running when the server stopped (played matches are kept).
-    for (const t of db.data.tournaments) if (t.status === 'running') this.launch(t);
+    // Daily leagues resume from tick().
+    for (const t of db.data.tournaments) if (t.status === 'running' && !daily.isDaily(t)) this.launch(t);
     setInterval(() => this.tick(), 1000);
   }
 
   tick() {
     const now = Date.now();
     for (const t of db.data.tournaments) {
-      if (t.status === 'open' && Date.parse(t.deadline) <= now) this.launch(t);
+      if (daily.isDaily(t)) this.dailyTick(t, now);
+      else if (t.status === 'open' && Date.parse(t.deadline) <= now) this.launch(t);
     }
+  }
+
+  // ---------- daily league ----------
+  dailyTick(t, now) {
+    if (t.status === 'finished') return;
+    if (t.status === 'open' && Date.parse(t.deadline) <= now) {
+      // the last day: submissions close, the remaining matches still play and publish
+      t.status = 'running';
+      db.save();
+      this.io.to('users').emit('tournaments:changed');
+      this.broadcast(t);
+    }
+    for (const d of t.days || []) {
+      if (d.status === 'done' && now >= Date.parse(d.publishAt)) this.publishDay(t, d);
+    }
+    if (this.active.has(t.id)) return;
+    const running = (t.days || []).find(d => d.status === 'running'); // cut off by a restart
+    const [slot] = running ? [] : daily.dueSlots(t, now);
+    const manual = !running && !slot && t.runNow && t.status === 'open';
+    if (running || slot || manual) {
+      this.active.add(t.id);
+      this.runDay(t, running, slot ? new Date(slot).toISOString() : null)
+        .catch(e => {
+          console.error(`[daily] "${t.name}" crashed:`, e);
+          t.error = String(e.message || e);
+          db.save();
+        })
+        .finally(() => this.active.delete(t.id));
+      return;
+    }
+    if (t.status === 'running' && (t.days || []).every(d => d.status === 'published')) this.finishDaily(t);
+  }
+
+  // Plays one day: a new one at `slot` (null = the judge's "play now"), or `day` after a restart.
+  async runDay(t, day, slot) {
+    if (!day) {
+      delete t.runNow;
+      await grader.waitForValidations(t.id); // bots submitted just before the bell still count
+      const now = Date.now();
+      t.days = t.days || [];
+      day = {
+        number: t.days.length + 1,
+        slot,
+        startedAt: new Date(now).toISOString(),
+        publishAt: new Date(now + daily.PUBLISH_DELAY_MS).toISOString(),
+        entries: daily.entriesAt(t, slot ? Date.parse(slot) : now),
+        status: 'running',
+      };
+      t.days.push(day);
+      delete t.error;
+      db.save();
+      console.log(`[daily] "${t.name}" day ${day.number}: ${day.entries.length} teams`);
+      this.broadcast(t);
+      this.io.to('users').emit('tournaments:changed'); // the next match time moved on
+    }
+    // evaluation first: every team's bot of the day against every sample bot
+    const samples = sampleBots(t.game).map(b => ({ ...b, custom: defaultRunnable(b.id) }));
+    day.evals = day.evals || {};
+    const evalJobs = day.entries.flatMap(e => samples.filter(b => !(day.evals[e.userId] || {})[b.id]).map(b => ({ e, b })));
+    await pool(evalJobs, PARALLEL_MATCHES, async ({ e, b }) => {
+      const sub = db.data.submissions.find(s => s.id === e.submissionId);
+      const r = await runMatch(sub, b.custom, grader.ensureBuilt);
+      (day.evals[e.userId] = day.evals[e.userId] || {})[b.id] = { winner: r.winner, scoreA: r.scoreA, scoreB: r.scoreB };
+      db.save();
+      this.broadcast(t);
+    });
+    const played = new Set(daily.dayMatches(t, day).map(m => m.name));
+    const jobs = daily.pairsOf(day).filter(j => !played.has(j.name));
+    await pool(jobs, PARALLEL_MATCHES, job => this.playMatch(t, { number: day.number, day: true }, job, 0));
+    day.status = 'done';
+    day.finishedAt = new Date().toISOString();
+    db.save();
+    this.broadcast(t);
+  }
+
+  publishDay(t, day) {
+    day.status = 'published';
+    day.publishedAt = new Date().toISOString();
+    db.save();
+    console.log(`[daily] "${t.name}" day ${day.number} published`);
+    this.broadcast(t);
+    this.io.to('users').emit('tournaments:changed');
+  }
+
+  finishDaily(t) {
+    const [top] = daily.standings(t);
+    t.championId = top && top.played > 0 ? top.userId : null;
+    t.status = 'finished';
+    t.finishedAt = new Date().toISOString();
+    db.save();
+    console.log(`[daily] "${t.name}" finished. Champion: ${top && t.championId ? top.teamName : 'nobody'}`);
+    this.broadcast(t);
+    this.io.to('users').emit('tournaments:changed');
   }
 
   matchesOf(t) {
@@ -168,24 +276,25 @@ class TournamentManager {
     }
   }
 
-  async playMatch(t, round, { A, B, name }) {
+  async playMatch(t, round, { A, B, name }, pace = MATCH_PACE_MS) {
     const sub = id => db.data.submissions.find(s => s.id === id);
-    const [res] = await Promise.all([runMatch(sub(A.submissionId), sub(B.submissionId), grader.ensureBuilt), sleep(MATCH_PACE_MS)]);
+    const [res] = await Promise.all([runMatch(sub(A.submissionId), sub(B.submissionId), grader.ensureBuilt), sleep(pace)]);
     const m = {
       name,
       tournamentId: t.id,
       round: round.number,
+      ...(round.day ? { day: round.number } : {}),
       teamA: A.teamName, teamB: B.teamName,
       userA: A.userId, userB: B.userId,
       languageA: A.language, languageB: B.language,
       movesA: res.movesA, movesB: res.movesB,
+      ...(res.games ? { game: 'board', games: res.games } : {}), // board game: every move of both games
       scoreA: res.scoreA, scoreB: res.scoreB,
       winner: res.winner,
       issues: res.issues,
       playedAt: new Date().toISOString(),
     };
-    this.matchesOf(t)[name] = m;
-    db.save();
+    await db.putMatch(m); // the summary stays in memory, the moves go to storage
     this.broadcast(t);
     this.io.to('judge').emit('match:done', { tournamentId: t.id, ...matchSummary(m) });
   }
@@ -233,6 +342,7 @@ class TournamentManager {
 
   leaderboard(t) {
     if (t.mode === 'campaign') return campaign.board(t);
+    if (daily.isDaily(t)) return daily.board(t);
     const info = {
       id: t.id, name: t.name, status: t.status, deadline: t.deadline, error: t.error || null,
       entries: t.entries ? t.entries.length : null, round: null, champion: null, rows: [],
@@ -277,7 +387,7 @@ class TournamentManager {
 }
 
 function matchSummary(m) {
-  return { name: m.name, round: m.round, teamA: m.teamA, teamB: m.teamB, scoreA: m.scoreA, scoreB: m.scoreB, winner: m.winner, playedAt: m.playedAt };
+  return { name: m.name, round: m.round, day: m.day, teamA: m.teamA, teamB: m.teamB, scoreA: m.scoreA, scoreB: m.scoreB, winner: m.winner, playedAt: m.playedAt };
 }
 
 module.exports = { TournamentManager, matchSummary };

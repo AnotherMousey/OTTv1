@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trận đấu · OTTv1</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header id="topbar"></header>
+  <main>
+    <a id="back" href="/">← quay lại bảng xếp hạng</a>
+    <h2 class="center" id="title" style="margin-top:6px">…</h2>
+    <div class="game-tabs" id="tabs"></div>
+    <div class="stage" id="stage">
+      <svg class="scene board-scene" id="scene" viewBox="0 0 900 530" role="img" aria-label="match replay"></svg>
+      <div class="scoreline">
+        <div class="scorecard a"><div class="pts" id="ptsA">9</div><div class="lbl">quân còn lại</div></div>
+        <div class="caption">
+          <div class="main" id="capMain">&nbsp;</div>
+          <div class="capsub" id="capSub">&nbsp;</div>
+        </div>
+        <div class="scorecard b"><div class="pts" id="ptsB">9</div><div class="lbl">quân còn lại</div></div>
+      </div>
+      <div id="announce"></div>
+    </div>
+    <div class="controls">
+      <button class="btn small" id="first" title="về đầu ván">⏮</button>
+      <button class="btn small" id="prev" title="nước trước">◀</button>
+      <button class="btn yellow" id="play" style="min-width:120px;justify-content:center">▶ phát</button>
+      <button class="btn small" id="next" title="nước sau">▶</button>
+      <button class="btn small" id="last" title="tới cuối ván">⏭</button>
+      <select id="speed" title="tốc độ">
+        <option value="900">chậm</option>
+        <option value="450" selected>bình thường</option>
+        <option value="180">nhanh</option>
+        <option value="50">siêu tốc</option>
+      </select>
+    </div>
+    <div class="controls"><input type="range" id="scrub" min="0" max="100" value="0"></div>
+    <div class="tape" id="tape"></div>
+    <div class="tape-legend" id="tapeLegend"></div>
+    <p class="center muted" id="issues" style="font-size:17px"></p>
+  </main>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/avatar.js"></script>
+  <script src="/js/rps.js"></script>
+  <script src="/js/common.js"></script>
+  <script src="/js/board-rules.js"></script>
+  <script src="/js/board.js"></script>
+  <script>
+    const tid = tournamentIdFromPath();
+    const matchName = new URLSearchParams(location.search).get('name') || '';
+    const R = BoardRules;
+    const COL = { A: '#e2433f', B: '#3a7bd5' }, LIGHT = { A: '#ff9b97', B: '#9cc7ff' };
+    // board geometry inside the 900 x 530 scene
+    const C = 52, X0 = 216, Y0 = 16;
+    const px = x => X0 + x * C, py = y => Y0 + (R.H - 1 - y) * C; // y = 0 is the bottom row
+    const trim = (s, n) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
+
+    let M = null, AV = { A: null, B: null };
+    let G = 0;                 // which game is shown
+    let replay = null;         // { states, events, teamOf, N }
+    let ply = 0, timer = null;
+
+    // ---------- replaying a game from its moves ----------
+    // states[k] = the pieces after k moves (id -> { x, y, kind, side }); events[k] = what move k + 1 did.
+    function snapshot(board) {
+      const out = {};
+      board.forEach((row, y) => row.forEach((c, x) => { if (c) out[c.id] = { x, y, kind: c.kind, side: c.side }; }));
+      return out;
+    }
+    function buildReplay(game) {
+      const g = R.newGame();
+      const states = [snapshot(g.board)], events = [];
+      for (const move of game.moves) {
+        const side = g.toMove;
+        const ev = R.apply(g, move);
+        events.push({ ...ev, side, move });
+        states.push(snapshot(g.board));
+      }
+      const teamOf = { white: game.white, black: game.white === 'A' ? 'B' : 'A' };
+      return { states, events, teamOf, N: game.moves.length };
+    }
+
+    // ---------- scene ----------
+    function pieceMarkup(id, p) {
+      return `<g class="bpiece" id="pc-${id}"><g transform="translate(3 2) scale(.72)">${boardPieceMarkup(p.kind, COL[replay.teamOf[p.side]])}</g></g>`;
+    }
+    function flag(x, y, color) {
+      return `<g transform="translate(${px(x) + 10} ${py(y) + 6})" opacity=".9">
+        <path d="M6 40 L6 4" stroke="#2b2b2b" stroke-width="3.5" stroke-linecap="round"/>
+        <path d="M7 5 Q20 1 31 7 Q22 13 7 18 Z" fill="${color}" stroke="#2b2b2b" stroke-width="2.5" stroke-linejoin="round"/>
+      </g>`;
+    }
+    function playerSide(team, cx) {
+      const right = cx > 450;
+      const side = replay.teamOf.white === team ? 'white' : 'black';
+      const note = side === 'white' ? 'đi trước · đích ↗' : 'đi sau · đích ↙';
+      return `
+        <text x="${cx}" y="128" text-anchor="middle" font-size="25" fill="${COL[team]}">${esc(trim(M['team' + team], 14))}</text>
+        <text x="${cx}" y="152" text-anchor="middle" font-size="16" fill="#8d8d8d">${note}</text>
+        <g transform="translate(${right ? cx + 60 : cx - 60} 175)${right ? ' scale(-1 1)' : ''}"><g class="dude lively" id="dude${team}" filter="url(#wobble)">${avatarMarkup(AV[team], { id: 'mouth' + team })}</g></g>
+        <g id="left${team}" transform="translate(${cx - 72} 360)"></g>`;
+    }
+    function buildScene() {
+      const cells = [], lines = [], labels = [];
+      for (let y = 0; y < R.H; y++) for (let x = 0; x < R.W; x++) {
+        cells.push(`<rect x="${px(x)}" y="${py(y)}" width="${C}" height="${C}" fill="${(x + y) % 2 ? '#fffdf3' : '#f4f0e2'}"/>`);
+      }
+      for (let k = 0; k <= R.W; k++) lines.push(`<path d="M${X0 + k * C} ${Y0} L${X0 + k * C} ${Y0 + R.H * C}"/>`);
+      for (let k = 0; k <= R.H; k++) lines.push(`<path d="M${X0} ${Y0 + k * C} L${X0 + R.W * C} ${Y0 + k * C}"/>`);
+      for (let x = 0; x < R.W; x++) labels.push(`<text x="${px(x) + C / 2}" y="${Y0 + R.H * C + 22}" text-anchor="middle" font-size="16" fill="#8d8d8d">${String.fromCharCode(97 + x)}</text>`);
+      for (let y = 0; y < R.H; y++) labels.push(`<text x="${X0 - 20}" y="${py(y) + C / 2 + 6}" text-anchor="middle" font-size="16" fill="#8d8d8d">${y + 1}</text>`);
+      const goalW = R.GOAL.white, goalB = R.GOAL.black;
+      $('#scene').innerHTML = `
+        <defs>
+          <filter id="wobble" x="-5%" y="-5%" width="110%" height="110%">
+            <feTurbulence type="fractalNoise" baseFrequency="0.025" numOctaves="2" seed="7"/>
+            <feDisplacementMap in="SourceGraphic" scale="4"/>
+          </filter>
+          <marker id="arrowhead" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 Z" fill="#2b2b2b"/>
+          </marker>
+        </defs>
+        ${cells.join('')}
+        <rect class="hl" id="hlFrom" width="${C}" height="${C}" fill="#ffd84d" opacity="0"/>
+        <rect class="hl" id="hlTo" width="${C}" height="${C}" fill="#ffd84d" opacity="0"/>
+        ${flag(goalW[0], goalW[1], LIGHT[replay.teamOf.white])}
+        ${flag(goalB[0], goalB[1], LIGHT[replay.teamOf.black])}
+        <g filter="url(#wobble)" stroke="#2b2b2b" stroke-width="3" stroke-linecap="round" fill="none">${lines.join('')}
+          <rect x="${X0 - 4}" y="${Y0 - 4}" width="${R.W * C + 8}" height="${R.H * C + 8}" stroke-width="5" rx="6"/></g>
+        ${labels.join('')}
+        <g id="pieces">${Object.entries(replay.states[0]).map(([id, p]) => pieceMarkup(id, p)).join('')}</g>
+        <path id="arrow" d="" stroke="#2b2b2b" stroke-width="4" stroke-linecap="round" fill="none" marker-end="url(#arrowhead)" opacity="0"/>
+        <g id="boom" opacity="0"><text font-size="34" text-anchor="middle">💥</text></g>
+        ${playerSide('A', 100)}
+        ${playerSide('B', 800)}`;
+      $('#scene').style.fontFamily = "'Patrick Hand', cursive";
+      fitScene();
+    }
+    // On a phone, show only the board (the scorecards below still count the pieces).
+    function fitScene() {
+      const narrow = window.innerWidth < 600;
+      $('#scene').setAttribute('viewBox', narrow ? `${X0 - 34} ${Y0 - 8} ${R.W * C + 46} ${R.H * C + 42}` : '0 0 900 530');
+    }
+    window.addEventListener('resize', () => { if (replay) fitScene(); });
+
+    // the small "pieces left" icons under each player
+    function leftIcons(team, state) {
+      const kinds = { R: 0, P: 0, S: 0 };
+      Object.values(state).forEach(p => { if (replay.teamOf[p.side] === team) kinds[p.kind]++; });
+      return ['R', 'P', 'S'].map((k, i) => `<g transform="translate(${i * 50} 0)">
+        <g transform="scale(.6)">${boardPieceMarkup(k, kinds[k] ? COL[team] : '#ddd')}</g>
+        <text x="20" y="66" text-anchor="middle" font-size="20" fill="${kinds[k] ? '#2b2b2b' : '#bbb'}">×${kinds[k]}</text></g>`).join('');
+    }
+
+    const place = (el, x, y) => { el.style.transform = `translate(${px(x)}px, ${py(y)}px)`; };
+    function setMouth(team, kind) { $('#mouth' + team).innerHTML = MOUTHS[kind === 'none' ? AV[team].mouth : kind]; }
+    function bump(el, cls) { el.classList.remove(cls); void el.getBoundingClientRect(); el.classList.add(cls); }
+
+    // ---------- playback ----------
+    function render(animate) {
+      const scene = $('#scene');
+      scene.classList.toggle('instant', !animate);
+      const state = replay.states[ply];
+      const ev = ply ? replay.events[ply - 1] : null;
+      for (const [id, p] of Object.entries(replay.states[0])) {
+        const el = $('#pc-' + id);
+        const now = state[id];
+        if (now) { place(el, now.x, now.y); el.classList.remove('gone'); }
+        else {
+          // a piece that dies on this very move: slide it to the square where it fought, then fade
+          if (animate && ev && ev.result === 'bounce' && ev.move && replay.states[ply - 1][id] && replay.states[ply - 1][id].x === ev.move[0] && replay.states[ply - 1][id].y === ev.move[1]) place(el, ev.move[2], ev.move[3]);
+          el.classList.add('gone');
+        }
+      }
+      const count = team => Object.values(state).filter(p => replay.teamOf[p.side] === team).length;
+      $('#ptsA').textContent = count('A');
+      $('#ptsB').textContent = count('B');
+      $('#leftA').innerHTML = leftIcons('A', state);
+      $('#leftB').innerHTML = leftIcons('B', state);
+      $('#scrub').value = ply;
+
+      const arrow = $('#arrow'), from = $('#hlFrom'), to = $('#hlTo'), boom = $('#boom');
+      [arrow, from, to, boom].forEach(el => el.setAttribute('opacity', 0));
+      if (ev && ev.move) {
+        const [x1, y1, x2, y2] = ev.move;
+        from.setAttribute('x', px(x1)); from.setAttribute('y', py(y1)); from.setAttribute('opacity', 0.35);
+        to.setAttribute('x', px(x2)); to.setAttribute('y', py(y2)); to.setAttribute('opacity', 0.7);
+        const c = (v, f) => f(v) + C / 2;
+        const sx = c(x1, px), sy = c(y1, py), ex = c(x2, px), ey = c(y2, py);
+        arrow.setAttribute('d', `M${sx + (ex - sx) * 0.15} ${sy + (ey - sy) * 0.15} L${sx + (ex - sx) * 0.7} ${sy + (ey - sy) * 0.7}`);
+        arrow.setAttribute('opacity', 0.55);
+        if (ev.result === 'capture' || ev.result === 'bounce') {
+          boom.setAttribute('transform', `translate(${ex} ${ey + 12})`);
+          boom.setAttribute('opacity', 1);
+          if (animate) bump(boom, 'pop');
+        }
+      }
+      $$('#tape i').forEach((el, k) => {
+        el.className = k >= ply ? 'future' : el.dataset.res + (k === ply - 1 ? ' cur' : '');
+      });
+
+      // the mover cheers a capture or a goal; the victim sulks
+      setMouth('A', 'none'); setMouth('B', 'none');
+      if (ev) {
+        const team = replay.teamOf[ev.side], foe = team === 'A' ? 'B' : 'A';
+        const good = ev.result === 'capture' || ev.result === 'goal', bad = ev.result === 'bounce';
+        if (good || bad) {
+          const [win, lose] = good ? [team, foe] : [foe, team];
+          setMouth(win, 'smile'); setMouth(lose, 'frown');
+          if (animate) { bump($('#dude' + win), 'jump'); bump($('#dude' + lose), 'sad'); }
+        }
+      }
+      if (!ev) {
+        $('#capMain').textContent = `Ván ${G + 1}: ${M['team' + replay.teamOf.white]} đi trước`;
+        $('#capSub').textContent = `${replay.N} nước. Bấm phát để xem ai chạm đích trước.`;
+      } else {
+        $('#capMain').textContent = narrate(ev);
+        $('#capSub').textContent = `Nước ${ply}/${replay.N}`;
+      }
+
+      const done = ply === replay.N;
+      $('#announce').innerHTML = done ? announcement() : '';
+      $('#play').textContent = timer ? '⏸ dừng' : done ? '↺ xem lại' : '▶ phát';
+    }
+
+    function narrate(ev) {
+      const who = M['team' + replay.teamOf[ev.side]];
+      const foe = M['team' + replay.teamOf[R.other(ev.side)]];
+      if (ev.result === 'skip') return `${who} mất lượt (nước đi không hợp lệ). 😵`;
+      const [x1, y1, x2, y2] = ev.move;
+      const path = `${R.square(x1, y1)} → ${R.square(x2, y2)}`;
+      const name = BOARD_KIND_NAME[ev.piece];
+      if (ev.result === 'capture') return `${who}: ${name} ${BOARD_VERB[ev.piece]} ${BOARD_KIND_NAME[ev.target]} của ${foe}! (${path}) 💥`;
+      if (ev.result === 'bounce') return `${who} cho ${name} lao vào ${BOARD_KIND_NAME[ev.target]} của ${foe}… và mất quân! (${path}) 🙈`;
+      if (ev.result === 'goal') return `${who}: ${name} chạm góc đích! (${path}) 🏁`;
+      return `${who} đi ${name} ${path}`;
+    }
+
+    // points of the games finished so far, up to and including game `upTo`
+    function matchPoints(upTo) {
+      const pts = { A: 0, B: 0 };
+      M.games.slice(0, upTo + 1).forEach(g => {
+        if (g.winner === 'draw') { pts.A++; pts.B++; } else pts[g.winner] += 3;
+      });
+      return pts;
+    }
+    function announcement() {
+      const g = M.games[G];
+      const winner = g.winner === 'draw' ? null : M['team' + g.winner];
+      const why = BOARD_REASON[g.reason] || g.reason;
+      const last = G === M.games.length - 1;
+      const pts = matchPoints(G);
+      const next = !last ? `<div style="margin-top:8px"><button class="btn small yellow" id="nextGame">xem ván ${G + 2} ▶</button></div>` : '';
+      const total = last ? `<div class="small">Cả trận: <b style="color:${COL.A}">${pts.A}</b> – <b style="color:${COL.B}">${pts.B}</b>${M.winner === 'draw' ? ' · hòa' : ` · ${esc(M['team' + M.winner])} thắng trận`}</div>` : '';
+      return `<div class="announce">
+        <div class="big" style="color:${winner ? COL[g.winner] : 'inherit'}">${winner ? `🏆 ${esc(winner)} thắng ván ${G + 1}!` : `🤝 Ván ${G + 1} hòa!`}</div>
+        <div class="small">${esc(why)} · ${replay.N} nước</div>${total}${next}
+      </div>`;
+    }
+
+    function step(dir, animate = true) {
+      const t = Math.max(0, Math.min(replay.N, ply + dir));
+      if (t === ply) return false;
+      ply = t;
+      render(animate);
+      if (ply === replay.N && animate) {
+        stop();
+        render(true);
+        if (M.games[G].winner !== 'draw') confetti(35);
+      }
+      wireNext();
+      return true;
+    }
+    function stop() { clearInterval(timer); timer = null; }
+    function play() {
+      if (ply === replay.N) { ply = 0; render(false); }
+      stop();
+      timer = setInterval(() => step(1), +$('#speed').value);
+      render(false);
+    }
+    function wireNext() { const b = $('#nextGame'); if (b) b.onclick = () => showGame(G + 1, true); }
+
+    function buildTape() {
+      const groups = [];
+      for (let g = 0; g < replay.N; g += 10) {
+        const cells = [];
+        for (let k = g; k < Math.min(replay.N, g + 10); k++) {
+          const ev = replay.events[k];
+          const team = replay.teamOf[ev.side].toLowerCase();
+          const res = ev.result === 'skip' ? 'd' : team + (ev.result === 'capture' || ev.result === 'bounce' ? ' hit' : ev.result === 'goal' ? ' goal' : '');
+          cells.push(`<i data-k="${k + 1}" data-res="${res}" title="nước ${k + 1}"></i>`);
+        }
+        groups.push(`<div class="tg"><span class="tn">${g + 1}</span><div class="tc">${cells.join('')}</div></div>`);
+      }
+      $('#tape').innerHTML = groups.join('');
+      $('#tapeLegend').innerHTML = `
+        <span><i class="a"></i>${esc(M.teamA)} đi</span>
+        <span><i class="b"></i>${esc(M.teamB)} đi</span>
+        <span><i class="a hit"></i>có quân bị mất</span>
+        <span><i class="d"></i>mất lượt</span>
+        <span class="muted">· bấm vào ô để nhảy tới nước đó</span>`;
+      $$('#tape i').forEach(el => el.onclick = () => { stop(); ply = +el.dataset.k; render(true); wireNext(); });
+    }
+
+    function renderTabs() {
+      $('#tabs').innerHTML = M.games.map((g, i) => {
+        const res = g.winner === 'draw' ? '🤝 hòa' : `👑 ${esc(trim(M['team' + g.winner], 14))}`;
+        return `<button class="${i === G ? 'on' : ''}" data-g="${i}">Ván ${i + 1} <small>${res}</small></button>`;
+      }).join('');
+      $$('#tabs button').forEach(b => b.onclick = () => showGame(+b.dataset.g, false));
+    }
+
+    function showGame(g, autoplay) {
+      stop();
+      G = g;
+      replay = buildReplay(M.games[G]);
+      ply = 0;
+      $('#scrub').max = replay.N;
+      renderTabs();
+      buildScene();
+      buildTape();
+      render(false);
+      if (autoplay) setTimeout(() => { if (!timer && ply === 0) play(); }, 700);
+    }
+
+    (async () => {
+      await boot();
+      $('#back').href = `/tournament/${encodeURIComponent(tid)}/live`;
+      let data;
+      try {
+        data = await api(`/api/tournaments/${encodeURIComponent(tid)}/matches/${encodeURIComponent(matchName)}`);
+      } catch (e) {
+        $('#title').textContent = e.message + ' 🙈';
+        $('#stage').classList.add('hidden');
+        return;
+      }
+      M = data.match;
+      AV = data.avatars;
+      document.title = `${M.teamA} vs ${M.teamB} · OTTv1`;
+      $('#title').textContent = `${M.day ? 'Ngày' : 'Vòng'} ${M.round} · ${M.teamA} vs ${M.teamB} · ${M.scoreA} – ${M.scoreB}`;
+      const issues = [M.issues && M.issues.A && `${M.teamA}: ${M.issues.A}`, M.issues && M.issues.B && `${M.teamB}: ${M.issues.B}`].filter(Boolean);
+      $('#issues').textContent = issues.length ? '⚠️ ' + issues.join(' · ') : '';
+
+      $('#play').onclick = () => (timer ? (stop(), render(false)) : play());
+      $('#next').onclick = () => { stop(); step(1); };
+      $('#prev').onclick = () => { stop(); step(-1, false); };
+      $('#first').onclick = () => { stop(); ply = 0; render(false); };
+      $('#last').onclick = () => { stop(); ply = replay.N; render(false); wireNext(); };
+      $('#speed').onchange = () => { if (timer) play(); };
+      $('#scrub').oninput = e => { stop(); ply = +e.target.value; render(false); wireNext(); };
+      document.addEventListener('keydown', e => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+        if (e.key === ' ') { e.preventDefault(); $('#play').click(); }
+        if (e.key === 'ArrowRight') $('#next').click();
+        if (e.key === 'ArrowLeft') $('#prev').click();
+      });
+      showGame(0, true);
+    })().catch(e => toast(e.message, 'error'));
+  </script>
+</body>
+</html>

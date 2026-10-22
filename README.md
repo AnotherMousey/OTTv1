@@ -6,17 +6,57 @@ bots fight it out round by round.
 
 ## Running it
 
-Requirements: Node 18+, and for the grader `g++`, `javac`/`java` and `python` on the PATH.
+### In production: Docker + PostgreSQL
+
+On a server with Docker (with the Compose plugin):
+
+```bash
+cp .env.example .env      # then set HOST_DATA_DIR, POSTGRES_PASSWORD (and JUDGE_PASSWORD)
+docker compose up -d --build
+docker compose logs -f app
+```
+
+This starts three things (see [docker-compose.yml](docker-compose.yml)):
+
+- **db**: PostgreSQL 16. Its data lives in the `pgdata` Docker volume and survives rebuilds and restarts.
+- **bot-image**: builds the sandbox image `ottv1-bot` ([docker/bot.Dockerfile](docker/bot.Dockerfile):
+  g++, JDK 17, Python 3), then exits.
+- **app**: the web server on `PORT`. It runs no submitted code itself. Every compile, check and bot
+  process runs in its **own throwaway container** from `ottv1-bot`, started through the host's Docker
+  (the app gets `/var/run/docker.sock`). Each container has no network, `SANDBOX_MEMORY` (512 MB),
+  `SANDBOX_CPUS` (1 CPU), at most `SANDBOX_PIDS` (128) processes, no capabilities, a read-only
+  filesystem except a small `/tmp`, and runs as `nobody`. It sees only that one submission's build
+  folder, read-only while the bot plays. A bot that times out has its container removed.
+
+The startup log says whether the sandbox is ready (`[grader] Docker sandbox ready`). Compiled bots go in
+`HOST_DATA_DIR/builds` on the host. Back up the database with
+`docker compose exec db pg_dump -U ottv1 ottv1 > backup.sql`.
+
+**Moving an existing `data/db.json` over:** put it in `HOST_DATA_DIR` before the first start. When the
+database is empty, the server imports it (users, tournaments, submissions with their code, matches)
+and renames the file to `db.json.imported-<date>`.
+
+Note: access to the Docker socket is equivalent to root on the host, so keep the app container
+(and the server) to yourself. Players' code never gets it: it only ever runs in the sandbox containers.
+
+### Locally, for development
+
+Requirements: Node 18+, and `g++`, `javac`/`java` and `python` on the PATH.
 
 ```bash
 npm install
 npm start            # http://localhost:3000
 ```
 
+Without `DATABASE_URL` everything is kept in `data/db.json`, and without `SANDBOX=docker` submitted
+code runs as ordinary processes. Both are fine for trying things out, not for an event. Set
+`DATABASE_URL=postgres://user:pass@host:5432/db` (a UTF-8 database) to use PostgreSQL locally, and
+`SANDBOX=docker` (after `docker build -f docker/bot.Dockerfile -t ottv1-bot .`) to use the sandbox.
+
 On first start a **judge** account is created and its password is printed in the console
 (set `JUDGE_PASSWORD=...` before the first start to choose it yourself).
 
-Players can sign up themselves at `/register` (the judge can switch this off on the Judge desk; new accounts are always players). Accounts can also be added to the `users` list in `data/db.json`. **Stop the server
+Players can sign up themselves at `/register` (the judge can switch this off on the Judge desk; new accounts are always players). With the JSON file, accounts can also be added to the `users` list in `data/db.json`. **Stop the server
 first**, because a running server keeps its own copy in memory and overwrites the file. Write the
 password in plain text:
 
@@ -29,12 +69,15 @@ password in plain text:
 
 On the next start the server hashes each `password` (and removes the plain text), and fills in
 `id`, `createdAt`, `role` (default `player`) and `teamName` (default: the username). To change a
-password, put a `password` field back on that user and restart. The same can be done from the command line:
+password, put a `password` field back on that user and restart. The same can be done from the command
+line, which also works with PostgreSQL (stop the server first there too, then start it again):
 
 ```bash
 node scripts/users.js add alice s3cret "Team Alice"     # add --judge for another judge
 node scripts/users.js passwd alice newpass
 node scripts/users.js list
+# in Docker:
+docker compose stop app && docker compose run --rm app node scripts/users.js passwd alice newpass && docker compose start app
 ```
 
 ### Quick demo
@@ -44,14 +87,50 @@ npm run demo -- 60   # 7 demo teams (password "demo") + "Demo Cup" closing in 60
 npm start
 ```
 
-Log in as e.g. `rocky` / `demo`, wait for the countdown, and you'll be dragged to the live page.
+Log in as e.g. `rocky` / `demo`. The demo brawl plays its daily round robin at the deadline's time of
+day (the judge can also press **⚡ đấu ngay**), and the results appear on its leaderboard 10 minutes later.
+
+## Games
+
+When creating a tournament the judge also picks the game (older tournaments are rock-paper-scissors).
+Brawl, campaign, invite-only and hidden tournaments work the same way for both.
+
+- **✊ Oẳn tù tì:** the rock-paper-scissors game described in the rest of this file.
+- **♟️ Cờ OTT** (after [OTTv2](https://github.com/AnotherMousey/OTTv2)): a 9×9 board, 9 pieces a side
+  (3 búa / R, 3 bao / P, 3 kéo / S). A piece moves one square in any of 8 directions. It can't move onto
+  its own piece or onto an enemy of the same kind. Moving onto an enemy it beats (R > S > P > R)
+  captures it, and moving onto one that beats it loses the attacker. You win by reaching the enemy's
+  home corner or by eliminating every enemy piece. After 324 moves, more pieces wins, then the piece
+  nearest its goal, then the smaller total distance; otherwise the game is a draw. A match is
+  2 games, one with each side moving first, scored 3 / 1 / 0 per game (6 points max). In a campaign
+  each of the 5 games in a series is a single game, with the sides taking turns at moving first.
+  Rules live in [board-rules.js](public/js/board-rules.js), shared by the grader and the replay page.
+
+  Bots always see the board from their own side (black's view is rotated 180°): you start
+  bottom-left, your goal is the top-right corner, and the enemy's goal is `(0, 0)`.
+  `board[y][x]` is `'R' 'P' 'S'` for your pieces, `'r' 'p' 's'` for enemy pieces and `'.'` for empty.
+
+  | Language | Signature |
+  |---|---|
+  | Python | `def play(board, turn, max_turns) -> (x1, y1, x2, y2)` |
+  | C++17 | `Move play(const std::vector<std::string>& board, int turn, int maxTurns)` (`struct Move { int fromX, fromY, toX, toY; }` is provided) |
+  | Java | `public int[] play(char[][] board, int turn, int maxTurns)` returning `{fromX, fromY, toX, toY}` |
+
+  The same player-code restrictions apply. Each game starts the bot as a fresh process. An illegal
+  move skips that turn, and a crash or timeout loses the game. Protocol:
+  `TURN <turn> <maxTurns> <W> <H> <cells>` in, `MOVE x1 y1 x2 y2` out
+  ([harness/board/](server/grader/harness/board/), plus `--board` in [runner.py](server/grader/harness/runner.py)).
+  The 6 built-in sparring bots, easiest first, are Loạn Bộ (random), Thẳng Tiến (races for the corner),
+  Thận Trọng (one move ahead, never hangs a piece), Săn Mồi (hunter), Tính Toán (2-ply minimax) and
+  Thấu Suốt (iterative-deepening alpha-beta), in [house_board_py/](server/grader/house_board_py/).
+  The judge can edit them per tournament like the RPS ones.
 
 ## Tournament modes
 
 The judge picks a mode when creating a tournament (older tournaments without one are brawls):
 
-- **⚔️ Brawl:** the format described below. At the deadline every team's newest working bot enters
-  round-robin elimination rounds until a champion is left.
+- **⚔️ Brawl:** a daily league, described below. Every day at the judge's chosen time, every team's
+  newest working bot plays a round robin. Points add up day after day until the end date.
 - **🗺️ Campaign:** a race against the 10 sparring bots. Players submit as many bots as they like, and
   each submission picks one sparring bot and plays up to 5 games (100 turns each) against it. A sparring
   bot counts as beaten when one submission wins all 5; the first loss or draw ends that series. A player **finishes** once all 10
@@ -93,7 +172,9 @@ When creating a tournament the judge also picks who may enter it:
 
 ## How a tournament works (brawl)
 
-1. The judge creates a tournament with a deadline. The main page lists it with a countdown.
+1. The judge creates a tournament with an end date (the deadline) and a **daily match time**, e.g. 21:00,
+   in the judge's own time zone. Creating it is refused if that time never falls between the start and
+   the end. The main page shows the next match day and the end date.
 2. Players press **Submit code**, pick a language and paste or upload their bot. Each submission
    is compiled and given a 5-turn test run. The newest ✅ submission is the one that plays.
    Every ✅ bot also plays a practice game (100 turns) against each of 10 built-in sparring bots
@@ -102,15 +183,33 @@ When creating a tournament the judge also picks who may enter it:
    Thức Thời (decay/window), Thiên Cơ (Markov chain), Mưu Lược (n-gram) and Minh Triết (Bayesian inference).
    The submit page shows a practice board with every team's total (max 3000). Only you (and the judge)
    can open your per-bot scores. Practice games don't affect the tournament.
-3. When the countdown hits zero, submissions close and **every logged-in user (judge too) is
-   redirected** to the tournament's live page. Players see only the leaderboard. The judge also
-   sees a feed of finished matches with replay links.
-4. Every round is a **round robin** among the remaining teams. After a round the
-   `min(3, t − 2)` lowest teams (t = teams in the round) are eliminated. Ties are broken by
-   match wins, then total points over all rounds, then earliest submission. When 2 teams remain
-   they play the final.
-5. Each match is **100 turns**: win = 3 points, draw = 1, loss = 0. Players can submit at most once every 90 seconds.
-6. Once the tournament is finished, everyone can watch every replay.
+3. **Every day at the match time** (from the start until the end date), each team's newest ✅ bot
+   submitted before that moment plays every other team once. A match (100 RPS turns, or 2 board games
+   with the sides swapped) scores **win = 3, draw = 1, loss = 0**. Submissions stay open throughout the
+   tournament, and a new bot plays from the next match day on.
+   **Evaluation:** before each day's round robin, every team's bot of the day plays one match against
+   each **sample bot** ("bot mẫu"), scored the same 3 / 1 / 0. That gives the team's evaluation points
+   (max 12). Oẳn tù tì uses Mẫu Thiên Búa (60% rock), Mẫu Nhịp Đôi (R R P P S S), Mẫu Phản Đòn (beats
+   your most frequent recent move) and Mẫu Đoán Trước (beats your counter to its last move). Cờ OTT uses
+   Mẫu Thủ Thành (stays home), Mẫu Tiên Phong (one piece at a time), Mẫu Bầy Đàn (advances as a group)
+   and Mẫu Chiến Thuật (2-ply minimax). They are the `mau-*.py` files in
+   [house_py/](server/grader/house_py/) and [house_board_py/](server/grader/house_board_py/).
+   The ranking table shows each team's **current points** (cumulative) and **evaluation points** (from
+   its latest published day). It sorts by current points, then evaluation points.
+4. A day's results stay hidden for **10 minutes** (`PUBLISH_DELAY_MS`), or until its last match ends if
+   that takes longer. Then the cumulative standings update for everyone, and everyone can replay that
+   day's matches. Before that only the judge sees the matches (on the live page, marked
+   "chưa công bố"). The standings rank by points, then match wins, then the "điểm phụ" (total score
+   in all matches). The live page counts down to the next match day or to the next publication.
+5. On the Judge desk the judge can change the daily time (it applies from the next occurrence, never
+   retroactively to a time already passed today), add an extra day with **⚡ đấu ngay**, or end the
+   tournament early (**kết thúc giải ngay**). After the end date, submissions close, the last day still
+   publishes, and the top team becomes champion. Players can submit at most once every 90 seconds.
+6. If the server is down at a match time, that day is played as soon as it is back, and a day cut
+   off by a restart resumes where it stopped.
+
+Brawls created before the daily league keep their elimination rounds in their records. Old brawls that
+were still open become daily leagues, playing at their deadline's time of day.
 
 ## Writing a bot
 
@@ -151,12 +250,18 @@ that speaks a line protocol with the grader: `TURN <myPrev> <oppPrev>` in, `MOVE
 
 ## Data
 
-Everything is stored in `data/db.json`:
+With PostgreSQL (`DATABASE_URL`, see [server/db.js](server/db.js)), the tables are:
 
-- `users`: accounts (passwords hashed with scrypt)
-- `tournaments`: deadline, status, entries, rounds and eliminations
-- `submissions`: code plus compile/test results
-- `matches[<tournamentId>]["round X - team A vs team B"]`: both move strings, scores, winner
+- `users`, `tournaments`: one JSONB document per row (accounts with scrypt password hashes;
+  tournaments with their schedule, days, evaluations and judge bots)
+- `submissions`: compile/test/practice results as a JSONB document, plus the source `code` column
+- `matches`: one row per match: `summary` (teams, scores, winner, day/round) and `detail` (every move)
+- `sessions`: logins, so they survive restarts. `meta`: site settings.
+
+The server keeps the small data in memory (accounts, tournaments, submission results, match
+summaries) and writes changes within 0.3 s. Source code and move logs stay in the database and are
+read when needed (compiling, the submit page, a replay). Without `DATABASE_URL` the same data goes into
+`data/db.json` (`codes` and `matchDetails` hold the code and moves).
 
 Compiled bots go in `data/builds/`. If the server restarts mid-tournament it resumes where it
 left off; matches already played are kept.
@@ -170,8 +275,17 @@ left off; matches already played are kept.
 | `PYTHON_CMD` | `python` (Windows) / `python3` | Python interpreter |
 | `CXX`, `JAVAC`, `JAVA` | `g++`, `javac`, `java` | compilers/runtimes |
 | `PARALLEL_MATCHES` | CPUs / 2 | matches run at the same time |
-| `MATCH_PACE_MS` | 1500 | minimum time per match, so the live leaderboard has some drama |
-| `ROUND_BREAK_MS` | 5000 | pause between rounds |
+| `MATCH_PACE_MS` | 1500 | minimum time per match in old elimination brawls |
+| `ROUND_BREAK_MS` | 5000 | pause between rounds (old elimination brawls only) |
+| `PUBLISH_DELAY_MS` | 600000 | how long a daily brawl's results stay hidden after the day starts |
+| `DATABASE_URL` | (none: `data/db.json`) | PostgreSQL connection string |
+| `PG_POOL_SIZE` | 10 | PostgreSQL connections |
+| `DATA_DIR` | `./data` | where builds (and db.json) are kept |
+| `SANDBOX` | (off) | `docker`: compile and run every bot in a sandbox container |
+| `BOT_IMAGE` | `ottv1-bot:latest` | the sandbox image |
+| `HOST_BUILD_ROOT` | `DATA_DIR/builds` | that builds folder as the Docker host sees it (set by docker-compose.yml) |
+| `SANDBOX_MEMORY`, `SANDBOX_CPUS`, `SANDBOX_PIDS` | 512m, 1, 128 | limits of each sandbox container |
+| `DOCKER` | `docker` | the Docker CLI |
 | `PRACTICE_PARALLEL` | 2 | practice games run at the same time |
 | `SIGNUP_LIMIT` | 30 | max self-registrations per hour from one IP address |
 | `TURNS` | 100 | turns per game |
@@ -181,5 +295,7 @@ left off; matches already played are kept.
 
 ## ⚠️ Security note
 
-Submitted code runs as ordinary processes on the server with no sandbox. Only run this for people
-you trust, or inside a VM/container.
+With `SANDBOX=docker` (the Docker setup above) submitted code is compiled and run in locked-down
+throwaway containers. Without it, submitted code runs as ordinary processes on the machine, so only do
+that for people you trust. The code checks in [restrict.js](server/grader/restrict.js) and
+[runner.py](server/grader/harness/runner.py) apply in both cases.

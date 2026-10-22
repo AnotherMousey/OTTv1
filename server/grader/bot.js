@@ -1,8 +1,9 @@
 // One running bot process, spoken to over stdin/stdout:
 //   grader -> bot : "TURN <myPrevMove> <opponentPrevMove>"   ('-' on turn 1)
 //   bot -> grader : "MOVE <R|P|S>"   (any other output line is ignored)
+// Board game (see board.js): "TURN <turn> <maxTurns> <W> <H> <cells>" in, "MOVE x1 y1 x2 y2" out.
 const { spawn } = require('child_process');
-const { command } = require('./languages');
+const { command, removeContainer } = require('./languages');
 
 class Bot {
   constructor(sub) {
@@ -18,6 +19,7 @@ class Bot {
   start() {
     try {
       const spec = command(this.sub);
+      this.container = spec.container; // sandbox: the container to remove when the bot is stopped
       this.proc = spawn(spec.cmd, spec.args, { cwd: spec.cwd, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
     } catch (e) {
       return this._die('không khởi động được: ' + e.message);
@@ -61,11 +63,17 @@ class Bot {
   fail(reason) {
     this.reason = this.reason || reason;
     try { if (this.proc) this.proc.kill(); } catch {}
+    removeContainer(this.container);
     this._die(reason);
   }
 
   // Resolves with the raw move string, or null if the bot is dead / too slow.
   move(myPrev, oppPrev, timeoutMs) {
+    return this.ask(`TURN ${myPrev} ${oppPrev}`, timeoutMs);
+  }
+
+  // Sends one request line; resolves with the text after "MOVE ", or null.
+  ask(line, timeoutMs) {
     if (this.dead || !this.proc) return Promise.resolve(null);
     return new Promise(resolve => {
       const done = m => { clearTimeout(timer); resolve(m); };
@@ -77,7 +85,7 @@ class Bot {
         }
       }, timeoutMs);
       this.waiter = done;
-      this.proc.stdin.write(`TURN ${myPrev} ${oppPrev}\n`);
+      this.proc.stdin.write(line + '\n');
     });
   }
 
@@ -86,7 +94,9 @@ class Bot {
     this.dead = true;
     if (!p) return;
     try { p.stdin.write('END\n'); p.stdin.end(); } catch {}
-    setTimeout(() => { try { if (p.exitCode === null) p.kill(); } catch {} }, 300);
+    setTimeout(() => {
+      try { if (p.exitCode === null) { p.kill(); removeContainer(this.container); } } catch {}
+    }, 300);
   }
 }
 

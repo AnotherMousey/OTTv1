@@ -1,4 +1,6 @@
 const Bot = require('./bot');
+const board = require('./board');
+const { gameOf } = require('./languages');
 
 const TURNS = +process.env.TURNS || 100; // turns per game
 const FIRST_MOVE_TIMEOUT_MS = +process.env.FIRST_MOVE_TIMEOUT_MS || 10000;
@@ -21,7 +23,9 @@ function points(a, b) {
   return BEATS[a] === b ? [3, 0] : [0, 3];
 }
 
-async function runMatch(subA, subB, ensureBuilt) {
+// opts only matter for the board game (see board.js).
+async function runMatch(subA, subB, ensureBuilt, opts) {
+  if (gameOf(subA) === 'board') return board.runMatch(subA, subB, ensureBuilt, opts);
   const bots = [new Bot(subA), new Bot(subB)];
   const issues = [null, null];
   await Promise.all(bots.map(bot =>

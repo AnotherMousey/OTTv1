@@ -108,8 +108,90 @@
       renderCampaignTable($('#rows'), b, cstate, openCampaignRow);
     }
 
+    // ---------- daily league (brawl) ----------
+    let dailyTimer = null, shownDays = null;
+    function renderDailyBoard(b) {
+      lastBoard = b;
+      $('#tname').textContent = b.name;
+      document.title = `Trực tiếp · ${b.name}`;
+      $('#lhead').innerHTML = '<tr><th>#</th><th>đội</th><th title="điểm cộng dồn qua các ngày thi đấu">điểm hiện tại</th><th title="điểm khi đấu với các bot mẫu trước ngày thi đấu gần nhất của đội">điểm đánh giá</th></tr>';
+      const banner = $('#banner'), sub = $('#sub'), prog = $('#progress');
+      const published = b.days.filter(d => d.status === 'published');
+      const pending = b.days.find(d => d.status !== 'published'); // playing, or waiting to be published
+      clearInterval(dailyTimer);
+      const tickBanner = () => {
+        if (b.status === 'finished') banner.innerHTML = `🏁 Giải kết thúc sau ${published.length} ngày thi đấu.`;
+        else if (b.error) banner.innerHTML = `😵 Có lỗi xảy ra: ${esc(b.error)}`;
+        else if (pending) {
+          const left = Date.parse(pending.publishAt) - serverNow();
+          const what = pending.status !== 'running' ? `⏳ Ngày ${pending.number} đã đấu xong`
+            : pending.phase === 'evaluating' ? `🧪 Ngày ${pending.number}: đang đánh giá với bot mẫu` : `⚔️ Ngày ${pending.number} đang thi đấu`;
+          banner.innerHTML = `${what} · kết quả công bố ${left > 0 ? `sau <b>${fmtCountdown(left)}</b>` : 'ngay khi đấu xong'}`;
+        } else if (b.nextAt) banner.innerHTML = `📅 Ngày thi đấu tiếp theo sau <b>${fmtCountdown(Date.parse(b.nextAt) - serverNow())}</b>`;
+        else banner.innerHTML = b.status === 'running' ? '⏳ Đang công bố ngày cuối…' : '📅 Không còn ngày thi đấu nào trước khi giải kết thúc';
+      };
+      tickBanner();
+      if (b.status !== 'finished') dailyTimer = setInterval(tickBanner, 500);
+      prog.classList.toggle('hidden', !(pending && pending.status === 'running'));
+      if (pending && pending.status === 'running') prog.firstElementChild.style.width = (pending.totalMatches ? (100 * pending.played) / pending.totalMatches : 0) + '%';
+      const playing = pending && pending.status === 'running' ? ` · ngày ${pending.number}: đã đấu ${pending.played}/${pending.totalMatches} trận (kể cả đánh giá)` : '';
+      sub.innerHTML = `Mỗi ngày lúc ${esc(b.dailyTime)} · thắng 3 · hòa 1 · thua 0 · ${published.length} ngày đã công bố${playing} · ${b.status === 'finished' ? 'kết thúc' : 'kết thúc lúc'} ${esc(fmtDate(b.deadline))}`
+        + (b.status === 'open' && ME.role !== 'judge' ? ` · <a href="/tournament/${encodeURIComponent(tid)}/submit">nộp bot</a>` : '')
+        + `<br>Điểm đánh giá: trước mỗi ngày thi đấu, bot của đội đấu với ${b.sampleBots.length} bot mẫu (<span title="${esc(b.sampleBots.map(s => `${s.name}: ${s.desc}`).join('\n'))}" style="text-decoration:underline dotted;cursor:help">${b.sampleBots.map(s => esc(s.name)).join(', ')}</span>), cũng thắng 3 · hòa 1 · thua 0. Bằng điểm hiện tại thì đội có điểm đánh giá cao hơn xếp trên.`;
+
+      const champ = $('#champ');
+      if (b.champion) {
+        champ.classList.remove('hidden');
+        champ.innerHTML = `${avatarSvg(b.champion.avatar, 120, { mouth: 'smile' })}<br><span class="big">🏆 ${esc(b.champion.teamName)} 🏆</span><div class="muted">vô địch ${esc(b.name)}</div>`;
+        if (wasFinished === false) confetti();
+      } else champ.classList.add('hidden');
+      wasFinished = b.status === 'finished';
+
+      const tbody = $('#rows');
+      const before = rowPositions(tbody);
+      tbody.innerHTML = b.rows.map(row => {
+        const top = row.played > 0 && row.rank <= 3; // medals once a team has played
+        const cls = [b.champion && b.champion.userId === row.userId ? 'champion' : '', ME && row.userId === ME.id ? 'me' : '', prevPoints[row.userId] !== undefined && prevPoints[row.userId] !== row.points ? 'flash' : ''].join(' ');
+        return `<tr class="${cls}" data-id="${row.userId}">
+          <td class="rank">${b.champion && b.champion.userId === row.userId ? '🏆' : top ? ['🥇', '🥈', '🥉'][row.rank - 1] : row.rank}</td>
+          <td><div class="team">${avatarSvg(row.avatar, 40)}<span class="n">${esc(row.teamName)}</span>${row.username ? `<small class="uname">@${esc(row.username)}</small>` : ''}${ME && row.userId === ME.id ? '<span class="muted" style="font-size:16px">← bạn!</span>' : ''}</div></td>
+          <td class="pts" title="${row.w} thắng · ${row.d} hòa · ${row.l} thua${row.lastDay !== null ? ` · ngày gần nhất +${row.lastDay}` : ''}">${row.points}</td>
+          <td class="evalcell">${row.eval === null ? '<span class="muted" style="font-size:18px">chưa đánh giá</span>'
+            : `<span class="pts" style="font-size:26px">${row.eval}<small class="muted" style="font-size:16px">/${row.evalMax}</small></span> <span title="${esc(row.evalDetail.map(d => `${d.name}: ${{ A: 'thắng', B: 'thua', draw: 'hòa' }[d.winner] || 'chưa đấu'}`).join('\n'))} (ngày ${row.evalDay})">${seriesPips(row.evalDetail.map(d => d.winner), row.evalDetail.length)}</span>`}</td>
+        </tr>`;
+      }).join('') || '<tr><td colspan="4" class="center muted">chưa có đội nào có bot chạy được</td></tr>';
+      b.rows.forEach(row => { prevPoints[row.userId] = row.points; });
+      slideRows(tbody, before);
+
+      // new results published: refresh the replays
+      if (shownDays !== null && shownDays !== published.length) loadMatches();
+      shownDays = published.length;
+    }
+
+    // FLIP animation: remember where rows were, re-render, then slide them.
+    function rowPositions(tbody) {
+      const before = {};
+      $$('tr', tbody).forEach(tr => { before[tr.dataset.id] = tr.getBoundingClientRect().top; });
+      return before;
+    }
+    function slideRows(tbody, before) {
+      $$('tr', tbody).forEach(tr => {
+        const old = before[tr.dataset.id];
+        if (old === undefined) return;
+        const dy = old - tr.getBoundingClientRect().top;
+        if (!dy) return;
+        tr.style.transform = `translateY(${dy}px)`;
+        tr.style.transition = 'none';
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          tr.style.transition = 'transform .6s cubic-bezier(.3,1.4,.5,1)';
+          tr.style.transform = '';
+        }));
+      });
+    }
+
     function renderBoard(b) {
       if (b.mode === 'campaign') return renderCampaignBoard(b);
+      if (b.format === 'daily') return renderDailyBoard(b);
       lastBoard = b;
       $('#tname').textContent = b.name;
       document.title = `Trực tiếp · ${b.name}`;
@@ -149,10 +231,8 @@
       } else champ.classList.add('hidden');
       wasFinished = b.status === 'finished';
 
-      // FLIP animation: remember where rows were, re-render, then slide them.
       const tbody = $('#rows');
-      const before = {};
-      $$('tr', tbody).forEach(tr => { before[tr.dataset.id] = tr.getBoundingClientRect().top; });
+      const before = rowPositions(tbody);
       const r = b.round;
       const dangerFrom = r && r.status === 'running' && r.eliminating ? r.teams - r.eliminating : Infinity;
       let aliveIndex = 0;
@@ -170,18 +250,7 @@
         </tr>`;
       }).join('') || '<tr><td colspan="6" class="center muted">chưa có đội nào</td></tr>';
       b.rows.forEach(row => { prevPoints[row.userId] = row.total; });
-      $$('tr', tbody).forEach(tr => {
-        const old = before[tr.dataset.id];
-        if (old === undefined) return;
-        const dy = old - tr.getBoundingClientRect().top;
-        if (!dy) return;
-        tr.style.transform = `translateY(${dy}px)`;
-        tr.style.transition = 'none';
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-          tr.style.transition = 'transform .6s cubic-bezier(.3,1.4,.5,1)';
-          tr.style.transform = '';
-        }));
-      });
+      slideRows(tbody, before);
 
       if (b.status === 'finished' && !canSeeMatches) {
         canSeeMatches = true;
@@ -194,8 +263,14 @@
       const byRound = {};
       for (const m of matches) (byRound[m.round] = byRound[m.round] || []).push(m);
       const rounds = Object.keys(byRound).map(Number).sort((a, b) => b - a);
+      const isDaily = lastBoard && lastBoard.format === 'daily';
+      const heading = n => {
+        if (!isDaily) return `Vòng ${n}`;
+        const d = lastBoard.days.find(x => x.number === n);
+        return `Ngày ${n}${d ? ` <small class="muted">${esc(fmtDate(d.at))}${d.status !== 'published' ? ' · chưa công bố 🎩' : ''}</small>` : ''}`;
+      };
       $('#feed').innerHTML = rounds.map(n => `
-        <h3>Vòng ${n}</h3>
+        <h3>${heading(n)}</h3>
         <div class="feed">${byRound[n].slice().reverse().map(m => `
           <a href="/tournament/${encodeURIComponent(tid)}/match?name=${encodeURIComponent(m.name)}">
             <span>${m.winner === 'A' ? '<span class="win">👑</span> ' : ''}${esc(m.teamA)} <span class="muted">vs</span> ${esc(m.teamB)}${m.winner === 'B' ? ' <span class="win">👑</span>' : ''}</span>
@@ -209,7 +284,11 @@
         matches.length = 0;
         matches.push(...data.matches);
         $('#matches').classList.remove('hidden');
-        $('#matchesTitle').textContent = ME.role === 'judge' && lastBoard && lastBoard.status !== 'finished' ? 'Diễn biến các trận (chỉ trọng tài xem được 🎩)' : 'Xem lại các trận';
+        const daily = lastBoard && lastBoard.format === 'daily';
+        $('#matchesTitle').textContent = ME.role === 'judge' && lastBoard && lastBoard.status !== 'finished'
+          ? (daily ? 'Các trận đấu (trọng tài thấy cả ngày chưa công bố 🎩)' : 'Diễn biến các trận (chỉ trọng tài xem được 🎩)')
+          : 'Xem lại các trận';
+        $('#matches').classList.toggle('hidden', !matches.length && daily);
         renderFeed();
       } catch {}
     }

@@ -370,6 +370,22 @@ pre.msg { white-space: pre; background: #f4f2ea; border-radius: 8px; padding: 10
 .dude.sad { animation: sad .5s; }
 @keyframes sad { 50% { transform: rotate(-4deg) translateY(3px); } }
 
+/* ---------- board game replay ---------- */
+.game-tabs { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin: 4px 0 8px; }
+.game-tabs button { font: inherit; font-size: 20px; padding: 4px 16px; border: 3px solid var(--ink); background: #fff; border-radius: var(--wobble); cursor: pointer; }
+.game-tabs button:nth-child(even) { border-radius: var(--wobble2); }
+.game-tabs button small { font-size: 15px; color: var(--muted); }
+.game-tabs button.on { background: var(--ink); color: #fff; transform: rotate(-2deg); }
+.game-tabs button.on small { color: #ddd; }
+.bpiece { transition: transform .3s cubic-bezier(.3, 1.4, .5, 1), opacity .35s; }
+.bpiece.gone { opacity: 0; }
+.board-scene.instant .bpiece { transition: none; }
+.board-scene .hl { transition: opacity .2s; }
+#boom.pop text { animation: boompop .45s cubic-bezier(.3, 1.8, .5, 1); transform-box: fill-box; transform-origin: center; }
+@keyframes boompop { from { transform: scale(.2) rotate(-30deg); } }
+.tape i.hit, .tape-legend i.hit { background-image: radial-gradient(circle, #fff 0 3px, transparent 3.5px); }
+.tape i.goal { background-color: var(--yellow); }
+
 /* ---------- admin ---------- */
 .admin-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
 table.plain { width: 100%; border-collapse: collapse; font-size: 18px; }
@@ -398,5 +414,8 @@ table.plain tr.editing td { background: #fff8d6; }
   .caption .main { font-size: 19px; }
   .caption .capsub { font-size: 16px; }
   .board .hide-sm { display: none; }
+  .board td { padding: 8px 6px; }
+  .board .team .uname { display: none; }
+  .board .rank { width: 40px; }
   main { padding: 18px 12px 60px; }
 }

@@ -1,7 +1,8 @@
-// Practice evaluation: every working submission plays one 100-turn game
-// against each of the 10 house bots. Results live on submission.practice.
+// Practice evaluation: every working submission plays one match against each house bot
+// (RPS: one 100-turn game against each of the 10; board game: two games, one per side, against
+// each of the 6). Results live on submission.practice.
 const db = require('../db');
-const { HOUSE_BOTS, defaultRunnable } = require('./house');
+const { HOUSE_BOTS, houseBots, defaultRunnable } = require('./house');
 const { runMatch } = require('./match');
 
 const PARALLEL = +process.env.PRACTICE_PARALLEL || 2;
@@ -30,6 +31,8 @@ async function withSlot(fn) {
 
 const tournamentOf = sub => db.data.tournaments.find(x => x.id === sub.tournamentId);
 const isCampaign = sub => (tournamentOf(sub) || {}).mode === 'campaign';
+// 'rps' (also every tournament made before the board game existed) or 'board'.
+const gameOf = t => (t && t.game === 'board' ? 'board' : 'rps');
 
 // Judge-written bot code (a bot added to a campaign, or an edited copy of a built-in bot) keeps
 // the last version that passed its check in `live` ({ buildId, language, code }). That version
@@ -38,19 +41,20 @@ function liveOf(b) {
   if (b.live) return b.live;
   return b.status === 'ok' ? { buildId: b.id, language: b.language, code: b.code } : null; // added before `live` existed
 }
-const runnable = live => ({ id: live.buildId, language: live.language || 'python', code: live.code, trusted: true });
+const runnable = (live, game) => ({ id: live.buildId, language: live.language || 'python', code: live.code, trusted: true, game });
 
-// The sparring bots of a tournament: the 10 built-in ones (or the judge's edited Python copy of
-// one, once it works), plus (campaign only) the working bots the judge added. Every bot carries
-// `custom`: something shaped like a submission, compiled and run as a process by the grader.
+// The sparring bots of a tournament: the built-in ones of its game (or the judge's edited Python
+// copy of one, once it works), plus (campaign only) the working bots the judge added. Every bot
+// carries `custom`: something shaped like a submission, compiled and run as a process by the grader.
 function botsFor(t) {
+  const game = gameOf(t);
   const edits = (t && t.houseEdits) || {};
-  const house = HOUSE_BOTS.map(h => {
+  const house = houseBots(game).map(h => {
     const live = edits[h.id] && edits[h.id].live;
-    return { id: h.id, name: h.name, desc: h.desc, custom: live ? runnable(live) : defaultRunnable(h.id) };
+    return { id: h.id, name: h.name, desc: h.desc, custom: live ? runnable(live, game) : defaultRunnable(h.id) };
   });
   const extra = t && t.mode === 'campaign' ? (t.bots || []).filter(liveOf) : [];
-  return [...house, ...extra.map(b => ({ id: b.id, name: b.name, custom: runnable(liveOf(b)) }))];
+  return [...house, ...extra.map(b => ({ id: b.id, name: b.name, custom: runnable(liveOf(b), game) }))];
 }
 
 // Brawl: practice only matters while submissions are open.
@@ -78,8 +82,8 @@ function evaluate(sub, ensureBuilt) {
   // Campaign submissions aimed at one sparring bot only fight that bot.
   const all = botsFor(tournamentOf(sub));
   const opponents = isCampaign(sub) && sub.target ? all.filter(h => h.id === sub.target) : all;
-  const play = async house => {
-    const r = await runMatch(sub, house.custom, ensureBuilt);
+  const play = async (house, opts) => {
+    const r = await runMatch(sub, house.custom, ensureBuilt, opts);
     return { ...r, issue: r.issues.A };
   };
   sub.practice = {
@@ -103,7 +107,8 @@ function evaluate(sub, ensureBuilt) {
       slot.games = games;
       slot.needed = CAMPAIGN_GAMES;
       while (games.length < CAMPAIGN_GAMES) {
-        const r = await play(house);
+        // board game: one game per step of the series, taking turns at moving first
+        const r = await play(house, { games: 1, aWhite: games.length % 2 === 0 });
         games.push({ score: r.scoreA, botScore: r.scoreB, winner: r.winner });
         if (r.issue && !slot.issue) slot.issue = r.issue;
         listener(sub);
@@ -146,4 +151,4 @@ function waitFor(tournamentId) {
   return Promise.all([...running.values()].filter(r => r.tournamentId === tournamentId).map(r => r.promise));
 }
 
-module.exports = { evaluate, waitFor, onUpdate, botsFor, liveOf, HOUSE_BOTS, CAMPAIGN_GAMES };
+module.exports = { evaluate, waitFor, onUpdate, botsFor, liveOf, gameOf, HOUSE_BOTS, houseBots, CAMPAIGN_GAMES };

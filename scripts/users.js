@@ -1,11 +1,15 @@
-// Manage accounts from the command line (stop the server first - it owns db.json while running).
+// Manage accounts from the command line. With the JSON file, stop the server first (it owns db.json
+// while running). With PostgreSQL (DATABASE_URL set), a running server doesn't see the change until
+// it restarts, so stop it first there too.
 //   node scripts/users.js list
 //   node scripts/users.js add <username> <password> <team name> [--judge]
 //   node scripts/users.js passwd <username> <new password>
 //   node scripts/users.js remove <username>
 const db = require('../server/db');
-db.load();
 const auth = require('../server/auth');
+
+(async () => {
+await db.load();
 
 const [cmd, ...args] = process.argv.slice(2);
 const judge = args.includes('--judge');
@@ -34,8 +38,9 @@ try {
     console.log('usage: node scripts/users.js list | add <user> <pass> <team> [--judge] | passwd <user> <pass> | remove <user>');
   }
   db.save();
-  db.flush();
+  await db.close();
 } catch (e) {
   console.error('error: ' + e.message);
   process.exit(1);
 }
+})();

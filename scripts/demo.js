@@ -5,8 +5,10 @@
 const fs = require('fs');
 const path = require('path');
 const db = require('../server/db');
-db.load();
 const auth = require('../server/auth');
+
+(async () => {
+await db.load();
 auth.ensureJudge();
 
 // argv[2]: seconds until the deadline, or an exact date ("2026-10-18T21:00:00+07:00")
@@ -40,16 +42,18 @@ const t = {
 };
 db.data.tournaments.push(t);
 
-teams.forEach(([username, teamName, language, file], i) => {
+for (const [i, [username, teamName, language, file]] of teams.entries()) {
   let u = db.data.users.find(x => x.username === username);
   if (!u) u = auth.createUser({ username, password: 'demo', teamName });
-  db.data.submissions.push({
+  const sub = {
     id: db.id(), tournamentId: t.id, userId: u.id, language,
-    code: fs.readFileSync(path.join(EX, file), 'utf8'),
     status: 'pending', message: '',
     createdAt: new Date(now + i).toISOString(),
-  });
-});
+  };
+  db.data.submissions.push(sub);
+  await db.putCode(sub, fs.readFileSync(path.join(EX, file), 'utf8'));
+}
 db.save();
-db.flush();
+await db.close();
 console.log(`${tournamentName} created; submissions close ${new Date(deadlineMs).toString()} (in ${seconds}s). Demo players: ${teams.map(x => x[0]).join(', ')} (password "demo").`);
+})();

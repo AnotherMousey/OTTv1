@@ -4,17 +4,20 @@ const path = require('path');
 const { spawn } = require('child_process');
 const db = require('../db');
 const Bot = require('./bot');
-const { IS_WIN, TOOLS, LANGS, buildDir } = require('./languages');
+const { WIN_EXE, SANDBOX, DOCKER, BOT_IMAGE, HOST_BUILD_ROOT, TOOLS, LANGS, buildDir, gameOf, boxed, removeContainer } = require('./languages');
 const { normalize, FIRST_MOVE_TIMEOUT_MS, MOVE_TIMEOUT_MS } = require('./match');
+const board = require('./board');
 const practice = require('./practice');
 const { restrict } = require('./restrict');
 
 const HARNESS = path.join(__dirname, 'harness');
+const BOARD_HARNESS = path.join(HARNESS, 'board');
 const MAX_PARALLEL_BUILDS = 2;
 // Written into .ok; a build made under older rules is rebuilt (and so re-checked) before it plays.
 const BUILD_VERSION = 'v2-restricted';
 
-function exec(cmd, args, cwd, timeoutMs = 90000) {
+// Runs { cmd, args, cwd, container } (see languages.boxed) to the end; resolves { code, out }.
+function exec({ cmd, args, cwd, container }, timeoutMs = 90000) {
   return new Promise(resolve => {
     let out = '';
     let p;
@@ -23,7 +26,7 @@ function exec(cmd, args, cwd, timeoutMs = 90000) {
     } catch (e) {
       return resolve({ code: -1, out: e.message });
     }
-    const timer = setTimeout(() => { out += '\n(timed out)'; p.kill(); }, timeoutMs);
+    const timer = setTimeout(() => { out += '\n(timed out)'; p.kill(); removeContainer(container); }, timeoutMs);
     p.stdout.on('data', d => { out = (out + d).slice(-8000); });
     p.stderr.on('data', d => { out = (out + d).slice(-8000); });
     p.on('error', e => { clearTimeout(timer); resolve({ code: -1, out: `${cmd}: ${e.message}` }); });
@@ -46,7 +49,7 @@ async function withBuildSlot(fn) {
   }
 }
 
-const stripDir = (text, dir) => String(text).split(dir + path.sep).join('').trim();
+const stripDir = (text, dir) => String(text).split(dir + path.sep).join('').split('/bot/').join('').trim();
 
 // Player code (anything not marked `trusted`, i.e. not a built-in or judge bot) is restricted:
 // see restrict.js for C++/Java and harness/runner.py for Python.
@@ -54,31 +57,42 @@ async function build(sub) {
   const dir = buildDir(sub);
   fs.rmSync(dir, { recursive: true, force: true });
   fs.mkdirSync(dir, { recursive: true });
-  let code = sub.code;
+  // built-in and judge bots carry their code; a player's submission has it in the database
+  let code = typeof sub.code === 'string' ? sub.code : await db.getCode(sub.id);
   if (!sub.trusted) {
     const checked = restrict(sub.language, code);
     if (checked.error) throw new Error(checked.error);
     code = checked.code;
   }
   fs.writeFileSync(path.join(dir, LANGS[sub.language].file), code);
+  const isBoard = gameOf(sub) === 'board';
+  // a compile step: in the sandbox, as nobody, so the folder must be writable for everyone
+  const tool = (cmd, args) => exec(boxed(sub, cmd, args, { writable: true }));
+  if (SANDBOX) fs.chmodSync(dir, 0o777);
   let r;
   if (sub.language === 'cpp') {
-    fs.copyFileSync(path.join(HARNESS, 'main.cpp'), path.join(dir, 'harness_main.cpp'));
+    fs.copyFileSync(path.join(isBoard ? BOARD_HARNESS : HARNESS, 'main.cpp'), path.join(dir, 'harness_main.cpp'));
     const prelude = [];
     if (!sub.trusted) {
       fs.copyFileSync(path.join(HARNESS, 'prelude.hpp'), path.join(dir, 'prelude.hpp'));
       prelude.push('-include', 'prelude.hpp');
     }
-    r = await exec(TOOLS.cxx, ['-O2', '-std=c++17', ...(IS_WIN ? ['-static'] : []), ...prelude, '-o', IS_WIN ? 'bot.exe' : 'bot', 'harness_main.cpp', 'bot.cpp'], dir);
+    if (isBoard) {
+      // the Move struct, for the bot and the harness alike
+      fs.copyFileSync(path.join(BOARD_HARNESS, 'api.hpp'), path.join(dir, 'board_api.hpp'));
+      prelude.push('-include', 'board_api.hpp');
+    }
+    r = await tool(TOOLS.cxx, ['-O2', '-std=c++17', ...(WIN_EXE ? ['-static'] : []), ...prelude, '-o', WIN_EXE ? 'bot.exe' : 'bot', 'harness_main.cpp', 'bot.cpp']);
   } else if (sub.language === 'java') {
-    fs.copyFileSync(path.join(HARNESS, 'Main.java'), path.join(dir, 'Main.java'));
+    fs.copyFileSync(path.join(isBoard ? BOARD_HARNESS : HARNESS, 'Main.java'), path.join(dir, 'Main.java'));
     fs.mkdirSync(path.join(dir, 'out'));
-    r = await exec(TOOLS.javac, ['-encoding', 'UTF-8', '-d', 'out', 'Main.java', 'Bot.java'], dir);
+    if (SANDBOX) fs.chmodSync(path.join(dir, 'out'), 0o777);
+    r = await tool(TOOLS.javac, ['-encoding', 'UTF-8', '-d', 'out', 'Main.java', 'Bot.java']);
   } else if (sub.language === 'python') {
     fs.copyFileSync(path.join(HARNESS, 'runner.py'), path.join(dir, '_runner.py'));
     r = sub.trusted
-      ? await exec(TOOLS.python, ['-c', 'import ast,sys; ast.parse(open(sys.argv[1], encoding="utf-8").read(), sys.argv[1])', 'bot.py'], dir)
-      : await exec(TOOLS.python, ['-X', 'utf8', '_runner.py', '--check', 'bot.py'], dir);
+      ? await tool(TOOLS.python, ['-B', '-c', 'import ast,sys; ast.parse(open(sys.argv[1], encoding="utf-8").read(), sys.argv[1])', 'bot.py'])
+      : await tool(TOOLS.python, ['-B', '-X', 'utf8', '_runner.py', ...(isBoard ? ['--board'] : []), '--check', 'bot.py']);
   } else {
     throw new Error('Unknown language');
   }
@@ -100,6 +114,13 @@ function ensureBuilt(sub, force = false) {
 
 // Play 5 turns against a scripted opponent to make sure the bot actually answers.
 async function smokeTest(sub) {
+  if (gameOf(sub) === 'board') {
+    const r = await board.smokeTest(sub);
+    if (r.ok) return { ok: true, message: r.message };
+    await new Promise(res => setTimeout(res, 100)); // let the last stderr arrive
+    const err = stripDir(r.bot.stderr, buildDir(sub));
+    return { ok: false, message: r.message + (err ? '\n\n' + err : '') };
+  }
   const bot = new Bot(sub);
   bot.start();
   const script = 'RPSRP';
@@ -141,8 +162,8 @@ async function check(sub) {
 // Judge-written bot code (an added bot, or an edited built-in): checks the latest version
 // (`buildId`, `language`, `code`). If it passes it becomes the live one that plays; if not, the
 // previous live version keeps playing. A result for a version the judge has since replaced is dropped.
-async function checkBot(item) {
-  const version = { id: item.buildId || item.id, language: item.language || 'python', code: item.code, trusted: true };
+async function checkBot(item, game = 'rps') {
+  const version = { id: item.buildId || item.id, language: item.language || 'python', code: item.code, trusted: true, game };
   const result = await check(version);
   if ((item.buildId || item.id) !== version.id) { removeBuild(version); return result; } // superseded meanwhile
   item.status = result.ok ? 'ok' : 'error';
@@ -216,4 +237,15 @@ function resumePractice() {
   }
 }
 
-module.exports = { LANGS, validate, checkBot, removeBuild, housePython: require('./house').pythonSource, ensureBuilt, waitForValidations, activeSubmission, resumePractice, practice };
+// At startup: with the Docker sandbox, make sure Docker answers and the bot image exists.
+async function checkSandbox() {
+  if (!SANDBOX) {
+    console.warn('[grader] SANDBOX is off: submitted code runs as ordinary processes on this machine. Use SANDBOX=docker in production.');
+    return;
+  }
+  const r = await exec({ cmd: DOCKER, args: ['image', 'inspect', '--format', '{{.Id}}', BOT_IMAGE], cwd: process.cwd(), container: null }, 20000);
+  if (r.code !== 0) console.error(`[grader] Docker sandbox NOT ready: cannot use image ${BOT_IMAGE} (${r.out.trim()}). Build it with: docker compose build`);
+  else console.log(`[grader] Docker sandbox ready: image ${BOT_IMAGE}, builds on the host at ${HOST_BUILD_ROOT}`);
+}
+
+module.exports = { LANGS, checkSandbox, validate, checkBot, removeBuild, housePython: require('./house').pythonSource, ensureBuilt, waitForValidations, activeSubmission, resumePractice, practice };

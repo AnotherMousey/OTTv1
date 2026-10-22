@@ -19,6 +19,7 @@
       <div class="center">
         <div class="muted" style="font-size:17px" id="cdLabel">hạn nộp bài còn</div>
         <div class="countdown" id="countdown">--:--:--</div>
+        <div class="muted hidden" style="font-size:17px" id="nextDay"></div>
       </div>
     </div>
     <div class="squiggle"></div>
@@ -72,60 +73,29 @@
   <script src="/js/rps.js"></script>
   <script src="/js/common.js"></script>
   <script src="/js/campaign.js"></script>
+  <script src="/js/board-rules.js"></script>
+  <script src="/js/board.js"></script>
   <script>
     const TEMPLATES = {
-      python: `import random
+      python: `# my_moves / opponent_moves: the previous turns, oldest first ('R', 'P', 'S').
+# Return 'R', 'P' or 'S'.
 
-# my_moves / opponent_moves: lists of 'R', 'P', 'S' from the previous turns
-# (oldest first, empty on turn 1). Return 'R', 'P' or 'S'.
-# Only "import math" / "import random" and the play function are allowed;
-# helpers and constants go inside play. To keep state between turns, use a
-# default argument such as memo={} (it lives for the whole game).
-# print() is fine for debugging - it never reaches the grader.
-
-def play(my_moves, opponent_moves, memo={}):
-    BEATS = {'R': 'P', 'P': 'S', 'S': 'R'}  # move -> what beats it
-    if not opponent_moves:
-        return random.choice('RPS')
-    # beat whatever the opponent threw last time
-    return BEATS.get(opponent_moves[-1], 'R')
+def play(my_moves, opponent_moves):
+    return 'R'
 `,
-      cpp: `#include <vector>
-#include <cstdlib>
-#include <iostream>
-using namespace std;
+      cpp: `// myMoves / opponentMoves: the previous turns, oldest first ('R', 'P', 'S').
+// Return 'R', 'P' or 'S'. Don't write main().
 
-// myMoves / opponentMoves: the previous turns, oldest first ('R', 'P', 'S').
-// Both are empty on turn 1. Return 'R', 'P' or 'S'.
-// Don't write main() - the grader brings its own. Globals/statics survive
-// between turns. Debug with cerr (cout is fine too, the grader ignores it).
-
-char play(const vector<char>& myMoves, const vector<char>& opponentMoves) {
-    if (opponentMoves.empty()) return "RPS"[rand() % 3];
-    char last = opponentMoves.back();
-    if (last == 'R') return 'P';
-    if (last == 'P') return 'S';
+char play(const std::vector<char>& myMoves, const std::vector<char>& opponentMoves) {
     return 'R';
 }
 `,
-      java: `import java.util.*;
-
-// The class must be called Bot (no package line). One Bot object plays the
-// whole game, so fields keep their values between turns.
-// myMoves / opponentMoves: previous turns, oldest first ('R', 'P', 'S').
-// Return 'R', 'P' or 'S'. System.out.println is fine for debugging.
+      java: `// myMoves / opponentMoves: the previous turns, oldest first ('R', 'P', 'S').
+// Return 'R', 'P' or 'S'. The class must be called Bot.
 
 public class Bot {
-    private final Random rng = new Random();
-
     public char play(List<Character> myMoves, List<Character> opponentMoves) {
-        if (opponentMoves.isEmpty()) return "RPS".charAt(rng.nextInt(3));
-        char last = opponentMoves.get(opponentMoves.size() - 1);
-        switch (last) {
-            case 'R': return 'P';
-            case 'P': return 'S';
-            default:  return 'R';
-        }
+        return 'R';
     }
 }
 `,
@@ -144,8 +114,12 @@ public class Bot {
                  List&lt;Character&gt; opponentMoves)</pre>
         <p>Chỉ viết lớp <code>Bot</code>. <code>java.util.*</code> và <code>Math</code> luôn có sẵn; không được import gì khác. Trong <code>System</code> chỉ dùng được <code>System.out.println</code>/<code>print</code>/<code>printf</code>, <code>System.nanoTime</code>, <code>System.currentTimeMillis</code>. Không dùng reflection, luồng, tệp hay tiến trình.</p>`,
     };
-    let TURNS = 100, GAMES = 5, COOLDOWN = 90000; // updated from the server on load
-    const commonRules = () => `
+    let TURNS = 100, GAMES = 5, COOLDOWN = 90000, MAX_SCORE = 300; // updated from the server on load
+    // The board game ("Cờ OTT") has its own starter code, docs and rules.
+    const isBoard = () => !!tournament && tournament.game === 'board';
+    const templates = () => (isBoard() ? BOARD_TEMPLATES : TEMPLATES);
+    const docs = () => (isBoard() ? BOARD_DOCS : DOCS)[lang];
+    const commonRules = () => isBoard() ? boardRules(TURNS, COOLDOWN) : `
         <li>Nước đi: <code>R</code> = búa, <code>P</code> = bao, <code>S</code> = kéo.</li>
         <li>Mỗi trận gồm <b>${TURNS} lượt</b>. Mỗi lượt: thắng = <b>3</b> điểm, hòa = <b>1</b>, thua = <b>0</b>.</li>
         <li>Hai danh sách lịch sử chứa mọi lượt trước đó, cũ nhất đứng đầu. Vị trí <i>i</i> của hai danh sách là cùng một lượt.</li>
@@ -155,8 +129,10 @@ public class Bot {
         <li>Mỗi lần nộp cách nhau ít nhất <b>${Math.round(COOLDOWN / 1000)} giây</b>.</li>`;
     function rulesFor(mode) {
       if (mode === 'campaign') {
+        const each = isBoard() ? 'hai bên lần lượt đi trước' : `mỗi ván ${TURNS} lượt`;
+        const win = isBoard() ? 'thắng ván đó' : 'nhiều điểm hơn nó trong mỗi ván';
         return `<ul>${commonRules()}
-        <li><b>Chế độ chiến dịch:</b> mỗi bài nộp <b>chọn một</b> trong ${bots.length} bot đấu tập làm đối thủ và đấu với nó tối đa <b>${GAMES} ván</b> (mỗi ván ${TURNS} lượt). Để <b>hạ</b> bot đó, bạn phải <b>thắng cả ${GAMES} ván</b> (nhiều điểm hơn nó trong mỗi ván). Chỉ cần thua hoặc hòa một ván là bài nộp đó thất bại, và các ván còn lại bị bỏ qua.</li>
+        <li><b>Chế độ chiến dịch:</b> mỗi bài nộp <b>chọn một</b> trong ${bots.length} bot đấu tập làm đối thủ và đấu với nó tối đa <b>${GAMES} ván</b> (${each}). Để <b>hạ</b> bot đó, bạn phải <b>thắng cả ${GAMES} ván</b> (${win}). Chỉ cần thua hoặc hòa một ván là bài nộp đó thất bại, và các ván còn lại bị bỏ qua.</li>
         <li>Nộp bao nhiêu bài cũng được, mỗi bài cho một đối thủ, theo thứ tự tùy ý. Hạ đủ cả ${bots.length} bot đấu tập là hoàn thành chiến dịch.</li>
         <li>Thời điểm về đích là lúc bạn <b>nộp</b> bot hạ được bot đấu tập cuối cùng còn lại. Ai về đích sớm nhất xếp đầu; các đội chưa về đích xếp theo số bot đã hạ.</li>
         <li><b>Điểm phạt (PEN):</b> mỗi bài nộp trước khi về đích tính <b>20</b> điểm phạt (kể cả bài bị lỗi). Khi về đích, PEN được cộng thêm <b>số phút</b> từ lúc giải mở đến lúc bạn nộp bài về đích. Bài về đích và các bài nộp sau đó không bị phạt.</li>
@@ -164,8 +140,11 @@ public class Bot {
       </ul>`;
       }
       return `<ul>${commonRules()}
-        <li>Mỗi vòng thi đấu vòng tròn. Sau mỗi vòng, <b>min(3, số đội − 2)</b> đội ít điểm nhất bị loại, cho đến khi còn 2 đội vào chung kết.</li>
-        <li>Mỗi bot ✅ sau đó đấu tập ${TURNS} lượt với từng bot trong 10 bot của nhà. Tổng điểm hiện trên bảng luyện tập; chỉ bạn thấy điểm chi tiết với từng bot. Các trận luyện tập không tính vào giải.</li>
+        ${tournament && tournament.daily ? `<li><b>Thi đấu hằng ngày:</b> mỗi ngày lúc <b>${tournament.daily.time}</b>, từ lúc giải mở đến khi giải kết thúc, bot ✅ mới nhất mà mỗi đội nộp trước giờ đó đấu vòng tròn với tất cả các đội khác, mỗi cặp một trận${isBoard() ? ' (2 ván, mỗi bên đi trước một ván)' : ''}. Thắng trận = <b>3</b> điểm, hòa = <b>1</b>, thua = <b>0</b>.</li>
+        <li>Kết quả được giữ kín và công bố sau <b>${Math.round(tournament.daily.publishDelayMs / 60000)} phút</b>: lúc đó bảng xếp hạng (điểm cộng dồn qua các ngày) được cập nhật cho mọi người, và ai cũng xem lại được các trận của ngày đó. Bằng điểm thì xét số trận thắng, rồi điểm phụ (tổng điểm trong các trận).</li>
+        <li><b>Điểm đánh giá:</b> trước vòng tròn mỗi ngày, bot của bạn đấu một trận với từng bot mẫu (thắng 3, hòa 1, thua 0). Bảng xếp hạng hiện điểm hiện tại (cộng dồn) và điểm đánh giá của ngày gần nhất; bằng điểm hiện tại thì điểm đánh giá cao hơn xếp trên.</li>
+        <li>Bạn được nộp bài suốt giải; bot mới chỉ ra sân từ ngày thi đấu tiếp theo. Đội đứng đầu bảng khi giải kết thúc là nhà vô địch.</li>` : '<li>Mỗi vòng thi đấu vòng tròn. Sau mỗi vòng, <b>min(3, số đội − 2)</b> đội ít điểm nhất bị loại, cho đến khi còn 2 đội vào chung kết.</li>'}
+        <li>Mỗi bot ✅ sau đó đấu tập ${isBoard() ? 'một trận (2 ván)' : `${TURNS} lượt`} với từng bot trong ${bots.length} bot của nhà. Tổng điểm hiện trên bảng luyện tập; chỉ bạn thấy điểm chi tiết với từng bot. Các trận luyện tập không tính vào giải.</li>
       </ul>`;
     }
 
@@ -187,8 +166,8 @@ public class Bot {
       lang = l;
       try { localStorage.setItem('rr-lang', l); } catch {}
       $$('#langs button').forEach(b => b.classList.toggle('on', b.dataset.lang === l));
-      $('#code').value = loadDraft(l) ?? TEMPLATES[l];
-      $('#docs').innerHTML = DOCS[l] + rulesFor(tournament && tournament.mode);
+      $('#code').value = loadDraft(l) ?? templates()[l];
+      $('#docs').innerHTML = docs() + rulesFor(tournament && tournament.mode);
     }
 
     function renderSubs(subs) {
@@ -222,8 +201,9 @@ public class Bot {
       if (data.turns) TURNS = data.turns;
       if (data.gamesNeeded) GAMES = data.gamesNeeded;
       if (data.cooldownMs) COOLDOWN = data.cooldownMs;
+      if (data.maxScore) MAX_SCORE = data.maxScore;
       if (firstLoad) setupMode();
-      else $('#docs').innerHTML = DOCS[lang] + rulesFor(tournament.mode); // the bot count may have changed
+      else $('#docs').innerHTML = docs() + rulesFor(tournament.mode); // the bot count may have changed
       $('#tname').textContent = tournament.name;
       $('#tdesc').textContent = tournament.description;
       document.title = `Nộp bài · ${tournament.name}`;
@@ -233,7 +213,8 @@ public class Bot {
 
     // Adjust labels for the tournament's mode (called once the tournament is known).
     function setupMode() {
-      $('#docs').innerHTML = DOCS[lang] + rulesFor(tournament.mode);
+      setLang(lang); // now that the game is known: its starter code and docs
+      if (isBoard()) $('#tdesc').insertAdjacentHTML('beforebegin', '<span class="tag mode">♟️ cờ OTT</span> ');
       if (tournament.mode !== 'campaign') return;
       $('#ptitle').textContent = 'Bảng chiến dịch 🗺️';
       $('#phint').classList.add('hidden');
@@ -288,7 +269,7 @@ public class Bot {
     function statusText(r, max) {
       if (r.status === 'no-bot') return '<span class="muted">chưa có bot chạy được</span>';
       if (r.status === 'queued') return '<span class="muted">⏳ đang chờ lượt đấu tập…</span>';
-      if (r.status === 'running') return `<span class="muted">🥊 đang đấu tập… ${r.played}/10</span>`;
+      if (r.status === 'running') return `<span class="muted">🥊 đang đấu tập… ${r.played}/${practiceData.houseCount || 10}</span>`;
       if (r.status === 'stopped') return '<span class="muted">đã dừng</span>';
       if (r.status === 'error') return '<span style="color:var(--red)">chấm thất bại</span>';
       return '';
@@ -333,7 +314,7 @@ public class Bot {
         return `<div class="house ${res[0]}">
           <div class="hn">${esc(r.name)}</div>
           <div class="hs"><b>${r.score}</b> <span class="muted">:</span> ${r.botScore} <span class="tag">${res[1]}</span></div>
-          <div class="hbar"><div class="a" style="width:${(r.score / (TURNS * 3)) * 100}%"></div></div>
+          <div class="hbar"><div class="a" style="width:${(r.score / MAX_SCORE) * 100}%"></div></div>
           ${r.issue ? `<div class="hi">⚠️ ${esc(r.issue)}</div>` : ''}
         </div>`;
       }).join('');
@@ -351,7 +332,10 @@ public class Bot {
       const toStart = tournament.startsAt ? Date.parse(tournament.startsAt) - serverNow() : 0;
       const notYet = toStart > 0;
       const left = notYet ? toStart : Date.parse(tournament.deadline) - serverNow();
-      $('#cdLabel').textContent = notYet ? 'mở nhận bài sau' : 'hạn nộp bài còn';
+      $('#cdLabel').textContent = notYet ? 'mở nhận bài sau' : tournament.daily ? 'giải kết thúc sau' : 'hạn nộp bài còn';
+      const next = tournament.daily && tournament.daily.nextAt;
+      $('#nextDay').classList.toggle('hidden', !next);
+      if (next) $('#nextDay').textContent = Date.parse(next) > serverNow() ? `📅 trận tiếp theo sau ${fmtCountdown(Date.parse(next) - serverNow())}` : '⚔️ các bot đang ra sân…';
       $('#countdown').textContent = fmtCountdown(left);
       $('#countdown').classList.toggle('soon', !notYet && left > 0 && left < 60000);
       const closed = !notYet && left <= 0;
@@ -366,7 +350,7 @@ public class Bot {
 
     $('#langs').innerHTML = Object.keys(TEMPLATES).map(l => `<button data-lang="${l}">${LANG_LABEL[l]}</button>`).join('');
     $$('#langs button').forEach(b => b.onclick = () => setLang(b.dataset.lang));
-    $('#template').onclick = () => { if (confirm('Thay code hiện tại bằng code mẫu?')) { $('#code').value = TEMPLATES[lang]; saveDraft(); } };
+    $('#template').onclick = () => { if (confirm('Thay code hiện tại bằng code mẫu?')) { $('#code').value = templates()[lang]; saveDraft(); } };
     $('#code').addEventListener('input', saveDraft);
     $('#code').addEventListener('keydown', e => {
       if (e.key !== 'Tab') return;
@@ -409,8 +393,7 @@ public class Bot {
 
     (async () => {
       const socket = await boot();
-      setLang(lang);
-      await load();
+      await load(); // sets the language too, once it knows which game this is
       if (ME.role !== 'judge') openUser = ME.id;
       await loadPractice();
       socket.on('practice:updated', ({ tournamentId }) => { if (tournamentId === tid) refreshPractice(); });

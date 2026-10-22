@@ -1,0 +1,56 @@
+# OTTv1 in production:  cp .env.example .env  (then edit it),  docker compose up -d --build
+#   db         PostgreSQL; its data lives in the "pgdata" volume
+#   app        the web server, on port ${PORT}
+#   bot-image  only builds the sandbox image (ottv1-bot) that every compile and bot runs in, then exits
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ottv1
+      POSTGRES_USER: ottv1
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ottv1 -d ottv1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  bot-image:
+    build:
+      context: .
+      dockerfile: docker/bot.Dockerfile
+    image: ${BOT_IMAGE:-ottv1-bot:latest}
+    entrypoint: ["true"]
+    restart: "no"
+
+  app:
+    build: .
+    restart: unless-stopped
+    init: true
+    depends_on:
+      db:
+        condition: service_healthy
+      bot-image:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://ottv1:${POSTGRES_PASSWORD}@db:5432/ottv1
+      SANDBOX: docker
+      BOT_IMAGE: ${BOT_IMAGE:-ottv1-bot:latest}
+      # bot containers are started by the host's Docker, so they need the host path of the builds
+      HOST_BUILD_ROOT: ${HOST_DATA_DIR}/builds
+      JUDGE_PASSWORD: ${JUDGE_PASSWORD:-}
+      PARALLEL_MATCHES: ${PARALLEL_MATCHES:-}
+      PUBLISH_DELAY_MS: ${PUBLISH_DELAY_MS:-600000}
+    volumes:
+      # compiled bots (and, on the first start only, a db.json to import)
+      - ${HOST_DATA_DIR:?set HOST_DATA_DIR in .env}:/app/data
+      # lets the server start sandbox containers on this host
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "${PORT:-3000}:3000"
+
+volumes:
+  pgdata:
