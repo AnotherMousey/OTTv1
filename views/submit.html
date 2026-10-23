@@ -106,15 +106,15 @@ public class Bot {
     const DOCS = {
       python: `<p>Tệp: <code>bot.py</code>, viết một hàm:</p>
         <pre>def play(my_moves: list[str], opponent_moves: list[str]) -> str</pre>
-        <p>Chỉ được có dòng <code>import math</code> / <code>import random</code> và hàm <code>play</code> (hàm phụ, hằng số đặt bên trong <code>play</code>). Không dùng được thư viện khác, <code>open</code>, <code>eval</code>, class hay tên bắt đầu bằng <code>__</code>.</p>`,
+        <p>Chỉ được có dòng <code>import math</code> / <code>import random</code> / <code>import time</code> và hàm <code>play</code> (hàm phụ, hằng số đặt bên trong <code>play</code>). Không dùng được thư viện khác, <code>open</code>, <code>eval</code>, class hay tên bắt đầu bằng <code>__</code>. Muốn canh thời gian thì dùng <code>import time</code>: <code>time.perf_counter()</code>, <code>time.time()</code>, <code>time.monotonic()</code>.</p>`,
       cpp: `<p>Tệp: <code>bot.cpp</code> (C++17, biên dịch bằng g++ -O2), viết một hàm:</p>
         <pre>char play(const std::vector&lt;char&gt;&amp; myMoves,
           const std::vector&lt;char&gt;&amp; opponentMoves);</pre>
-        <p>Chỉ viết hàm (và hàm phụ, struct, biến toàn cục nếu cần). Các thư viện chuẩn thường dùng (<code>vector</code>, <code>algorithm</code>, <code>cmath</code>, <code>random</code>, <code>map</code>, <code>iostream</code>, ... hoặc <code>bits/stdc++.h</code>) đã có sẵn. Không được dùng <code>#define</code>/<code>#pragma</code>, include thư viện khác, đọc ghi tệp hay gọi hệ thống.</p>`,
+        <p>Chỉ viết hàm (và hàm phụ, struct, biến toàn cục nếu cần). Các thư viện chuẩn thường dùng (<code>vector</code>, <code>algorithm</code>, <code>cmath</code>, <code>random</code>, <code>map</code>, <code>iostream</code>, ... hoặc <code>bits/stdc++.h</code>) đã có sẵn. Không được dùng <code>#define</code>/<code>#pragma</code>, include thư viện khác, đọc ghi tệp hay gọi hệ thống. Muốn canh thời gian thì dùng <code>std::chrono::steady_clock::now()</code> (hoặc <code>clock()</code>).</p>`,
       java: `<p>Tệp: <code>Bot.java</code>, một lớp public tên <code>Bot</code> (không có dòng <code>package</code>) với phương thức:</p>
         <pre>public char play(List&lt;Character&gt; myMoves,
                  List&lt;Character&gt; opponentMoves)</pre>
-        <p>Chỉ viết lớp <code>Bot</code>. <code>java.util.*</code> và <code>Math</code> luôn có sẵn; không được import gì khác. Trong <code>System</code> chỉ dùng được <code>System.out.println</code>/<code>print</code>/<code>printf</code>, <code>System.nanoTime</code>, <code>System.currentTimeMillis</code>. Không dùng reflection, luồng, tệp hay tiến trình.</p>`,
+        <p>Chỉ viết lớp <code>Bot</code>. <code>java.util.*</code> và <code>Math</code> luôn có sẵn; không được import gì khác. Trong <code>System</code> chỉ dùng được <code>System.out.println</code>/<code>print</code>/<code>printf</code>, <code>System.nanoTime</code>, <code>System.currentTimeMillis</code>. Không dùng reflection, luồng, tệp hay tiến trình. Muốn canh thời gian thì dùng <code>System.nanoTime()</code>.</p>`,
     };
     let TURNS = 100, GAMES = 5, COOLDOWN = 90000; // updated from the server on load
     // The board game ("Cờ OTT") has its own starter code, docs and rules.

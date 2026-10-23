@@ -227,9 +227,10 @@ default argument like `memo={}` keep their state.
 Player code is restricted so it can only compute a move. It can't read files (other bots' code,
 `data/db.json`), start processes or use the network:
 
-- **Python:** only `import math` / `import random` and one `def play(...)`. Everything else goes inside
-  `play`. No other imports, classes, generators, `match`, names starting with `__`, attributes other
-  than methods of the basic types and `math`/`random`, and only safe builtins (no `open`, `eval`,
+- **Python:** only `import math` / `import random` / `import time` and one `def play(...)`. Everything
+  else goes inside `play`. `time` offers only the clocks (`time`, `perf_counter`, `monotonic`,
+  `process_time` and their `_ns` forms) and `sleep`. No other imports, classes, generators, `match`,
+  names starting with `__`, attributes other than methods of the basic types and `math`/`random`/`time`, and only safe builtins (no `open`, `eval`,
   `getattr`, ...). Checked by [runner.py](server/grader/harness/runner.py) on submit and again at
   run time, where the code also runs with a restricted builtins table.
 - **C++:** just the functions. The headers in [prelude.hpp](server/grader/harness/prelude.hpp) are

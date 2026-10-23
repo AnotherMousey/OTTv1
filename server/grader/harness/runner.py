@@ -7,18 +7,24 @@
 #   python _runner.py --check bot.py         only check player code (prints the problem, exit 1)
 #   --board (as the first argument)          speak the board game protocol instead of RPS
 #
-# Player code may only contain `import math` / `import random` (or `from ... import`) and one
+# Player code may only contain `import math` / `import random` / `import time` (or `from ... import`) and one
 # `def play(...)`. Inside it: no underscore names, only whitelisted attributes (methods of
-# str/list/dict/set/tuple/int/float and functions of math/random), no classes, generators,
+# str/list/dict/set/tuple/int/float and functions of math/random/time), no classes, generators,
 # `match` or imports, and only the builtins in SAFE_BUILTINS.
 import ast
 import builtins
 import math
 import random
 import sys
+import time
 import types
 
-ALLOWED_MODULES = {"math": math, "random": random}
+# `time` for managing the time limit: the clocks and sleep only
+_time = types.ModuleType("time")
+for _n in ("time", "time_ns", "perf_counter", "perf_counter_ns", "monotonic", "monotonic_ns",
+           "process_time", "process_time_ns", "sleep"):
+    setattr(_time, _n, getattr(time, _n))
+ALLOWED_MODULES = {"math": math, "random": random, "time": _time}
 
 SAFE_BUILTINS = {n: getattr(builtins, n) for n in (
     "abs all any bool chr dict divmod enumerate filter float frozenset int isinstance iter len "
@@ -50,7 +56,7 @@ FORBIDDEN_NODES = {
 def _safe_import(name, globals=None, locals=None, fromlist=(), level=0):
     if level == 0 and name in ALLOWED_MODULES:
         return ALLOWED_MODULES[name]
-    raise ImportError("chỉ được import math và random")
+    raise ImportError("chỉ được import math, random và time")
 
 
 def check(src, board=False):
@@ -70,11 +76,11 @@ def check(src, board=False):
         if isinstance(node, ast.Import):
             for a in node.names:
                 if a.name not in ALLOWED_MODULES:
-                    return bad(node, f"không được import `{a.name}` (chỉ được dùng math và random)")
+                    return bad(node, f"không được import `{a.name}` (chỉ được dùng math, random và time)")
                 bound.add(a.asname or a.name)
         elif isinstance(node, ast.ImportFrom):
             if node.level or node.module not in ALLOWED_MODULES:
-                return bad(node, f"không được import từ `{node.module}` (chỉ được dùng math và random)")
+                return bad(node, f"không được import từ `{node.module}` (chỉ được dùng math, random và time)")
             for a in node.names:
                 if a.name == "*" or a.name not in ALLOWED_ATTRS:
                     return bad(node, f"không được import `{a.name}` từ {node.module}")
@@ -88,7 +94,7 @@ def check(src, board=False):
         elif isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
             pass  # docstring
         else:
-            return bad(node, "ngoài hàm play chỉ được có dòng import math / import random")
+            return bad(node, "ngoài hàm play chỉ được có dòng import math / import random / import time")
     if plays != 1:
         return f"Bài nộp phải có đúng một hàm `def {signature}`"
 

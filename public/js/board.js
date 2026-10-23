@@ -31,8 +31,8 @@ const BOARD_TEMPLATES = {
 #   1 up-left     2 up     3 up-right
 #   8 left                 4 right
 #   7 down-left   6 down   5 down-right
-# Only "import math" / "import random" and the play function are allowed; helpers go inside
-# play. print() is fine for debugging.
+# Only "import math" / "import random" / "import time" and the play function are allowed; helpers
+# go inside play. time.perf_counter() helps you stay under the 1 s limit. print() is fine for debugging.
 
 def play(gameState):
     STEP = {1: (-1, 1), 2: (0, 1), 3: (1, 1), 4: (1, 0), 5: (1, -1), 6: (0, -1), 7: (-1, -1), 8: (-1, 0)}
@@ -140,7 +140,7 @@ gameState.opponent     # list quân địch
 gameState.maxTurn      # 1000: tới đây thì hòa
 gameState.currentTurn  # số nước đã đi trong ván (cả hai bên)
 piece.pid, piece.Type, piece.x, piece.y</pre>
-    <p>Chỉ được có dòng <code>import math</code> / <code>import random</code> và hàm <code>play</code> (hàm phụ, hằng số đặt bên trong <code>play</code>). Không dùng được thư viện khác, <code>open</code>, <code>eval</code>, class hay tên bắt đầu bằng <code>__</code>. Muốn nhớ gì giữa các lượt thì dùng tham số mặc định, ví dụ <code>def play(gameState, memo={})</code>.</p>`,
+    <p>Chỉ được có dòng <code>import math</code> / <code>import random</code> / <code>import time</code> và hàm <code>play</code> (hàm phụ, hằng số đặt bên trong <code>play</code>). Không dùng được thư viện khác, <code>open</code>, <code>eval</code>, class hay tên bắt đầu bằng <code>__</code>. Muốn canh thời gian thì dùng <code>import time</code>: <code>time.perf_counter()</code>, <code>time.time()</code>, <code>time.monotonic()</code>. Muốn nhớ gì giữa các lượt thì dùng tham số mặc định, ví dụ <code>def play(gameState, memo={})</code>.</p>`,
   cpp: `<p>Tệp: <code>bot.cpp</code> (C++17, biên dịch bằng g++ -O2), viết một hàm:</p>
     <pre>std::pair&lt;int, int&gt; play(const State&amp; gameState);  // trả về {pid, direction}
 
@@ -150,14 +150,14 @@ struct State {
     std::vector&lt;Piece&gt; ally, opponent;
     int maxTurn, currentTurn;
 };</pre>
-    <p>Chỉ viết hàm (và hàm phụ, struct, biến toàn cục nếu cần). Các thư viện chuẩn thường dùng (<code>vector</code>, <code>string</code>, <code>algorithm</code>, <code>queue</code>, ... hoặc <code>bits/stdc++.h</code>) đã có sẵn. Không được dùng <code>#define</code>/<code>#pragma</code>, include thư viện khác, đọc ghi tệp hay gọi hệ thống.</p>`,
+    <p>Chỉ viết hàm (và hàm phụ, struct, biến toàn cục nếu cần). Các thư viện chuẩn thường dùng (<code>vector</code>, <code>string</code>, <code>algorithm</code>, <code>queue</code>, ... hoặc <code>bits/stdc++.h</code>) đã có sẵn. Không được dùng <code>#define</code>/<code>#pragma</code>, include thư viện khác, đọc ghi tệp hay gọi hệ thống. Muốn canh thời gian thì dùng <code>std::chrono::steady_clock::now()</code> (hoặc <code>clock()</code>).</p>`,
   java: `<p>Tệp: <code>Bot.java</code>, một lớp public tên <code>Bot</code> (không có dòng <code>package</code>) với phương thức:</p>
     <pre>public int[] play(State gameState)  // trả về {pid, direction}
 
 // có sẵn, đừng khai báo lại:
 class Piece { int pid; char Type; int x, y; }
 class State { List&lt;Piece&gt; ally, opponent; int maxTurn, currentTurn; }</pre>
-    <p>Chỉ viết lớp <code>Bot</code>. <code>java.util.*</code> và <code>Math</code> luôn có sẵn; không được import gì khác. Trong <code>System</code> chỉ dùng được <code>System.out.println</code>/<code>print</code>/<code>printf</code>, <code>System.nanoTime</code>, <code>System.currentTimeMillis</code>. Không dùng reflection, luồng, tệp hay tiến trình.</p>`,
+    <p>Chỉ viết lớp <code>Bot</code>. <code>java.util.*</code> và <code>Math</code> luôn có sẵn; không được import gì khác. Trong <code>System</code> chỉ dùng được <code>System.out.println</code>/<code>print</code>/<code>printf</code>, <code>System.nanoTime</code>, <code>System.currentTimeMillis</code>. Không dùng reflection, luồng, tệp hay tiến trình. Muốn canh thời gian thì dùng <code>System.nanoTime()</code>.</p>`,
 };
 
 // Rules shared by both modes (the submit page adds the brawl / campaign specifics).
