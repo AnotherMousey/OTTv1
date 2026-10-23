@@ -230,9 +230,12 @@ function resumePractice() {
     }
     if (t.status !== 'open') continue;
     const users = new Set(db.data.submissions.filter(s => s.tournamentId === t.id).map(s => s.userId));
+    const bots = new Set(practice.botsFor(t).map(b => b.id));
     for (const uid of users) {
       const s = activeSubmission(t.id, uid);
-      if (s && (!s.practice || s.practice.status !== 'done')) practice.evaluate(s, ensureBuilt);
+      // also replay practice that ran against a different set of sparring bots
+      const stale = s && s.practice && (s.practice.results.length !== bots.size || s.practice.results.some(r => !bots.has(r.bot)));
+      if (s && (!s.practice || s.practice.status !== 'done' || stale)) practice.evaluate(s, ensureBuilt);
     }
   }
 }

@@ -125,7 +125,7 @@ Brawl, campaign, invite-only and hidden tournaments work the same way for both.
   `STATE <currentTurn> <maxTurn> <n> <pid type x y>… <m> <pid type x y>…` in (ally pieces, then
   opponent pieces), `MOVE <pid> <direction>` out
   ([harness/board/](server/grader/harness/board/), plus `--board` in [runner.py](server/grader/harness/runner.py)).
-  The 6 built-in sparring bots, easiest first, are Loạn Bộ (random), Thẳng Tiến (races for the corner),
+  The 5 built-in sparring bots, easiest first, are Thẳng Tiến (races for the corner),
   Thận Trọng (one move ahead, never hangs a piece), Săn Mồi (hunter), Tính Toán (2-ply minimax) and
   Thấu Suốt (iterative-deepening alpha-beta), in [house_board_py/](server/grader/house_board_py/).
   The judge can edit them per tournament like the RPS ones.

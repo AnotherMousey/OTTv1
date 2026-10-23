@@ -110,25 +110,10 @@
 
     // ---------- daily league (brawl) ----------
     let dailyTimer = null, shownDays = null;
-    // the expanded row: your own practice results per sparring bot (the judge: anyone's)
-    let dailyOpen = null, dailyDetail = null;
-    const canOpenDaily = row => ME && (ME.role === 'judge' || row.userId === ME.id);
-    async function loadDailyDetail() {
-      if (!dailyOpen) return;
-      try {
-        const d = await api(`/api/tournaments/${encodeURIComponent(tid)}/practice?user=${encodeURIComponent(dailyOpen)}`);
-        dailyDetail = d.details ? { det: d.details, maxScore: d.maxScore } : null;
-      } catch (e) {
-        dailyOpen = null;
-        toast(e.message, 'error');
-      }
-      if (lastBoard && lastBoard.format === 'daily') renderDailyBoard(lastBoard);
-    }
     function renderDailyBoard(b) {
       lastBoard = b;
       $('#tname').textContent = b.name;
       document.title = `Trực tiếp · ${b.name}`;
-      $('table.board').classList.add('practice'); // expandable rows
       $('#lhead').innerHTML = '<tr><th>#</th><th>đội</th><th title="điểm cộng dồn qua các ngày thi đấu">điểm hiện tại</th><th title="điểm đấu tập của bot mới nhất của đội (đấu với các bot đấu tập)">điểm đánh giá</th></tr>';
       const banner = $('#banner'), sub = $('#sub'), prog = $('#progress');
       const published = b.days.filter(d => d.status === 'published');
@@ -166,21 +151,14 @@
       tbody.innerHTML = b.rows.map(row => {
         const top = row.played > 0 && row.rank <= 3; // medals once a team has played
         const cls = [b.champion && b.champion.userId === row.userId ? 'champion' : '', ME && row.userId === ME.id ? 'me' : '', prevPoints[row.userId] !== undefined && prevPoints[row.userId] !== row.points ? 'flash' : ''].join(' ');
-        const open = dailyOpen === row.userId;
-        const detail = open && dailyDetail && dailyDetail.det.userId === row.userId
-          ? `<tr class="detail"><td colspan="4">${practiceDetailHtml(dailyDetail.det, dailyDetail.maxScore, tid)}</td></tr>` : '';
-        return `<tr class="${cls} ${canOpenDaily(row) ? 'clickable' : ''} ${open ? 'open' : ''}" data-id="${row.userId}" ${canOpenDaily(row) ? 'title="xem kết quả đấu tập"' : ''}>
+        return `<tr class="${cls}" data-id="${row.userId}">
           <td class="rank">${b.champion && b.champion.userId === row.userId ? '🏆' : top ? ['🥇', '🥈', '🥉'][row.rank - 1] : row.rank}</td>
-          <td><div class="team">${avatarSvg(row.avatar, 40)}<span class="n">${esc(row.teamName)}</span>${row.username ? `<small class="uname">@${esc(row.username)}</small>` : ''}${ME && row.userId === ME.id ? '<span class="muted" style="font-size:16px">← bạn!</span>' : ''}${canOpenDaily(row) ? `<span class="caret">${open ? '▾' : '▸'}</span>` : ''}</div></td>
+          <td><div class="team">${avatarSvg(row.avatar, 40)}<span class="n">${esc(row.teamName)}</span>${row.username ? `<small class="uname">@${esc(row.username)}</small>` : ''}${ME && row.userId === ME.id ? '<span class="muted" style="font-size:16px">← bạn!</span>' : ''}</div></td>
           <td class="pts" title="${row.w} thắng · ${row.d} hòa · ${row.l} thua${row.lastDay !== null ? ` · ngày gần nhất +${row.lastDay}` : ''}">${row.points}</td>
           <td class="evalcell">${row.eval !== null ? `<span class="pts" style="font-size:26px">${row.eval}<small class="muted" style="font-size:16px">/${row.evalMax}</small></span>`
             : `<span class="muted" style="font-size:18px">${{ queued: '⏳ đang chờ đấu tập', running: '🥊 đang đấu tập…', error: 'chấm thất bại' }[row.evalStatus] || 'chưa đánh giá'}</span>`}</td>
-        </tr>${detail}`;
+        </tr>`;
       }).join('') || '<tr><td colspan="4" class="center muted">chưa có đội nào có bot chạy được</td></tr>';
-      $$('tr.clickable', tbody).forEach(tr => tr.onclick = () => {
-        dailyOpen = dailyOpen === tr.dataset.id ? null : tr.dataset.id;
-        if (dailyOpen) loadDailyDetail(); else renderDailyBoard(lastBoard);
-      });
       b.rows.forEach(row => { prevPoints[row.userId] = row.points; });
       slideRows(tbody, before);
 
@@ -328,7 +306,6 @@
         // keep an open campaign breakdown fresh too
         if (b.mode === 'campaign' && cstate.openUser) openCampaignRow(cstate.openUser);
       });
-      socket.on('practice:updated', ({ tournamentId }) => { if (tournamentId === tid) loadDailyDetail(); });
       socket.on('match:done', m => {
         if (m.tournamentId !== tid || !canSeeMatches) return;
         matches.push(m);

@@ -333,7 +333,7 @@
     (async () => {
       await boot();
       $('#back').href = `/tournament/${encodeURIComponent(tid)}/${practiceBot ? 'submit' : 'live'}`;
-      if (practiceBot) $('#back').textContent = '← quay lại đấu tập';
+      if (practiceBot) $('#back').textContent = '← quay lại bảng luyện tập';
       let data;
       try {
         data = await api(practiceBot

@@ -25,9 +25,8 @@ const HOUSE_BOTS = [
   { id: 'minh-triet', name: 'Minh Triết', desc: 'The boss: Bayesian inference over many theories of how you play (habits, patterns, and whether you are countering it), then the best response.' },
 ];
 
-// The 6 sparring bots of the board game (house_board_py/<id>.py), easiest first.
+// The 5 sparring bots of the board game (house_board_py/<id>.py), easiest first.
 const BOARD_HOUSE_BOTS = [
-  { id: 'loan-bo', name: 'Loạn Bộ', desc: 'Plays a random legal move every turn.' },
   { id: 'thang-tien', name: 'Thẳng Tiến', desc: 'Races for your corner, ignoring danger.' },
   { id: 'than-trong', name: 'Thận Trọng', desc: 'Looks one move ahead with a position evaluation and never leaves you a free capture or a winning move.' },
   { id: 'san-moi', name: 'Săn Mồi', desc: 'Captures whenever it can, otherwise hunts the nearest piece it beats while staying out of reach.' },
