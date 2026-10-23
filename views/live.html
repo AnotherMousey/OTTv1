@@ -110,11 +110,26 @@
 
     // ---------- daily league (brawl) ----------
     let dailyTimer = null, shownDays = null;
+    // the expanded row: your own practice results per sparring bot (the judge: anyone's)
+    let dailyOpen = null, dailyDetail = null;
+    const canOpenDaily = row => ME && (ME.role === 'judge' || row.userId === ME.id);
+    async function loadDailyDetail() {
+      if (!dailyOpen) return;
+      try {
+        const d = await api(`/api/tournaments/${encodeURIComponent(tid)}/practice?user=${encodeURIComponent(dailyOpen)}`);
+        dailyDetail = d.details ? { det: d.details, maxScore: d.maxScore } : null;
+      } catch (e) {
+        dailyOpen = null;
+        toast(e.message, 'error');
+      }
+      if (lastBoard && lastBoard.format === 'daily') renderDailyBoard(lastBoard);
+    }
     function renderDailyBoard(b) {
       lastBoard = b;
       $('#tname').textContent = b.name;
       document.title = `Trực tiếp · ${b.name}`;
-      $('#lhead').innerHTML = '<tr><th>#</th><th>đội</th><th title="điểm cộng dồn qua các ngày thi đấu">điểm hiện tại</th><th title="điểm khi đấu với các bot mẫu trước ngày thi đấu gần nhất của đội">điểm đánh giá</th></tr>';
+      $('table.board').classList.add('practice'); // expandable rows
+      $('#lhead').innerHTML = '<tr><th>#</th><th>đội</th><th title="điểm cộng dồn qua các ngày thi đấu">điểm hiện tại</th><th title="điểm đấu tập của bot mới nhất của đội (đấu với các bot đấu tập)">điểm đánh giá</th></tr>';
       const banner = $('#banner'), sub = $('#sub'), prog = $('#progress');
       const published = b.days.filter(d => d.status === 'published');
       const pending = b.days.find(d => d.status !== 'published'); // playing, or waiting to be published
@@ -124,8 +139,7 @@
         else if (b.error) banner.innerHTML = `😵 Có lỗi xảy ra: ${esc(b.error)}`;
         else if (pending) {
           const left = Date.parse(pending.publishAt) - serverNow();
-          const what = pending.status !== 'running' ? `⏳ Ngày ${pending.number} đã đấu xong`
-            : pending.phase === 'evaluating' ? `🧪 Ngày ${pending.number}: đang đánh giá với bot mẫu` : `⚔️ Ngày ${pending.number} đang thi đấu`;
+          const what = pending.status !== 'running' ? `⏳ Ngày ${pending.number} đã đấu xong` : `⚔️ Ngày ${pending.number} đang thi đấu`;
           banner.innerHTML = `${what} · kết quả công bố ${left > 0 ? `sau <b>${fmtCountdown(left)}</b>` : 'ngay khi đấu xong'}`;
         } else if (b.nextAt) banner.innerHTML = `📅 Ngày thi đấu tiếp theo sau <b>${fmtCountdown(Date.parse(b.nextAt) - serverNow())}</b>`;
         else banner.innerHTML = b.status === 'running' ? '⏳ Đang công bố ngày cuối…' : '📅 Không còn ngày thi đấu nào trước khi giải kết thúc';
@@ -134,10 +148,10 @@
       if (b.status !== 'finished') dailyTimer = setInterval(tickBanner, 500);
       prog.classList.toggle('hidden', !(pending && pending.status === 'running'));
       if (pending && pending.status === 'running') prog.firstElementChild.style.width = (pending.totalMatches ? (100 * pending.played) / pending.totalMatches : 0) + '%';
-      const playing = pending && pending.status === 'running' ? ` · ngày ${pending.number}: đã đấu ${pending.played}/${pending.totalMatches} trận (kể cả đánh giá)` : '';
+      const playing = pending && pending.status === 'running' ? ` · ngày ${pending.number}: đã đấu ${pending.played}/${pending.totalMatches} trận` : '';
       sub.innerHTML = `Mỗi ngày lúc ${esc(b.dailyTime)} · thắng 3 · hòa 1 · thua 0 · ${published.length} ngày đã công bố${playing} · ${b.status === 'finished' ? 'kết thúc' : 'kết thúc lúc'} ${esc(fmtDate(b.deadline))}`
         + (b.status === 'open' && ME.role !== 'judge' ? ` · <a href="/tournament/${encodeURIComponent(tid)}/submit">nộp bot</a>` : '')
-        + `<br>Điểm đánh giá: trước mỗi ngày thi đấu, bot của đội đấu với ${b.sampleBots.length} bot mẫu (<span title="${esc(b.sampleBots.map(s => `${s.name}: ${s.desc}`).join('\n'))}" style="text-decoration:underline dotted;cursor:help">${b.sampleBots.map(s => esc(s.name)).join(', ')}</span>), cũng thắng 3 · hòa 1 · thua 0. Bằng điểm hiện tại thì đội có điểm đánh giá cao hơn xếp trên.`;
+        + `<br>Điểm đánh giá: điểm đấu tập của bot mới nhất của đội (tổng điểm khi đấu với các bot đấu tập), cập nhật ngay khi đấu tập xong. Bằng điểm hiện tại thì đội có điểm đánh giá cao hơn xếp trên.`;
 
       const champ = $('#champ');
       if (b.champion) {
@@ -152,14 +166,21 @@
       tbody.innerHTML = b.rows.map(row => {
         const top = row.played > 0 && row.rank <= 3; // medals once a team has played
         const cls = [b.champion && b.champion.userId === row.userId ? 'champion' : '', ME && row.userId === ME.id ? 'me' : '', prevPoints[row.userId] !== undefined && prevPoints[row.userId] !== row.points ? 'flash' : ''].join(' ');
-        return `<tr class="${cls}" data-id="${row.userId}">
+        const open = dailyOpen === row.userId;
+        const detail = open && dailyDetail && dailyDetail.det.userId === row.userId
+          ? `<tr class="detail"><td colspan="4">${practiceDetailHtml(dailyDetail.det, dailyDetail.maxScore, tid)}</td></tr>` : '';
+        return `<tr class="${cls} ${canOpenDaily(row) ? 'clickable' : ''} ${open ? 'open' : ''}" data-id="${row.userId}" ${canOpenDaily(row) ? 'title="xem kết quả đấu tập"' : ''}>
           <td class="rank">${b.champion && b.champion.userId === row.userId ? '🏆' : top ? ['🥇', '🥈', '🥉'][row.rank - 1] : row.rank}</td>
-          <td><div class="team">${avatarSvg(row.avatar, 40)}<span class="n">${esc(row.teamName)}</span>${row.username ? `<small class="uname">@${esc(row.username)}</small>` : ''}${ME && row.userId === ME.id ? '<span class="muted" style="font-size:16px">← bạn!</span>' : ''}</div></td>
+          <td><div class="team">${avatarSvg(row.avatar, 40)}<span class="n">${esc(row.teamName)}</span>${row.username ? `<small class="uname">@${esc(row.username)}</small>` : ''}${ME && row.userId === ME.id ? '<span class="muted" style="font-size:16px">← bạn!</span>' : ''}${canOpenDaily(row) ? `<span class="caret">${open ? '▾' : '▸'}</span>` : ''}</div></td>
           <td class="pts" title="${row.w} thắng · ${row.d} hòa · ${row.l} thua${row.lastDay !== null ? ` · ngày gần nhất +${row.lastDay}` : ''}">${row.points}</td>
-          <td class="evalcell">${row.eval === null ? '<span class="muted" style="font-size:18px">chưa đánh giá</span>'
-            : `<span class="pts" style="font-size:26px">${row.eval}<small class="muted" style="font-size:16px">/${row.evalMax}</small></span> <span title="${esc(row.evalDetail.map(d => `${d.name}: ${{ A: 'thắng', B: 'thua', draw: 'hòa' }[d.winner] || 'chưa đấu'}`).join('\n'))} (ngày ${row.evalDay})">${seriesPips(row.evalDetail.map(d => d.winner), row.evalDetail.length)}</span>`}</td>
-        </tr>`;
+          <td class="evalcell">${row.eval !== null ? `<span class="pts" style="font-size:26px">${row.eval}<small class="muted" style="font-size:16px">/${row.evalMax}</small></span>`
+            : `<span class="muted" style="font-size:18px">${{ queued: '⏳ đang chờ đấu tập', running: '🥊 đang đấu tập…', error: 'chấm thất bại' }[row.evalStatus] || 'chưa đánh giá'}</span>`}</td>
+        </tr>${detail}`;
       }).join('') || '<tr><td colspan="4" class="center muted">chưa có đội nào có bot chạy được</td></tr>';
+      $$('tr.clickable', tbody).forEach(tr => tr.onclick = () => {
+        dailyOpen = dailyOpen === tr.dataset.id ? null : tr.dataset.id;
+        if (dailyOpen) loadDailyDetail(); else renderDailyBoard(lastBoard);
+      });
       b.rows.forEach(row => { prevPoints[row.userId] = row.points; });
       slideRows(tbody, before);
 
@@ -307,6 +328,7 @@
         // keep an open campaign breakdown fresh too
         if (b.mode === 'campaign' && cstate.openUser) openCampaignRow(cstate.openUser);
       });
+      socket.on('practice:updated', ({ tournamentId }) => { if (tournamentId === tid) loadDailyDetail(); });
       socket.on('match:done', m => {
         if (m.tournamentId !== tid || !canSeeMatches) return;
         matches.push(m);

@@ -5,13 +5,12 @@
 //   - Moving onto an enemy it beats (R > S > P > R) captures it; moving onto one that beats it
 //     loses the attacker (the defender stays put).
 //   - A side wins by reaching the enemy's home corner, or by eliminating every enemy piece.
-//   - After MAX_TURNS moves (both sides counted): more pieces wins, then the piece nearest to
-//     its goal, then the smaller total distance to the goal; otherwise a draw.
+//   - After MAX_TURNS moves (both sides counted, skipped turns too) without a winner: a draw.
 // Coordinates: x = column 0..W-1 (a..i), y = row 0..H-1 (1..9). White starts bottom-left and
 // heads for the top-right corner; black starts top-right and heads for (0, 0).
 (function (root) {
   const W = 9, H = 9;
-  const MAX_TURNS = 4 * W * H;
+  const MAX_TURNS = 1000;
   const BEATS = { R: 'S', S: 'P', P: 'R' };
   // White's start (black's is the same rotated by 180°, so both sides see the same position).
   const WHITE_START = [[1, 0, 'R'], [2, 0, 'P'], [3, 0, 'S'], [1, 1, 'P'], [2, 1, 'S'], [3, 1, 'R'], [1, 2, 'S'], [2, 2, 'R'], [3, 2, 'P']];
@@ -91,30 +90,11 @@
     }
     g.turn++;
     g.toMove = other(side);
-    if (!g.winner && g.turn >= MAX_TURNS) finishAtLimit(g);
+    if (!g.winner && g.turn >= MAX_TURNS) { g.winner = 'draw'; g.reason = 'limit-draw'; }
     return ev;
   }
 
-  const dist = (x, y, [gx, gy]) => Math.max(Math.abs(gx - x), Math.abs(gy - y));
-  function distances(board, side) {
-    const out = [];
-    board.forEach((row, y) => row.forEach((c, x) => { if (c && c.side === side) out.push(dist(x, y, GOAL[side])); }));
-    return out;
-  }
-
-  function finishAtLimit(g) {
-    const w = count(g.board, 'white'), b = count(g.board, 'black');
-    if (w !== b) { g.winner = w > b ? 'white' : 'black'; g.reason = 'limit-pieces'; return; }
-    const dw = distances(g.board, 'white'), db = distances(g.board, 'black');
-    const nw = Math.min(...dw), nb = Math.min(...db);
-    if (nw !== nb) { g.winner = nw < nb ? 'white' : 'black'; g.reason = 'limit-nearest'; return; }
-    const sum = a => a.reduce((s, d) => s + d, 0);
-    if (sum(dw) !== sum(db)) { g.winner = sum(dw) < sum(db) ? 'white' : 'black'; g.reason = 'limit-distance'; return; }
-    g.winner = 'draw';
-    g.reason = 'limit-draw';
-  }
-
-  // The side that lost on time / crashed loses the game.
+  // The side whose bot crashed (or hung) loses the game.
   function forfeit(g, side) {
     g.winner = other(side);
     g.reason = 'forfeit';

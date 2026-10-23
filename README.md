@@ -100,8 +100,9 @@ Brawl, campaign, invite-only and hidden tournaments work the same way for both.
   (3 búa / R, 3 bao / P, 3 kéo / S). A piece moves one square in any of 8 directions. It can't move onto
   its own piece or onto an enemy of the same kind. Moving onto an enemy it beats (R > S > P > R)
   captures it, and moving onto one that beats it loses the attacker. You win by reaching the enemy's
-  home corner or by eliminating every enemy piece. After 324 moves, more pieces wins, then the piece
-  nearest its goal, then the smaller total distance; otherwise the game is a draw. A match is
+  home corner or by eliminating every enemy piece. After 1000 moves (both sides) the game is a draw.
+  Each move has 1 second: an illegal or late move loses the turn (a late answer is thrown away); a bot
+  that crashes, or misses 5 turns in a row, loses the game. A match is
   2 games, one with each side moving first, scored 3 / 1 / 0 per game (6 points max). In a campaign
   each of the 5 games in a series is a single game, with the sides taking turns at moving first.
   Rules live in [board-rules.js](public/js/board-rules.js), shared by the grader and the replay page.
@@ -186,16 +187,12 @@ When creating a tournament the judge also picks who may enter it:
 3. **Every day at the match time** (from the start until the end date), each team's newest ✅ bot
    submitted before that moment plays every other team once. A match (100 RPS turns, or 2 board games
    with the sides swapped) scores **win = 3, draw = 1, loss = 0**. Submissions stay open throughout the
-   tournament, and a new bot plays from the next match day on.
-   **Evaluation:** before each day's round robin, every team's bot of the day plays one match against
-   each **sample bot** ("bot mẫu"), scored the same 3 / 1 / 0. That gives the team's evaluation points
-   (max 12). Oẳn tù tì uses Mẫu Thiên Búa (60% rock), Mẫu Nhịp Đôi (R R P P S S), Mẫu Phản Đòn (beats
-   your most frequent recent move) and Mẫu Đoán Trước (beats your counter to its last move). Cờ OTT uses
-   Mẫu Thủ Thành (stays home), Mẫu Tiên Phong (one piece at a time), Mẫu Bầy Đàn (advances as a group)
-   and Mẫu Chiến Thuật (2-ply minimax). They are the `mau-*.py` files in
-   [house_py/](server/grader/house_py/) and [house_board_py/](server/grader/house_board_py/).
-   The ranking table shows each team's **current points** (cumulative) and **evaluation points** (from
-   its latest published day). It sorts by current points, then evaluation points.
+   tournament, except from each match time until that day's results are published; a new bot plays
+   from the next match day on.
+   **Evaluation:** a team's evaluation points are the practice score of its newest ✅ bot (its
+   total against the sparring bots, the same number as on the practice board), updated as soon as
+   practice finishes. The ranking table shows each team's **current points** (cumulative) and
+   **evaluation points**. It sorts by current points, then evaluation points.
 4. A day's results stay hidden for **10 minutes** (`PUBLISH_DELAY_MS`), or until its last match ends if
    that takes longer. Then the cumulative standings update for everyone, and everyone can replay that
    day's matches. Before that only the judge sees the matches (on the live page, marked

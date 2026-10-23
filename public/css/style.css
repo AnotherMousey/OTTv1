@@ -246,6 +246,10 @@ pre.msg { white-space: pre; background: #f4f2ea; border-radius: 8px; padding: 10
 .house .hs { font-family: 'Pangolin', cursive; font-size: 24px; }
 .house .hs .tag { font-family: 'Patrick Hand', cursive; font-size: 14px; vertical-align: middle; }
 .house .hi { font-size: 13px; color: var(--red); }
+.house .hreplay { display: inline-block; margin-top: 6px; font-size: 15px; }
+.pmine { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; margin-top: 12px; padding: 12px 18px; background: #fff; border: 3px solid var(--ink); border-radius: var(--wobble); }
+.pmine .team { display: flex; align-items: center; gap: 10px; font-size: 23px; }
+.pmine .pts { font-family: 'Pangolin', cursive; font-size: 34px; }
 .house.win { background: #effaf1; }
 .house.win .tag { background: #c9efd2; }
 .house.loss { background: #fff1ef; }

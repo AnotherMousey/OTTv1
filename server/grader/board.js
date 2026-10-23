@@ -3,7 +3,8 @@
 //   grader -> bot : "TURN <turn> <maxTurns> <W> <H> <cells>"  (cells: W*H chars, row y = 0 first,
 //                   from the bot's own side: uppercase = mine, lowercase = enemy, '.' = empty)
 //   bot -> grader : "MOVE x1 y1 x2 y2"
-// An illegal move skips that turn. A bot that crashes or runs out of time loses the game.
+// An illegal move, or one that takes over MOVE_TIMEOUT_MS, skips that turn (a late answer is thrown
+// away). A bot that crashes, or misses HUNG_TURNS turns in a row (stuck), loses the game.
 // A match is 2 games with the sides swapped (white moves first): win = 3, draw = 1, loss = 0 per game.
 const Bot = require('./bot');
 const R = require('../../public/js/board-rules');
@@ -11,6 +12,7 @@ const R = require('../../public/js/board-rules');
 const GAMES = 2;
 const FIRST_MOVE_TIMEOUT_MS = +process.env.FIRST_MOVE_TIMEOUT_MS || 10000;
 const MOVE_TIMEOUT_MS = +process.env.MOVE_TIMEOUT_MS || 1000;
+const HUNG_TURNS = 5;
 const MAX_SCORE = GAMES * 3; // best possible match score
 
 const request = (g, side) => `TURN ${g.turn} ${R.MAX_TURNS} ${R.W} ${R.H} ${R.view(g, side)}`;
@@ -29,15 +31,25 @@ async function playGame(bots) {
   const moves = [];
   const issues = { white: null, black: null };
   const asked = { white: 0, black: 0 };
+  const missed = { white: 0, black: 0 }; // turns in a row without an answer in time
   while (!g.winner) {
     const side = g.toMove;
     const bot = bots[side];
-    const raw = await bot.ask(request(g, side), asked[side]++ ? MOVE_TIMEOUT_MS : FIRST_MOVE_TIMEOUT_MS);
+    const timeout = asked[side]++ ? MOVE_TIMEOUT_MS : FIRST_MOVE_TIMEOUT_MS;
+    const raw = await bot.ask(request(g, side), timeout, { skipLate: true });
+    if (raw === null && !bot.dead && ++missed[side] < HUNG_TURNS) {
+      if (!issues[side]) issues[side] = `Lượt ${g.turn + 1}: bot mất quá ${timeout} ms để ra nước, mất lượt`;
+      R.apply(g, null);
+      moves.push(null);
+      continue;
+    }
     if (raw === null) {
+      if (!bot.dead) bot.fail(`không ra nước ${HUNG_TURNS} lượt liền`);
       issues[side] = `Lượt ${g.turn + 1}: bot ${bot.reason || 'không phản hồi'}`;
       R.forfeit(g, side);
       break;
     }
+    missed[side] = 0;
     const move = parse(raw, side);
     const why = move ? R.problem(g, side, move) : `"${String(raw).slice(0, 30)}" không phải 4 số x1 y1 x2 y2`;
     if (why && !issues[side]) issues[side] = `Lượt ${g.turn + 1}: nước đi "${String(raw).slice(0, 30)}" không hợp lệ (${why}), mất lượt`;

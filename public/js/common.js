@@ -110,3 +110,28 @@ function confetti(n = 70) {
     setTimeout(() => el.remove(), 6000);
   }
 }
+
+// One team's practice results, a card per sparring bot (with a replay link once it has one).
+// det: the `details` of GET /api/tournaments/:id/practice; maxScore: the best score of one match.
+function practiceDetailHtml(det, maxScore, tid) {
+  const cards = det.results.map(r => {
+    if (r.status !== 'done') {
+      const label = { queued: '⏳ đang chờ', playing: '🥊 đang đấu…', skipped: 'bỏ qua' }[r.status] || r.status;
+      return `<div class="house pending"><div class="hn">${esc(r.name)}</div><div class="hs muted">${label}</div></div>`;
+    }
+    const res = r.winner === 'A' ? ['win', 'thắng 🎉'] : r.winner === 'B' ? ['loss', 'thua 😵'] : ['draw', 'hòa 🤝'];
+    return `<div class="house ${res[0]}">
+      <div class="hn">${esc(r.name)}</div>
+      <div class="hs"><b>${r.score}</b> <span class="muted">:</span> ${r.botScore} <span class="tag">${res[1]}</span></div>
+      <div class="hbar"><div class="a" style="width:${(r.score / maxScore) * 100}%"></div></div>
+      ${r.issue ? `<div class="hi">⚠️ ${esc(r.issue)}</div>` : ''}
+      ${r.replay ? `<a class="hreplay" href="/tournament/${encodeURIComponent(tid)}/match?practice=${encodeURIComponent(r.bot)}&user=${encodeURIComponent(det.userId)}">▶ xem trận</a>` : ''}
+    </div>`;
+  }).join('');
+  const done = det.results.filter(r => r.status === 'done');
+  const wins = done.filter(r => r.winner === 'A').length;
+  return `<div class="pdetail">
+    <div class="muted" style="font-size:16px">${esc(det.teamName)} · bot ${LANG_LABEL[det.language]} nộp lúc ${esc(fmtDate(det.submittedAt))} · đến giờ đã thắng ${wins}/${done.length} bot đấu tập</div>
+    <div class="house-grid">${cards}</div>
+  </div>`;
+}

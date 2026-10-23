@@ -52,7 +52,9 @@
   <script src="/js/board.js"></script>
   <script>
     const tid = tournamentIdFromPath();
-    const matchName = new URLSearchParams(location.search).get('name') || '';
+    const query = new URLSearchParams(location.search);
+    const matchName = query.get('name') || '';
+    const practiceBot = query.get('practice'); // a practice match: ?practice=<bot>&user=<team>
     const R = BoardRules;
     const COL = { A: '#e2433f', B: '#3a7bd5' }, LIGHT = { A: '#ff9b97', B: '#9cc7ff' };
     // board geometry inside the 900 x 530 scene
@@ -330,10 +332,13 @@
 
     (async () => {
       await boot();
-      $('#back').href = `/tournament/${encodeURIComponent(tid)}/live`;
+      $('#back').href = `/tournament/${encodeURIComponent(tid)}/${practiceBot ? 'submit' : 'live'}`;
+      if (practiceBot) $('#back').textContent = '← quay lại đấu tập';
       let data;
       try {
-        data = await api(`/api/tournaments/${encodeURIComponent(tid)}/matches/${encodeURIComponent(matchName)}`);
+        data = await api(practiceBot
+          ? `/api/tournaments/${encodeURIComponent(tid)}/practice/${encodeURIComponent(practiceBot)}?user=${encodeURIComponent(query.get('user') || '')}`
+          : `/api/tournaments/${encodeURIComponent(tid)}/matches/${encodeURIComponent(matchName)}`);
       } catch (e) {
         $('#title').textContent = e.message + ' 🙈';
         $('#stage').classList.add('hidden');
@@ -342,7 +347,7 @@
       M = data.match;
       AV = data.avatars;
       document.title = `${M.teamA} vs ${M.teamB} · OTTv1`;
-      $('#title').textContent = `${M.day ? 'Ngày' : 'Vòng'} ${M.round} · ${M.teamA} vs ${M.teamB} · ${M.scoreA} – ${M.scoreB}`;
+      $('#title').textContent = `${M.practice ? 'Đấu tập' : `${M.day ? 'Ngày' : 'Vòng'} ${M.round}`} · ${M.teamA} vs ${M.teamB} · ${M.scoreA} – ${M.scoreB}`;
       const issues = [M.issues && M.issues.A && `${M.teamA}: ${M.issues.A}`, M.issues && M.issues.B && `${M.teamB}: ${M.issues.B}`].filter(Boolean);
       $('#issues').textContent = issues.length ? '⚠️ ' + issues.join(' · ') : '';
 

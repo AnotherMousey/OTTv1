@@ -110,8 +110,9 @@ function publicTournament(t, user) {
     description: t.description || '',
     deadline: t.deadline,
     startsAt: t.startsAt || null,
-    ...(daily.isDaily(t) ? { daily: { time: t.dailyTime, nextAt: t.status === 'open' ? daily.nextSlot(t, Date.now()) : null, days: (t.days || []).filter(d => d.status === 'published').length, publishDelayMs: daily.PUBLISH_DELAY_MS } } : {}),
+    ...(daily.isDaily(t) ? { daily: { time: t.dailyTime, nextAt: t.status === 'open' ? daily.nextSlot(t, Date.now()) : null, frozen: t.status === 'open' ? daily.frozen(t) : null, days: (t.days || []).filter(d => d.status === 'published').length, publishDelayMs: daily.PUBLISH_DELAY_MS } } : {}),
     status: t.status,
+    createdAt: t.createdAt || t.startsAt || t.deadline,
     teamsReady: t.entries ? t.entries.length : ready.size,
     access: isInviteOnly(t) ? 'invite' : 'open',
     members: isInviteOnly(t) && isJudge(user) ? (t.members || []).filter(id => findUser(id)).length : undefined,
@@ -251,6 +252,8 @@ app.post('/api/tournaments/:id/submissions', apiAuth, wrap(async (req, res) => {
   if (!canPlay(t, req.user.id)) return fail(res, 404, 'Không tìm thấy giải đấu');
   if (t.status !== 'open' || Date.parse(t.deadline) <= Date.now()) return fail(res, 400, 'Muộn rồi! Giải này đã hết hạn nộp bài.');
   if (t.startsAt && Date.parse(t.startsAt) > Date.now()) return fail(res, 400, 'Giải chưa bắt đầu, hãy đợi đến giờ mở cửa nhé.');
+  const frozen = daily.isDaily(t) && daily.frozen(t);
+  if (frozen) return fail(res, 400, `Ngày ${frozen.day} đang thi đấu: tạm khóa nộp bài đến khi công bố kết quả.`);
   const { language, code, target } = req.body || {};
   if (!grader.LANGS[language]) return fail(res, 400, 'Hãy chọn ngôn ngữ: cpp, java hoặc python');
   // Campaign: each submission is aimed at one sparring bot.
@@ -319,6 +322,7 @@ app.get('/api/tournaments/:id/practice', apiAuth, (req, res) => {
   if (want === req.user.id || isJudge(req.user)) {
     const s = grader.activeSubmission(t.id, want);
     const u = findUser(want);
+    const replays = db.data.matches[grader.practice.replayKey(t.id)] || {};
     if (s && u) {
       details = {
         userId: want,
@@ -330,7 +334,8 @@ app.get('/api/tournaments/:id/practice', apiAuth, (req, res) => {
         total: s.practice ? s.practice.total : 0,
         results: (s.practice ? s.practice.results : house.map(h => ({ bot: h.id, name: h.name, status: 'queued' })))
           // names come from the current bot list, so renamed bots show their new name on old results
-          .map(({ bot, name, status, score, botScore, winner, issue }) => ({ bot, name: (house.find(h => h.id === bot) || { name }).name, status, score, botScore, winner, issue })),
+          .map(({ bot, name, status, score, botScore, winner, issue }) => ({ bot, name: (house.find(h => h.id === bot) || { name }).name, status, score, botScore, winner, issue,
+            replay: (replays[grader.practice.replayName(want, bot)] || {}).submissionId === s.id })),
       };
     }
   } else if (req.query.user) {
@@ -338,6 +343,17 @@ app.get('/api/tournaments/:id/practice', apiAuth, (req, res) => {
   }
   res.json({ rows, details, turns: TURNS, maxScore: maxMatchScore(t), houseCount: house.length, maxTotal: house.length * maxMatchScore(t), serverNow: Date.now() });
 });
+
+// Replay of a practice match: your own (the judge: anyone's) against one sparring bot.
+app.get('/api/tournaments/:id/practice/:bot', apiAuth, wrap(async (req, res) => {
+  const t = visibleTournament(req);
+  if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
+  const want = String(req.query.user || req.user.id);
+  if (want !== req.user.id && !isJudge(req.user)) return fail(res, 403, 'Không được xem trận đấu tập của đội khác 🤫');
+  const m = await db.getMatch(grader.practice.replayKey(t.id), grader.practice.replayName(want, req.params.bot));
+  if (!m) return fail(res, 404, 'Không tìm thấy trận đấu tập này');
+  res.json({ match: { ...m, practice: true }, avatars: { A: auth.avatarOf(findUser(want) || { teamName: m.teamA }), B: auth.avatarOf({ teamName: m.teamB }) }, tournament: { id: t.id, name: t.name, status: t.status } });
+}));
 
 app.get('/api/tournaments/:id/leaderboard', apiAuth, (req, res) => {
   const t = visibleTournament(req);
@@ -554,6 +570,7 @@ app.delete('/api/admin/tournaments/:id', apiAuth, apiJudge, wrap(async (req, res
   db.data.tournaments = db.data.tournaments.filter(x => x !== t);
   db.data.submissions = db.data.submissions.filter(s => s.tournamentId !== t.id);
   await db.deleteTournament(t.id, subIds);
+  await db.deleteTournament(grader.practice.replayKey(t.id), []);
   io.to('users').emit('tournaments:changed');
   res.json({ ok: true });
 }));
@@ -701,7 +718,7 @@ grader.practice.onUpdate(sub => {
     practiceTimers.delete(sub.tournamentId);
     io.to('users').emit('practice:updated', { tournamentId: sub.tournamentId });
     const t = findTournament(sub.tournamentId);
-    if (t && t.mode === 'campaign') manager.broadcast(t);
+    if (t && (t.mode === 'campaign' || daily.isDaily(t))) manager.broadcast(t); // a daily league shows practice scores as evaluation
   }, 500));
 });
 grader.resumePractice();

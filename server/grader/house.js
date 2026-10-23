@@ -36,30 +36,10 @@ const BOARD_HOUSE_BOTS = [
 ];
 const houseBots = game => (game === 'board' ? BOARD_HOUSE_BOTS : HOUSE_BOTS);
 
-// Sample bots ("bot mẫu"): the yardstick of a daily brawl. Before each day's round robin every
-// team's bot plays each of them; the result is the team's evaluation points (see daily.js).
-// Same files and shared pieces as the sparring bots of their game.
-const SAMPLE_BOTS = {
-  rps: [
-    { id: 'mau-thien-bua', name: 'Mẫu Thiên Búa', desc: 'Plays rock 60% of the time, paper and scissors 20% each.' },
-    { id: 'mau-nhip-doi', name: 'Mẫu Nhịp Đôi', desc: 'Plays each move twice: R R P P S S, over and over.' },
-    { id: 'mau-phan-don', name: 'Mẫu Phản Đòn', desc: "Beats your most frequent move of your last 5." },
-    { id: 'mau-doan-truoc', name: 'Mẫu Đoán Trước', desc: 'Assumes you will counter its last move, and beats that counter.' },
-  ],
-  board: [
-    { id: 'mau-thu-thanh', name: 'Mẫu Thủ Thành', desc: 'Stays home: captures what comes close, otherwise shuffles inside its first 3 rows.' },
-    { id: 'mau-tien-phong', name: 'Mẫu Tiên Phong', desc: 'Sends one piece at a time toward your corner; the rest wait.' },
-    { id: 'mau-bay-dan', name: 'Mẫu Bầy Đàn', desc: 'Advances as a group: always moves its rearmost piece forward, capturing on the way.' },
-    { id: 'mau-chien-thuat', name: 'Mẫu Chiến Thuật', desc: 'Minimax two moves deep, the same as the sparring bot Tính Toán.' },
-  ],
-};
-const sampleBots = game => SAMPLE_BOTS[game === 'board' ? 'board' : 'rps'];
 // every built-in bot by id, with its game
 const BUILT_IN = new Map([
   ...HOUSE_BOTS.map(b => [b.id, { ...b, game: 'rps', kind: 'Sparring' }]),
   ...BOARD_HOUSE_BOTS.map(b => [b.id, { ...b, game: 'board', kind: 'Sparring' }]),
-  ...SAMPLE_BOTS.rps.map(b => [b.id, { ...b, game: 'rps', kind: 'Sample' }]),
-  ...SAMPLE_BOTS.board.map(b => [b.id, { ...b, game: 'board', kind: 'Sample' }]),
 ]);
 
 // A bot file starts with "# uses: base predictors ..." naming the shared pieces
@@ -98,4 +78,4 @@ function defaultRunnable(id) {
   return { id: `house-${id}-${hash}`, language: 'python', code, trusted: true, game: BUILT_IN.get(id).game };
 }
 
-module.exports = { HOUSE_BOTS, BOARD_HOUSE_BOTS, houseBots, sampleBots, pythonSource, defaultRunnable };
+module.exports = { HOUSE_BOTS, BOARD_HOUSE_BOTS, houseBots, pythonSource, defaultRunnable };

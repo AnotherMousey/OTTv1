@@ -1,6 +1,7 @@
 // Practice evaluation: every working submission plays one match against each house bot
 // (RPS: one 100-turn game against each of the 10; board game: two games, one per side, against
-// each of the 6). Results live on submission.practice.
+// each of the 6). Results live on submission.practice. Outside campaigns each match is also kept
+// for replay: one per team and sparring bot, the newest bot's run replacing the older one.
 const db = require('../db');
 const { HOUSE_BOTS, houseBots, defaultRunnable } = require('./house');
 const { runMatch } = require('./match');
@@ -75,6 +76,30 @@ function supersede(sub) {
   }
 }
 
+// Replays live with the tournament matches, under their own key (see app.js).
+const replayKey = tournamentId => `practice:${tournamentId}`;
+const replayName = (userId, botId) => `${userId}-${botId}`;
+async function saveReplay(sub, house, r) {
+  let newest = null;
+  for (const s of db.data.submissions) {
+    if (s.tournamentId === sub.tournamentId && s.userId === sub.userId && s.status === 'ok' && (!newest || newest.createdAt < s.createdAt)) newest = s;
+  }
+  if (newest !== sub) return false; // a newer bot took over while this one was playing
+  const u = db.data.users.find(x => x.id === sub.userId);
+  const { movesA, movesB, games, scoreA, scoreB, winner, issues } = r;
+  try {
+    await db.putMatch({
+      tournamentId: replayKey(sub.tournamentId), name: replayName(sub.userId, house.id), submissionId: sub.id, bot: house.id,
+      teamA: u ? u.teamName : '?', teamB: house.name, userA: sub.userId, playedAt: new Date().toISOString(),
+      ...(games ? { games } : { movesA, movesB }), scoreA, scoreB, winner, issues,
+    });
+    return true;
+  } catch (e) {
+    console.error('[practice] could not save the replay:', e.message);
+    return false;
+  }
+}
+
 const running = new Map();
 function evaluate(sub, ensureBuilt) {
   if (running.has(sub.id)) return running.get(sub.id).promise;
@@ -101,7 +126,7 @@ function evaluate(sub, ensureBuilt) {
     slot.status = 'playing';
     if (!isCampaign(sub)) {
       const r = await play(house);
-      Object.assign(slot, { status: 'done', score: r.scoreA, botScore: r.scoreB, winner: r.winner, issue: r.issue });
+      Object.assign(slot, { status: 'done', score: r.scoreA, botScore: r.scoreB, winner: r.winner, issue: r.issue, replay: await saveReplay(sub, house, r) });
     } else {
       const games = [];
       slot.games = games;
@@ -151,4 +176,4 @@ function waitFor(tournamentId) {
   return Promise.all([...running.values()].filter(r => r.tournamentId === tournamentId).map(r => r.promise));
 }
 
-module.exports = { evaluate, waitFor, onUpdate, botsFor, liveOf, gameOf, HOUSE_BOTS, houseBots, CAMPAIGN_GAMES };
+module.exports = { evaluate, waitFor, replayKey, replayName, onUpdate, botsFor, liveOf, gameOf, HOUSE_BOTS, houseBots, CAMPAIGN_GAMES };

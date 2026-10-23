@@ -12,7 +12,6 @@ const { avatarOf } = require('./auth');
 const campaign = require('./campaign');
 const { isInviteOnly, canPlay } = require('./access');
 const daily = require('./daily');
-const { sampleBots, defaultRunnable } = require('./grader/house');
 const avatarById = id => avatarOf(db.data.users.find(u => u.id === id) || { teamName: '' });
 const usernameById = id => (db.data.users.find(u => u.id === id) || {}).username || '';
 
@@ -112,17 +111,6 @@ class TournamentManager {
       this.broadcast(t);
       this.io.to('users').emit('tournaments:changed'); // the next match time moved on
     }
-    // evaluation first: every team's bot of the day against every sample bot
-    const samples = sampleBots(t.game).map(b => ({ ...b, custom: defaultRunnable(b.id) }));
-    day.evals = day.evals || {};
-    const evalJobs = day.entries.flatMap(e => samples.filter(b => !(day.evals[e.userId] || {})[b.id]).map(b => ({ e, b })));
-    await pool(evalJobs, PARALLEL_MATCHES, async ({ e, b }) => {
-      const sub = db.data.submissions.find(s => s.id === e.submissionId);
-      const r = await runMatch(sub, b.custom, grader.ensureBuilt);
-      (day.evals[e.userId] = day.evals[e.userId] || {})[b.id] = { winner: r.winner, scoreA: r.scoreA, scoreB: r.scoreB };
-      db.save();
-      this.broadcast(t);
-    });
     const played = new Set(daily.dayMatches(t, day).map(m => m.name));
     const jobs = daily.pairsOf(day).filter(j => !played.has(j.name));
     await pool(jobs, PARALLEL_MATCHES, job => this.playMatch(t, { number: day.number, day: true }, job, 0));

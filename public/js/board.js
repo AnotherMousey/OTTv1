@@ -5,11 +5,12 @@ const BOARD_VERB = { R: 'đập', P: 'trùm', S: 'cắt' }; // what each kind do
 const BOARD_REASON = {
   goal: 'chạm tới góc đích',
   wipeout: 'ăn sạch quân đối thủ',
+  // limit-pieces / -nearest / -distance: games played before the limit became a plain draw
   'limit-pieces': 'hết lượt, còn nhiều quân hơn',
   'limit-nearest': 'hết lượt, có quân gần đích hơn',
   'limit-distance': 'hết lượt, tổng khoảng cách tới đích ngắn hơn',
-  'limit-draw': 'hết lượt, bất phân thắng bại',
-  forfeit: 'đối thủ bị lỗi hoặc quá giờ',
+  'limit-draw': 'hết lượt, hòa',
+  forfeit: 'đối thủ bị lỗi hoặc bị treo',
 };
 
 // A piece token for a 64 x 64 box: a team-coloured disc with the R / P / S character on top.
@@ -137,9 +138,9 @@ function boardRules(maxTurns, cooldownMs) {
     <li>Bot luôn nhìn bàn cờ <b>từ phía mình</b>: quân của bạn xuất phát ở góc <b>dưới trái</b> (hàng <code>y = 0</code> là hàng nhà), đích của bạn là góc <b>trên phải</b> <code>(8, 8)</code>; đích của địch là góc <code>(0, 0)</code> nhà bạn. Bên đi sau được xoay bàn 180° nên thấy y hệt.</li>
     <li>Mỗi lượt đi <b>một quân, một ô</b> theo 8 hướng. Không được đi vào ô có quân mình, hay vào quân địch <b>cùng loại</b> (hai quân cùng loại chặn nhau).</li>
     <li>Đi vào quân địch: <b>búa đập kéo, kéo cắt bao, bao trùm búa</b>. Quân bị khắc thì mất. Lao vào quân khắc mình thì quân của <b>bạn</b> mất, quân địch đứng yên.</li>
-    <li><b>Thắng</b> khi có quân chạm góc đích, hoặc ăn hết quân địch. Sau <b>${maxTurns} nước</b> (tính cả hai bên) mà chưa ai thắng: bên còn nhiều quân hơn thắng, rồi bên có quân gần đích nhất, rồi bên có tổng khoảng cách tới đích ngắn hơn; nếu vẫn bằng thì hòa. Khoảng cách = số bước vua đi, <code>max(|dx|, |dy|)</code>.</li>
+    <li><b>Thắng</b> khi có quân chạm góc đích, hoặc ăn hết quân địch. Sau <b>${maxTurns} nước</b> (tính cả hai bên, kể cả lượt bị mất) mà chưa ai thắng thì <b>hòa</b>.</li>
     <li>Mỗi trận gồm <b>2 ván</b>, mỗi bên được đi trước một ván. Mỗi ván: thắng = <b>3</b> điểm, hòa = <b>1</b>, thua = <b>0</b>.</li>
-    <li>Bạn có <b>1 giây</b> cho mỗi nước (nước đầu của mỗi ván được 10 giây). Nước đi không hợp lệ thì <b>mất lượt</b>. Bot bị lỗi hoặc quá giờ thì <b>thua ván đó</b>. Mỗi ván bot được khởi động lại từ đầu.</li>
+    <li>Bạn có <b>1 giây</b> cho mỗi nước (nước đầu của mỗi ván được 10 giây). Nước đi không hợp lệ hoặc quá 1 giây thì <b>mất lượt</b> (câu trả lời muộn bị bỏ qua). Bot bị lỗi và dừng, hoặc quá giờ 5 lượt liền, thì <b>thua ván đó</b>. Mỗi ván bot được khởi động lại từ đầu.</li>
     <li>Khi nộp, hệ thống biên dịch bot và cho đi thử 5 nước. Chỉ bot ✅ mới được tham gia.</li>
     <li>Mỗi lần nộp cách nhau ít nhất <b>${Math.round(cooldownMs / 1000)} giây</b>.</li>`;
 }

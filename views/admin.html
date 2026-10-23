@@ -129,6 +129,7 @@
     let startTimer = null;
     async function loadTournaments() {
       const { tournaments } = await api('/api/tournaments');
+      tournaments.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)); // newest first
       $('#tbody').innerHTML = tournaments.map(t => {
         const id = encodeURIComponent(t.id);
         const open = t.status === 'open';

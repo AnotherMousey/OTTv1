@@ -14,6 +14,7 @@ class Bot {
     this.waiter = null;
     this.stdoutBuf = '';
     this.stderr = '';
+    this.late = 0; // answers still owed to requests that timed out (thrown away when they come)
   }
 
   start() {
@@ -40,7 +41,8 @@ class Bot {
     while ((i = this.stdoutBuf.indexOf('\n')) >= 0) {
       const line = this.stdoutBuf.slice(0, i).trim();
       this.stdoutBuf = this.stdoutBuf.slice(i + 1);
-      if (line.startsWith('MOVE ') && this.waiter) {
+      if (line.startsWith('MOVE ') && this.late > 0) this.late--;
+      else if (line.startsWith('MOVE ') && this.waiter) {
         const w = this.waiter;
         this.waiter = null;
         w(line.slice(5).trim());
@@ -72,15 +74,18 @@ class Bot {
     return this.ask(`TURN ${myPrev} ${oppPrev}`, timeoutMs);
   }
 
-  // Sends one request line; resolves with the text after "MOVE ", or null.
-  ask(line, timeoutMs) {
+  // Sends one request line; resolves with the text after "MOVE ", or null (then this.dead tells
+  // a dead bot from a slow one). Too slow: the bot is killed, or with { skipLate } it lives on and
+  // its late answer is thrown away.
+  ask(line, timeoutMs, { skipLate = false } = {}) {
     if (this.dead || !this.proc) return Promise.resolve(null);
     return new Promise(resolve => {
       const done = m => { clearTimeout(timer); resolve(m); };
       const timer = setTimeout(() => {
         if (this.waiter === done) {
           this.waiter = null;
-          this.fail(`mất quá ${timeoutMs} ms để ra nước`);
+          if (skipLate) this.late++;
+          else this.fail(`mất quá ${timeoutMs} ms để ra nước`);
           resolve(null);
         }
       }, timeoutMs);

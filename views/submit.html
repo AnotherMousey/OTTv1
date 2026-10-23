@@ -28,7 +28,8 @@
       <div class="row" style="justify-content:space-between;align-items:baseline">
         <h2 style="margin-bottom:0" id="ptitle">Sân luyện tập 🥋</h2>
       </div>
-      <p class="muted" style="font-size:17px;margin:4px 0 0" id="phint">Bấm vào đội của bạn để xem kết quả với từng bot đấu tập. Chi tiết của các đội khác được giữ bí mật. 🤫</p>
+      <p class="muted" style="font-size:17px;margin:4px 0 0" id="phint">Điểm đánh giá: điểm bot mới nhất của bạn khi đấu với các bot đấu tập. Bảng xếp hạng có điểm của mọi đội, kết quả từng trận đấu tập của bạn và nút xem lại trận.</p>
+      <div class="pmine hidden" id="pmine"></div>
       <table class="board practice">
         <thead id="phead"><tr><th>#</th><th>đội</th><th class="hide-sm">ngôn ngữ</th><th>điểm với bot đấu tập</th><th class="hide-sm" style="width:34%"></th></tr></thead>
         <tbody id="prows"></tbody>
@@ -114,7 +115,7 @@ public class Bot {
                  List&lt;Character&gt; opponentMoves)</pre>
         <p>Chỉ viết lớp <code>Bot</code>. <code>java.util.*</code> và <code>Math</code> luôn có sẵn; không được import gì khác. Trong <code>System</code> chỉ dùng được <code>System.out.println</code>/<code>print</code>/<code>printf</code>, <code>System.nanoTime</code>, <code>System.currentTimeMillis</code>. Không dùng reflection, luồng, tệp hay tiến trình.</p>`,
     };
-    let TURNS = 100, GAMES = 5, COOLDOWN = 90000, MAX_SCORE = 300; // updated from the server on load
+    let TURNS = 100, GAMES = 5, COOLDOWN = 90000; // updated from the server on load
     // The board game ("Cờ OTT") has its own starter code, docs and rules.
     const isBoard = () => !!tournament && tournament.game === 'board';
     const templates = () => (isBoard() ? BOARD_TEMPLATES : TEMPLATES);
@@ -141,10 +142,10 @@ public class Bot {
       }
       return `<ul>${commonRules()}
         ${tournament && tournament.daily ? `<li><b>Thi đấu hằng ngày:</b> mỗi ngày lúc <b>${tournament.daily.time}</b>, từ lúc giải mở đến khi giải kết thúc, bot ✅ mới nhất mà mỗi đội nộp trước giờ đó đấu vòng tròn với tất cả các đội khác, mỗi cặp một trận${isBoard() ? ' (2 ván, mỗi bên đi trước một ván)' : ''}. Thắng trận = <b>3</b> điểm, hòa = <b>1</b>, thua = <b>0</b>.</li>
-        <li>Kết quả được giữ kín và công bố sau <b>${Math.round(tournament.daily.publishDelayMs / 60000)} phút</b>: lúc đó bảng xếp hạng (điểm cộng dồn qua các ngày) được cập nhật cho mọi người, và ai cũng xem lại được các trận của ngày đó. Bằng điểm thì xét số trận thắng, rồi điểm phụ (tổng điểm trong các trận).</li>
-        <li><b>Điểm đánh giá:</b> trước vòng tròn mỗi ngày, bot của bạn đấu một trận với từng bot mẫu (thắng 3, hòa 1, thua 0). Bảng xếp hạng hiện điểm hiện tại (cộng dồn) và điểm đánh giá của ngày gần nhất; bằng điểm hiện tại thì điểm đánh giá cao hơn xếp trên.</li>
-        <li>Bạn được nộp bài suốt giải; bot mới chỉ ra sân từ ngày thi đấu tiếp theo. Đội đứng đầu bảng khi giải kết thúc là nhà vô địch.</li>` : '<li>Mỗi vòng thi đấu vòng tròn. Sau mỗi vòng, <b>min(3, số đội − 2)</b> đội ít điểm nhất bị loại, cho đến khi còn 2 đội vào chung kết.</li>'}
-        <li>Mỗi bot ✅ sau đó đấu tập ${isBoard() ? 'một trận (2 ván)' : `${TURNS} lượt`} với từng bot trong ${bots.length} bot của nhà. Tổng điểm hiện trên bảng luyện tập; chỉ bạn thấy điểm chi tiết với từng bot. Các trận luyện tập không tính vào giải.</li>
+        <li>Kết quả được giữ kín và công bố sau <b>${Math.round(tournament.daily.publishDelayMs / 60000)} phút</b>: lúc đó bảng xếp hạng (điểm cộng dồn qua các ngày) được cập nhật cho mọi người, và ai cũng xem lại được các trận của ngày đó. Bằng điểm thì xét điểm đánh giá, rồi số trận thắng, rồi điểm phụ (tổng điểm trong các trận).</li>
+        <li><b>Điểm đánh giá:</b> là điểm đấu tập của bot mới nhất của bạn (tổng điểm khi đấu với các bot đấu tập), cập nhật ngay khi đấu tập xong. Kết quả từng trận và nút xem lại trận nằm ở bảng xếp hạng (bấm vào đội của bạn). Bảng xếp hạng hiện điểm hiện tại (cộng dồn) và điểm đánh giá; bằng điểm hiện tại thì điểm đánh giá cao hơn xếp trên.</li>
+        <li>Bạn được nộp bài suốt giải, trừ lúc <b>khóa nộp bài</b>: từ giờ thi đấu mỗi ngày đến khi công bố kết quả ngày đó. Bot mới chỉ ra sân từ ngày thi đấu tiếp theo. Đội đứng đầu bảng khi giải kết thúc là nhà vô địch.</li>` : '<li>Mỗi vòng thi đấu vòng tròn. Sau mỗi vòng, <b>min(3, số đội − 2)</b> đội ít điểm nhất bị loại, cho đến khi còn 2 đội vào chung kết.</li>'}
+        <li>Mỗi bot ✅ sau đó đấu tập ${isBoard() ? 'một trận (2 ván)' : `${TURNS} lượt`} với từng bot trong ${bots.length} bot của nhà. Tổng điểm là điểm đánh giá của bạn; chỉ bạn (và trọng tài) xem được kết quả và xem lại từng trận đấu tập, trên bảng xếp hạng. Đấu tập không cộng vào điểm hiện tại.</li>
       </ul>`;
     }
 
@@ -201,7 +202,6 @@ public class Bot {
       if (data.turns) TURNS = data.turns;
       if (data.gamesNeeded) GAMES = data.gamesNeeded;
       if (data.cooldownMs) COOLDOWN = data.cooldownMs;
-      if (data.maxScore) MAX_SCORE = data.maxScore;
       if (firstLoad) setupMode();
       else $('#docs').innerHTML = docs() + rulesFor(tournament.mode); // the bot count may have changed
       $('#tname').textContent = tournament.name;
@@ -215,7 +215,12 @@ public class Bot {
     function setupMode() {
       setLang(lang); // now that the game is known: its starter code and docs
       if (isBoard()) $('#tdesc').insertAdjacentHTML('beforebegin', '<span class="tag mode">♟️ cờ OTT</span> ');
-      if (tournament.mode !== 'campaign') return;
+      if (tournament.mode !== 'campaign') {
+        $('#ptitle').textContent = 'Điểm đánh giá của bạn 🥋';
+        $('#pmine').classList.remove('hidden');
+        $('.board.practice').classList.add('hidden');
+        return;
+      }
       $('#ptitle').textContent = 'Bảng chiến dịch 🗺️';
       $('#phint').classList.add('hidden');
       $('#phead').innerHTML = CAMPAIGN_HEAD;
@@ -275,55 +280,19 @@ public class Bot {
       return '';
     }
 
+    // Brawl: only your own score here; everyone's scores and your per-bot results (with replays)
+    // are on the leaderboard.
     function renderPractice() {
       const d = practiceData;
-      $('#practice').classList.toggle('hidden', !d.rows.length);
-      const canOpen = r => ME.role === 'judge' || r.userId === ME.id;
-      $('#prows').innerHTML = d.rows.map(r => {
-        const mine = r.userId === ME.id;
-        const pct = r.total ? Math.round((100 * r.total) / d.maxTotal) : 0;
-        const row = `<tr class="clickable ${mine ? 'me' : ''} ${openUser === r.userId ? 'open' : ''}" data-user="${r.userId}" title="${canOpen(r) ? 'xem chi tiết' : 'không được nhìn trộm!'}">
-          <td class="rank">${r.total === null ? '–' : r.rank}</td>
-          <td><div class="team">${avatarSvg(r.avatar, 36)}<span>${esc(r.teamName)}</span>${r.username ? `<small class="uname">@${esc(r.username)}</small>` : ''}${mine ? '<span class="muted" style="font-size:16px">← bạn!</span>' : ''}${canOpen(r) ? `<span class="caret">${openUser === r.userId ? '▾' : '▸'}</span>` : ''}</div></td>
-          <td class="hide-sm">${r.language ? LANG_LABEL[r.language] : ''}</td>
-          <td class="pts">${r.total === null ? '–' : r.total} ${statusText(r)}</td>
-          <td class="hide-sm"><div class="pbar"><div style="width:${pct}%"></div></div></td>
-        </tr>`;
-        const detail = openUser === r.userId && d.details && d.details.userId === r.userId
-          ? `<tr class="detail"><td colspan="5">${renderDetail(d.details)}</td></tr>` : '';
-        return row + detail;
-      }).join('');
-      $$('#prows tr.clickable').forEach(tr => tr.onclick = () => {
-        const r = d.rows.find(x => x.userId === tr.dataset.user);
-        if (!canOpen(r)) {
-          tr.classList.remove('nope'); void tr.offsetWidth; tr.classList.add('nope');
-          return toast('Không được xem điểm của đội khác 🤫');
-        }
-        openUser = openUser === r.userId ? null : r.userId;
-        if (openUser) loadPractice(); else renderPractice();
-      });
-    }
-
-    function renderDetail(det) {
-      const cards = det.results.map(r => {
-        if (r.status !== 'done') {
-          const label = { queued: '⏳ đang chờ', playing: '🥊 đang đấu…', skipped: 'bỏ qua' }[r.status] || r.status;
-          return `<div class="house pending"><div class="hn">${esc(r.name)}</div><div class="hs muted">${label}</div></div>`;
-        }
-        const res = r.winner === 'A' ? ['win', 'thắng 🎉'] : r.winner === 'B' ? ['loss', 'thua 😵'] : ['draw', 'hòa 🤝'];
-        return `<div class="house ${res[0]}">
-          <div class="hn">${esc(r.name)}</div>
-          <div class="hs"><b>${r.score}</b> <span class="muted">:</span> ${r.botScore} <span class="tag">${res[1]}</span></div>
-          <div class="hbar"><div class="a" style="width:${(r.score / MAX_SCORE) * 100}%"></div></div>
-          ${r.issue ? `<div class="hi">⚠️ ${esc(r.issue)}</div>` : ''}
-        </div>`;
-      }).join('');
-      const done = det.results.filter(r => r.status === 'done');
-      const wins = done.filter(r => r.winner === 'A').length;
-      return `<div class="pdetail">
-        <div class="muted" style="font-size:16px">${esc(det.teamName)} · bot ${LANG_LABEL[det.language]} nộp lúc ${esc(fmtDate(det.submittedAt))} · đến giờ đã thắng ${wins}/${done.length} bot đấu tập</div>
-        <div class="house-grid">${cards}</div>
-      </div>`;
+      const mine = d.rows.find(r => r.userId === ME.id);
+      $('#practice').classList.toggle('hidden', !mine);
+      if (!mine) return;
+      const pct = mine.total ? Math.round((100 * mine.total) / d.maxTotal) : 0;
+      $('#pmine').innerHTML = `
+        <div class="team">${avatarSvg(mine.avatar, 40)}<span>${esc(mine.teamName)}</span></div>
+        <div class="pts">${mine.total === null ? '–' : mine.total}<small class="muted" style="font-size:18px">/${d.maxTotal}</small> ${statusText(mine)}</div>
+        <div class="pbar" style="flex:1;min-width:120px"><div style="width:${pct}%"></div></div>
+        <a class="btn yellow" href="/tournament/${encodeURIComponent(tid)}/live">📊 Xem bảng xếp hạng</a>`;
     }
 
     function tick() {
@@ -334,14 +303,18 @@ public class Bot {
       const left = notYet ? toStart : Date.parse(tournament.deadline) - serverNow();
       $('#cdLabel').textContent = notYet ? 'mở nhận bài sau' : tournament.daily ? 'giải kết thúc sau' : 'hạn nộp bài còn';
       const next = tournament.daily && tournament.daily.nextAt;
-      $('#nextDay').classList.toggle('hidden', !next);
-      if (next) $('#nextDay').textContent = Date.parse(next) > serverNow() ? `📅 trận tiếp theo sau ${fmtCountdown(Date.parse(next) - serverNow())}` : '⚔️ các bot đang ra sân…';
+      const fr = tournament.daily && tournament.daily.frozen;
+      $('#nextDay').classList.toggle('hidden', !next && !fr);
+      if (fr) $('#nextDay').textContent = `⚔️ Ngày ${fr.day} đang thi đấu: tạm khóa nộp bài${fr.publishAt && Date.parse(fr.publishAt) > serverNow() ? `, công bố kết quả sau ${fmtCountdown(Date.parse(fr.publishAt) - serverNow())}` : ' đến khi công bố kết quả'}`;
+      else if (next) $('#nextDay').textContent = Date.parse(next) > serverNow() ? `📅 trận tiếp theo sau ${fmtCountdown(Date.parse(next) - serverNow())} (khóa nộp bài từ lúc đó đến khi công bố kết quả)` : '⚔️ các bot đang ra sân…';
       $('#countdown').textContent = fmtCountdown(left);
       $('#countdown').classList.toggle('soon', !notYet && left > 0 && left < 60000);
       const closed = !notYet && left <= 0;
       const wait = cooldownUntil - Date.now();
-      $('#submit').disabled = notYet || closed || ME.role === 'judge' || wait > 0;
-      $('#submit').textContent = notYet ? '🔒 Chưa đến giờ mở nhận bài' : wait > 0 ? `⏳ Đợi ${Math.ceil(wait / 1000)}s…` : submitLabel();
+      // daily league: no submissions from the match time until the day's results are published
+      const frozen = !!tournament.daily && (!!tournament.daily.frozen || (!!next && Date.parse(next) <= serverNow()));
+      $('#submit').disabled = notYet || closed || frozen || ME.role === 'judge' || wait > 0;
+      $('#submit').textContent = notYet ? '🔒 Chưa đến giờ mở nhận bài' : frozen ? '🔒 Đang thi đấu, mở lại khi công bố kết quả' : wait > 0 ? `⏳ Đợi ${Math.ceil(wait / 1000)}s…` : submitLabel();
       $('#closed').classList.toggle('hidden', !closed);
     }
     function submitLabel() {

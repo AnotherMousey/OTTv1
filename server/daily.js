@@ -3,15 +3,17 @@
 // team's newest working bot (submitted before that moment) plays every other team once: win = 3,
 // draw = 1, loss = 0. A day's results stay hidden until PUBLISH_DELAY_MS after it started (or until
 // its last match ends, if that takes longer); then the cumulative standings update for everyone.
-// Before the round robin, each team's bot of the day plays every sample bot ("bot mẫu", see
-// grader/house.js) once, scored the same way: that is the team's evaluation. The standings sort by
-// points, then by the evaluation of the team's latest published day.
+// A team's evaluation is the practice score of its newest working bot (its total against the
+// sparring bots, see grader/practice.js), live: the same number as on the practice board. The
+// standings sort by points, then by evaluation.
 // t.days = [{ number, slot, startedAt, publishAt, entries, status: 'running' | 'done' | 'published',
-//             evals: { userId: { sampleBotId: { winner, scoreA, scoreB } } }, finishedAt, publishedAt }]
+//             finishedAt, publishedAt }]
 const db = require('./db');
 const { avatarOf } = require('./auth');
 const { canPlay } = require('./access');
-const { sampleBots } = require('./grader/house');
+const { houseBots } = require('./grader/house');
+const { MAX_SCORE } = require('./grader/board');
+const { TURNS } = require('./grader/match');
 
 const DAY_MS = 24 * 3600 * 1000;
 const PUBLISH_DELAY_MS = process.env.PUBLISH_DELAY_MS !== undefined ? +process.env.PUBLISH_DELAY_MS : 10 * 60 * 1000;
@@ -19,17 +21,8 @@ const POINTS = { win: 3, draw: 1, loss: 0 };
 
 const isDaily = t => t.format === 'daily';
 const gameOf = t => (t.game === 'board' ? 'board' : 'rps');
-const resultPoints = winner => (winner === 'A' ? POINTS.win : winner === 'draw' ? POINTS.draw : POINTS.loss);
-// A team's evaluation on one day: points against the sample bots (A = the team's bot).
-function evaluation(t, day, userId) {
-  const results = (day.evals || {})[userId] || {};
-  const bots = sampleBots(gameOf(t));
-  return {
-    points: bots.reduce((s, b) => s + (results[b.id] ? resultPoints(results[b.id].winner) : 0), 0),
-    max: bots.length * POINTS.win,
-    detail: bots.map(b => ({ name: b.name, winner: results[b.id] ? results[b.id].winner : null })),
-  };
-}
+// The most a bot can score in practice: every match against every sparring bot won outright.
+const evalMax = t => houseBots(gameOf(t)).length * (gameOf(t) === 'board' ? MAX_SCORE : TURNS * 3);
 const validTime = v => typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
 
 // Match times in [from, to] (ms timestamps), oldest first.
@@ -87,6 +80,14 @@ const pairsOf = day => {
   }
   return out;
 };
+// Submissions are frozen from a match time until that day's results are published:
+// { day, publishAt } (publishAt is null while the day hasn't been set up yet), or null.
+function frozen(t, now = Date.now()) {
+  const day = (t.days || []).find(d => d.status !== 'published');
+  if (day) return { day: day.number, publishAt: day.publishAt };
+  return dueSlots(t, now).length ? { day: (t.days || []).length + 1, publishAt: null } : null;
+}
+
 const dayMatches = (t, day) => Object.values(db.data.matches[t.id] || {}).filter(m => m.day === day.number);
 const isPublished = (t, dayNumber) => (t.days || []).some(d => d.number === dayNumber && d.status === 'published');
 
@@ -98,7 +99,7 @@ function standings(t) {
   const row = (id, fallbackName) => {
     if (!rows.has(id)) {
       const u = user(id);
-      rows.set(id, { userId: id, teamName: u ? u.teamName : fallbackName, username: u ? u.username : '', avatar: avatarOf(u || { teamName: fallbackName }), language: null, points: 0, eval: null, evalMax: sampleBots(gameOf(t)).length * POINTS.win, evalDetail: null, evalDay: null, w: 0, d: 0, l: 0, played: 0, score: 0, lastDay: null, days: 0 });
+      rows.set(id, { userId: id, teamName: u ? u.teamName : fallbackName, username: u ? u.username : '', avatar: avatarOf(u || { teamName: fallbackName }), language: null, points: 0, eval: null, evalStatus: 'no-bot', evalMax: evalMax(t), w: 0, d: 0, l: 0, played: 0, score: 0, lastDay: null, days: 0 });
     }
     return rows.get(id);
   };
@@ -110,9 +111,6 @@ function standings(t) {
       r.language = e.language;
       r.days++;
       if (day === last) r.lastDay = 0;
-      // the evaluation of the team's latest published day
-      const ev = evaluation(t, day, e.userId);
-      Object.assign(r, { eval: ev.points, evalDetail: ev.detail, evalDay: day.number });
     }
     for (const m of dayMatches(t, day)) {
       const a = row(m.userA, m.teamA), b = row(m.userB, m.teamB);
@@ -124,11 +122,21 @@ function standings(t) {
       if (day === last) { a.lastDay += pa; b.lastDay += pb; }
     }
   }
+  const newest = entriesAt(t, Infinity);
   if (t.status !== 'finished') {
-    for (const e of entriesAt(t, Infinity)) {
+    for (const e of newest) {
       const r = row(e.userId, e.teamName);
       if (!r.language) r.language = e.language;
     }
+  }
+  // evaluation: the practice score of the newest working bot (a stopped run counts what it played)
+  const subs = new Map(db.data.submissions.filter(s => s.tournamentId === t.id).map(s => [s.id, s]));
+  for (const e of newest) {
+    const r = rows.get(e.userId);
+    const p = r && (subs.get(e.submissionId) || {}).practice;
+    if (!r) continue;
+    r.evalStatus = p ? p.status : 'queued';
+    if (p && (p.status === 'done' || p.status === 'stopped')) r.eval = p.total;
   }
   const list = [...rows.values()].sort((x, y) =>
     y.points - x.points || (y.eval ?? -1) - (x.eval ?? -1) || y.w - x.w || y.score - x.score || x.teamName.localeCompare(y.teamName));
@@ -144,18 +152,14 @@ function board(t, now = Date.now()) {
     id: t.id, name: t.name, mode: 'brawl', format: 'daily', status: t.status, error: t.error || null,
     deadline: t.deadline, startsAt: t.startsAt || null, dailyTime: t.dailyTime, nextAt: t.status === 'open' ? nextSlot(t, now) : null,
     publishDelayMs: PUBLISH_DELAY_MS,
-    sampleBots: sampleBots(gameOf(t)).map(b => ({ name: b.name, desc: b.desc })),
     days: (t.days || []).map(d => {
       const fights = (d.entries.length * (d.entries.length - 1)) / 2;
-      const evals = d.entries.length * sampleBots(gameOf(t)).length;
-      const evalsDone = Object.values(d.evals || {}).reduce((s, r) => s + Object.keys(r).length, 0);
-      const played = Math.min(fights, dayMatches(t, d).length);
       return { number: d.number, at: d.slot || d.startedAt, status: d.status, publishAt: d.publishAt, publishedAt: d.publishedAt || null, teams: d.entries.length,
-        phase: evalsDone < evals ? 'evaluating' : 'fighting', played: evalsDone + played, totalMatches: evals + fights };
+        played: Math.min(fights, dayMatches(t, d).length), totalMatches: fights };
     }),
     champion: champ ? { userId: champ.userId, teamName: champ.teamName, avatar: champ.avatar } : null,
     rows,
   };
 }
 
-module.exports = { isDaily, evaluation, validTime, slotsBetween, dueSlots, nextSlot, entriesAt, pairsOf, dayMatches, isPublished, standings, board, PUBLISH_DELAY_MS };
+module.exports = { isDaily, frozen, validTime, slotsBetween, dueSlots, nextSlot, entriesAt, pairsOf, dayMatches, isPublished, standings, board, PUBLISH_DELAY_MS };
