@@ -14,7 +14,6 @@
     <h1 id="tname">Lịch sử trận đấu</h1>
     <div class="match-tools">
       <input id="q" type="search" placeholder="tìm theo mã trận (vd 137) hoặc tên đội / @username" autocomplete="off">
-      <span class="muted" id="hint" style="font-size:16px"></span>
     </div>
     <div class="game-tabs match-days" id="days"></div>
     <div class="box">
@@ -123,7 +122,6 @@
         $('#summary').textContent = e.message;
         return;
       }
-      $('#hint').textContent = data.judge ? 'trọng tài thấy cả những ngày chưa công bố 🎩' : 'chỉ có các ngày đã công bố kết quả';
       render();
     }
 

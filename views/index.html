@@ -50,7 +50,7 @@
         else if (t.status === 'open' && ME.role !== 'judge') actions.push(`<a class="btn red" href="/tournament/${id}/submit">Nộp code ✍️</a>`);
         // the judge sees practice scores and results on the leaderboard (brawl) or the campaign board
         if (t.status === 'open' && ME.role === 'judge' && t.mode === 'campaign') actions.push(`<a class="btn" href="/tournament/${id}/submit">Bảng chiến dịch 🗺️</a>`);
-        if (t.status === 'open' && ME.role === 'judge') actions.push(`<a class="btn" href="/admin">Quản lý</a>`);
+        if (t.status === 'open' && ME.role === 'judge') actions.push(`<a class="btn" href="/admin?t=${encodeURIComponent(t.id)}">Quản lý</a>`);
         if (t.status === 'open' && t.mode === 'campaign' && ME.role !== 'judge') actions.push(`<a class="btn" href="/tournament/${id}/live">Bảng xếp hạng 🗺️</a>`);
         if (t.status === 'open' && t.daily && !waiting) actions.push(`<a class="btn" href="/tournament/${id}/live">Bảng xếp hạng 📅</a>`);
         if (t.status !== 'open') actions.push(`<a class="btn ${t.status === 'running' ? 'yellow' : ''}" href="/tournament/${id}/live">${t.status === 'running' ? 'Xem trực tiếp 👀' : 'Kết quả 🏆'}</a>`);

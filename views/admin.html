@@ -9,9 +9,10 @@
 </head>
 <body>
   <header id="topbar"></header>
-  <main>
+  <main class="full">
     <h1>Bàn trọng tài 🎩</h1>
-    <div>
+    <a id="allLink" class="hidden" href="/admin">← mọi giải đấu và tài khoản</a>
+    <div id="createArea">
       <section class="box">
         <h2 style="margin-top:0">Tạo giải đấu mới</h2>
         <form id="tform">
@@ -45,13 +46,14 @@
       </section>
     </div>
 
-    <div class="squiggle"></div>
-    <h2>Các giải đấu</h2>
-    <div class="box"><table class="plain"><thead><tr><th>tên</th><th>trò chơi · chế độ</th><th>trạng thái</th><th>bắt đầu</th><th>hạn chót</th><th>số đội</th><th></th></tr></thead><tbody id="tbody"></tbody></table></div>
+    <div class="squiggle" id="listSquiggle"></div>
+    <h2 id="listTitle">Các giải đấu</h2>
+    <div class="box"><div class="scroll-table tlist"><table class="plain admin-tlist"><thead><tr><th>tên</th><th>trò chơi · chế độ</th><th>trạng thái</th><th>bắt đầu</th><th>hạn chót</th><th>số đội</th><th></th></tr></thead><tbody id="tbody"></tbody></table></div></div>
     <div id="membersPanel" class="hidden" style="margin-top:20px"></div>
     <div id="botsPanel" class="hidden" style="margin-top:20px"></div>
     <div id="subsPanel" class="hidden" style="margin-top:20px"></div>
 
+    <div id="accountsArea">
     <div class="squiggle"></div>
     <div class="row" style="justify-content:space-between">
       <h2>Tài khoản</h2>
@@ -93,6 +95,7 @@
       </div>
       <div class="scroll-table"><table class="plain"><thead><tr><th></th><th>tên đăng nhập</th><th>đội</th><th>vai trò</th><th></th></tr></thead><tbody id="ubody"></tbody></table></div>
     </div>
+    </div>
   </main>
 
   <script src="/socket.io/socket.io.js"></script>
@@ -132,9 +135,22 @@
     $('#tform').pairing.addEventListener('change', syncModeFields);
     syncModeFields();
 
+    // /admin?t=<id> (the "Quản lý" button of a tournament): only that tournament's settings
+    const focusId = new URLSearchParams(location.search).get('t');
+    if (focusId) {
+      $('#createArea').classList.add('hidden');
+      $('#accountsArea').classList.add('hidden');
+      $('#listSquiggle').classList.add('hidden');
+      $('#allLink').classList.remove('hidden');
+    }
+
     let startTimer = null;
     async function loadTournaments() {
-      const { tournaments } = await api('/api/tournaments');
+      let { tournaments } = await api('/api/tournaments');
+      if (focusId) {
+        tournaments = tournaments.filter(t => t.id === focusId);
+        $('#listTitle').textContent = tournaments.length ? `Quản lý giải: ${tournaments[0].name}` : 'Không tìm thấy giải này (có thể đã bị xóa)';
+      }
       $('#tbody').innerHTML = tournaments.map(t => {
         const id = encodeURIComponent(t.id);
         const open = t.status === 'open';
@@ -149,14 +165,14 @@
           <td>${startCell}</td>
           <td>${open ? `<input type="datetime-local" data-dl="${t.id}" value="${toLocalInput(new Date(t.deadline))}" style="font-size:16px;padding:2px 6px">` : esc(fmtDate(t.deadline))}</td>
           <td>${t.teamsReady}</td>
-          <td class="row" style="gap:6px">
+          <td><div class="tactions">
             <button class="btn small" data-members="${t.id}">${t.access === 'invite' ? '🔒 ' : ''}người chơi</button>
             <button class="btn small" data-bots="${t.id}">bot đấu tập</button>
             <button class="btn small" data-subs="${t.id}">bài nộp</button>
             <button class="btn small" data-hide="${t.id}" title="${t.hidden ? 'cho người chơi thấy giải này' : 'chỉ trọng tài thấy giải này'}">${t.hidden ? '👁 hiện' : '🙈 ẩn'}</button>
             ${waiting ? `<button class="btn small yellow" data-opennow="${t.id}">mở nhận bài ngay</button>` : open ? `${t.daily ? `<button class="btn small yellow" data-playnow="${t.id}" title="thêm một ngày thi đấu ngay bây giờ">⚡ đấu ngay</button><a class="btn small" href="/tournament/${id}/live">xem</a>` : ''}<button class="btn small ${t.daily ? '' : 'yellow'}" data-now="${t.id}">${t.daily ? 'kết thúc giải ngay' : 'đóng nộp bài ngay'}</button>` : `<a class="btn small" href="/tournament/${id}/live">xem</a>`}
             ${t.status !== 'running' ? `<button class="btn small" data-del="${t.id}">🗑</button>` : ''}
-          </td>
+          </div></td>
         </tr>`;
       }).join('') || '<tr><td colspan="7" class="muted">chưa có giải nào</td></tr>';
 
