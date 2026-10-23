@@ -400,11 +400,14 @@ table.plain tr.editing td { background: #fff8d6; }
 .scroll-table { max-height: 300px; overflow-y: auto; overscroll-behavior: contain; border-radius: 8px; }
 .scroll-table thead th { position: sticky; top: 0; background: #fff; z-index: 1; }
 /* the judge's tournament list: scrolls like the account list, actions in a 3-column grid */
-.scroll-table.tlist { max-height: 640px; overflow: auto; }
+.scroll-table.tscroll { max-height: 640px; overflow: auto; }
 table.admin-tlist { min-width: 1100px; }
 table.admin-tlist td:first-child { min-width: 170px; }
 table.admin-tlist td:nth-child(2) { min-width: 260px; }
 table.admin-tlist .tag { white-space: nowrap; }
+/* the judge's account list: the four text columns share the width evenly */
+table.accounts { table-layout: fixed; min-width: 900px; }
+table.accounts td:not(:last-child) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tactions { display: grid; grid-template-columns: repeat(3, auto); gap: 6px; justify-content: start; }
 .tactions .btn { white-space: nowrap; text-align: center; justify-self: start; }
 .member-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 6px; max-height: 420px; overflow: auto; padding: 2px; }

@@ -48,7 +48,7 @@
 
     <div class="squiggle" id="listSquiggle"></div>
     <h2 id="listTitle">Các giải đấu</h2>
-    <div class="box"><div class="scroll-table tlist"><table class="plain admin-tlist"><thead><tr><th>tên</th><th>trò chơi · chế độ</th><th>trạng thái</th><th>bắt đầu</th><th>hạn chót</th><th>số đội</th><th></th></tr></thead><tbody id="tbody"></tbody></table></div></div>
+    <div class="box"><div class="scroll-table tscroll"><table class="plain admin-tlist"><thead><tr><th>tên</th><th>trò chơi · chế độ</th><th>trạng thái</th><th>bắt đầu</th><th>hạn chót</th><th>số đội</th><th></th></tr></thead><tbody id="tbody"></tbody></table></div></div>
     <div id="membersPanel" class="hidden" style="margin-top:20px"></div>
     <div id="botsPanel" class="hidden" style="margin-top:20px"></div>
     <div id="subsPanel" class="hidden" style="margin-top:20px"></div>
@@ -93,7 +93,7 @@
         <select id="userRole" title="lọc theo vai trò"><option value="">mọi vai trò</option><option value="player">người chơi</option><option value="judge">trọng tài</option></select>
         <span class="muted" id="userCount" style="font-size:17px"></span>
       </div>
-      <div class="scroll-table"><table class="plain"><thead><tr><th></th><th>tên đăng nhập</th><th>đội</th><th>vai trò</th><th></th></tr></thead><tbody id="ubody"></tbody></table></div>
+      <div class="scroll-table"><table class="plain accounts"><colgroup><col style="width:56px"><col><col><col><col style="width:380px"></colgroup><thead><tr><th></th><th>tên đăng nhập</th><th>đội</th><th>vai trò</th><th></th></tr></thead><tbody id="ubody"></tbody></table></div>
     </div>
     </div>
   </main>
@@ -155,24 +155,30 @@
         const id = encodeURIComponent(t.id);
         const open = t.status === 'open';
         const waiting = open && t.startsAt && Date.parse(t.startsAt) > serverNow(); // submissions not open yet
-        const startCell = open
+        // the list only shows each tournament; its own page (/admin?t=<id>) changes it
+        const edit = open && !!focusId;
+        const startCell = edit
           ? `<div class="row" style="gap:4px;flex-wrap:nowrap"><input type="datetime-local" data-start="${t.id}" value="${t.startsAt ? toLocalInput(new Date(t.startsAt)) : ''}" style="font-size:16px;padding:2px 6px" title="bỏ trống = nhận bài ngay">${t.startsAt ? `<button class="btn small" data-nostart="${t.id}" title="bỏ giờ bắt đầu">✕</button>` : ''}</div>`
           : t.startsAt ? esc(fmtDate(t.startsAt)) : '<span class="muted">–</span>';
         return `<tr>
           <td>${esc(t.name)}</td>
-          <td>${t.game === 'board' ? '♟️ cờ OTT' : '✊ oẳn tù tì'} · ${t.mode === 'campaign' ? '🗺️ chiến dịch' : '⚔️ hỗn chiến'}${t.daily ? `<br><span class="muted" style="font-size:16px">📅 hằng ngày lúc ${open ? `<input type="time" data-daily="${t.id}" value="${t.daily.time}" style="font-size:15px;padding:0 4px">` : t.daily.time} · ${open ? `<select data-pairing="${t.id}" style="font-size:15px;padding:0 4px"><option value="rr" ${t.daily.pairing === 'rr' ? 'selected' : ''}>vòng tròn</option><option value="swiss" ${t.daily.pairing === 'swiss' ? 'selected' : ''}>Thụy Sĩ</option></select>` : t.daily.pairing === 'swiss' ? 'Thụy Sĩ' : 'vòng tròn'} · ${t.daily.days} ngày đã công bố</span>` : ''}${t.access === 'invite' ? `<br><span class="muted" style="font-size:16px">🔒 ${t.members} đội được chỉ định</span>` : ''}${t.hidden ? '<br><span class="muted" style="font-size:16px">🙈 đang ẩn với người chơi</span>' : ''}</td>
+          <td>${t.game === 'board' ? '♟️ cờ OTT' : '✊ oẳn tù tì'} · ${t.mode === 'campaign' ? '🗺️ chiến dịch' : '⚔️ hỗn chiến'}${t.daily ? `<br><span class="muted" style="font-size:16px">📅 hằng ngày lúc ${edit ? `<input type="time" data-daily="${t.id}" value="${t.daily.time}" style="font-size:15px;padding:0 4px">` : t.daily.time} · ${edit ? `<select data-pairing="${t.id}" style="font-size:15px;padding:0 4px"><option value="rr" ${t.daily.pairing === 'rr' ? 'selected' : ''}>vòng tròn</option><option value="swiss" ${t.daily.pairing === 'swiss' ? 'selected' : ''}>Thụy Sĩ</option></select>` : t.daily.pairing === 'swiss' ? 'Thụy Sĩ' : 'vòng tròn'} · ${t.daily.days} ngày đã công bố</span>` : ''}${t.access === 'invite' ? `<br><span class="muted" style="font-size:16px">🔒 ${t.members} đội được chỉ định</span>` : ''}${t.hidden ? '<br><span class="muted" style="font-size:16px">🙈 đang ẩn với người chơi</span>' : ''}</td>
           <td><span class="tag ${waiting ? 'pending' : t.status}">${waiting ? 'chưa mở' : STATUS_VI[t.status] || t.status}</span></td>
           <td>${startCell}</td>
-          <td>${open ? `<input type="datetime-local" data-dl="${t.id}" value="${toLocalInput(new Date(t.deadline))}" style="font-size:16px;padding:2px 6px">` : esc(fmtDate(t.deadline))}</td>
+          <td>${edit ? `<input type="datetime-local" data-dl="${t.id}" value="${toLocalInput(new Date(t.deadline))}" style="font-size:16px;padding:2px 6px">` : esc(fmtDate(t.deadline))}</td>
           <td>${t.teamsReady}</td>
-          <td><div class="tactions">
+          <td>${!focusId ? `<div class="row" style="gap:6px;flex-wrap:nowrap">
+            <a class="btn small yellow" href="/admin?t=${id}">⚙️ quản lý</a>
+            <a class="btn small" href="/tournament/${id}/live">xem</a>
+          </div>` : `<div class="tactions">
             <button class="btn small" data-members="${t.id}">${t.access === 'invite' ? '🔒 ' : ''}người chơi</button>
             <button class="btn small" data-bots="${t.id}">bot đấu tập</button>
             <button class="btn small" data-subs="${t.id}">bài nộp</button>
             <button class="btn small" data-hide="${t.id}" title="${t.hidden ? 'cho người chơi thấy giải này' : 'chỉ trọng tài thấy giải này'}">${t.hidden ? '👁 hiện' : '🙈 ẩn'}</button>
             ${waiting ? `<button class="btn small yellow" data-opennow="${t.id}">mở nhận bài ngay</button>` : open ? `${t.daily ? `<button class="btn small yellow" data-playnow="${t.id}" title="thêm một ngày thi đấu ngay bây giờ">⚡ đấu ngay</button><a class="btn small" href="/tournament/${id}/live">xem</a>` : ''}<button class="btn small ${t.daily ? '' : 'yellow'}" data-now="${t.id}">${t.daily ? 'kết thúc giải ngay' : 'đóng nộp bài ngay'}</button>` : `<a class="btn small" href="/tournament/${id}/live">xem</a>`}
+            <a class="btn small" href="/tournament/${id}/matches">lịch sử trận</a>
             ${t.status !== 'running' ? `<button class="btn small" data-del="${t.id}">🗑</button>` : ''}
-          </div></td>
+          </div>`}</td>
         </tr>`;
       }).join('') || '<tr><td colspan="7" class="muted">chưa có giải nào</td></tr>';
 
@@ -223,7 +229,8 @@
         if (!confirm('Xóa giải này cùng toàn bộ bài nộp và trận đấu? Không thể hoàn tác.')) return;
         try {
           await api(`/api/admin/tournaments/${encodeURIComponent(b.dataset.del)}`, { method: 'DELETE' });
-          loadTournaments();
+          if (focusId) location.href = '/admin';
+          else loadTournaments();
         } catch (e) { toast(e.message, 'error'); }
       });
       $$('[data-subs]').forEach(b => b.onclick = () => showSubs(b.dataset.subs, tournaments.find(t => t.id === b.dataset.subs).name));
@@ -499,11 +506,11 @@ public class Bot {
       $('#ubody').innerHTML = !shown.length ? `<tr><td colspan="5" class="muted center">${users.length ? 'không tìm thấy tài khoản nào 🙈' : 'chưa có tài khoản nào'}</td></tr>` : shown.map(u => `<tr>
         <td>${avatarSvg(u.avatar, 34)}</td>
         <td>${esc(u.username)}</td><td>${esc(u.teamName)}</td><td>${u.role === 'judge' ? 'trọng tài' : 'người chơi'}</td>
-        <td class="row" style="gap:6px">
+        <td><div class="row" style="gap:6px;flex-wrap:nowrap">
           <button class="btn small" data-rename="${u.id}">đổi tên đội</button>
           <button class="btn small" data-pw="${u.id}">đặt lại mật khẩu</button>
           ${u.id !== ME.id ? `<button class="btn small" data-udel="${u.id}">🗑</button>` : ''}
-        </td></tr>`).join('');
+        </div></td></tr>`).join('');
       $$('[data-rename]').forEach(b => b.onclick = async () => {
         const u = users.find(x => x.id === b.dataset.rename);
         const name = prompt(`Tên đội mới cho @${u.username}:`, u.teamName);
@@ -533,7 +540,7 @@ public class Bot {
     // (buttons wrap), so measure instead of guessing.
     const VISIBLE_USERS = 5;
     function fitUserRows() {
-      const box = $('.scroll-table');
+      const box = $('#ubody').closest('.scroll-table');
       const rows = $$('#ubody tr').slice(0, VISIBLE_USERS);
       const head = box.querySelector('thead').offsetHeight;
       box.style.maxHeight = rows.length ? head + rows.reduce((h, r) => h + r.offsetHeight, 0) + 2 + 'px' : '';
