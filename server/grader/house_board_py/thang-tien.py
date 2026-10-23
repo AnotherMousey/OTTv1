@@ -4,11 +4,11 @@
 # piece that beats it).
 
 
-def play(board, turn, max_turns):
-    cells = setup(board)
+def play(gameState):
+    cells = setup(gameState)
     ms = [m for m in moves(cells) if not suicide(cells, m)] or moves(cells)
     if not ms:
-        return (0, 0, 0, 0)
+        return (0, 0)
     for m in ms:
         if wins(cells, m):
             return to_move(m)

@@ -5,10 +5,10 @@
 THINK = 0.3
 
 
-def play(board, turn, max_turns):
-    cells = setup(board)
+def play(gameState):
+    cells = setup(gameState)
     if not moves(cells):
-        return (0, 0, 0, 0)
+        return (0, 0)
     deadline = time.time() + THINK
     m, _ = best_move(cells, 2)
     depth = 3

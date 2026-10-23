@@ -78,7 +78,7 @@ async function build(sub) {
       prelude.push('-include', 'prelude.hpp');
     }
     if (isBoard) {
-      // the Move struct, for the bot and the harness alike
+      // the Piece and State structs, for the bot and the harness alike
       fs.copyFileSync(path.join(BOARD_HARNESS, 'api.hpp'), path.join(dir, 'board_api.hpp'));
       prelude.push('-include', 'board_api.hpp');
     }

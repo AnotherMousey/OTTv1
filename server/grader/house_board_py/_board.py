@@ -1,25 +1,32 @@
 import random
 import time
 
-# The board arrives as board[y][x]: "R" "P" "S" = mine, "r" "p" "s" = enemy, "." = empty.
-# Here it is flattened to a list `cells`, cell i = (x, y) with i = y * W + x.
-# I start bottom-left and win on the top-right corner; the enemy wins on (0, 0).
+# The game state (gameState.ally / .opponent: pieces with .pid .Type .x .y) is turned into a flat
+# board `cells`: cell i = (x, y) with i = y * W + x, "R" "P" "S" = mine, "r" "p" "s" = enemy,
+# "." = empty. I start bottom-left and win on the top-right corner; the enemy wins on (0, 0).
+# A move is (from cell, to cell); to_move turns it into the answer (pid, direction).
 BEATS = {"R": "S", "S": "P", "P": "R"}     # kind -> the kind it captures
 BEATEN_BY = {"S": "R", "P": "S", "R": "P"}  # kind -> the kind that captures it
 WIN = 100000
 W = H = 9
-NEIGH = []
+NEIGH = [[(x + dx) + (y + dy) * W
+          for dx in (-1, 0, 1) for dy in (-1, 0, 1)
+          if (dx or dy) and 0 <= x + dx < W and 0 <= y + dy < H]
+         for y in range(H) for x in range(W)]
+PID = {}  # cell -> the pid of my piece on it
+# (dx, dy) -> direction number of the answer
+DIRECTION = {(-1, 1): 1, (0, 1): 2, (1, 1): 3, (1, 0): 4, (1, -1): 5, (0, -1): 6, (-1, -1): 7, (-1, 0): 8}
 
 
-def setup(board):
-    global W, H, NEIGH
-    H, W = len(board), len(board[0])
-    if len(NEIGH) != W * H:
-        NEIGH = [[(x + dx) + (y + dy) * W
-                  for dx in (-1, 0, 1) for dy in (-1, 0, 1)
-                  if (dx or dy) and 0 <= x + dx < W and 0 <= y + dy < H]
-                 for y in range(H) for x in range(W)]
-    return [c for row in board for c in row]
+def setup(state):
+    cells = ["."] * (W * H)
+    PID.clear()
+    for p in state.ally:
+        cells[p.y * W + p.x] = p.Type
+        PID[p.y * W + p.x] = p.pid
+    for p in state.opponent:
+        cells[p.y * W + p.x] = p.Type.lower()
+    return cells
 
 
 def mine(c, me=True):
@@ -36,7 +43,7 @@ def xy(i):
 
 def to_move(m):
     (x1, y1), (x2, y2) = xy(m[0]), xy(m[1])
-    return (x1, y1, x2, y2)
+    return (PID[m[0]], DIRECTION[(x2 - x1, y2 - y1)])
 
 
 def dist(i, me=True):

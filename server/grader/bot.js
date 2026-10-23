@@ -1,7 +1,7 @@
 // One running bot process, spoken to over stdin/stdout:
 //   grader -> bot : "TURN <myPrevMove> <opponentPrevMove>"   ('-' on turn 1)
 //   bot -> grader : "MOVE <R|P|S>"   (any other output line is ignored)
-// Board game (see board.js): "TURN <turn> <maxTurns> <W> <H> <cells>" in, "MOVE x1 y1 x2 y2" out.
+// Board game (see board.js): "STATE <turn> <maxTurn> <pieces>" in, "MOVE <pid> <direction>" out.
 const { spawn } = require('child_process');
 const { command, removeContainer } = require('./languages');
 

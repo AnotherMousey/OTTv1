@@ -3,9 +3,9 @@
 # evaluation as Thận Trọng. It never misses a win in one and sees most one-move threats.
 
 
-def play(board, turn, max_turns):
-    cells = setup(board)
+def play(gameState):
+    cells = setup(gameState)
     if not moves(cells):
-        return (0, 0, 0, 0)
+        return (0, 0)
     m, _ = best_move(cells, 2)
     return to_move(m)

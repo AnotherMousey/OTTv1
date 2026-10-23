@@ -4,11 +4,11 @@
 # checks your immediate answers: it won't leave you a winning move or a free capture.
 
 
-def play(board, turn, max_turns):
-    cells = setup(board)
+def play(gameState):
+    cells = setup(gameState)
     ms = moves(cells)
     if not ms:
-        return (0, 0, 0, 0)
+        return (0, 0)
     for m in ms:
         if wins(cells, m):
             return to_move(m)

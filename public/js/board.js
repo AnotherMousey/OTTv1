@@ -22,95 +22,108 @@ function boardPieceMarkup(kind, color) {
 const BOARD_TEMPLATES = {
   python: `import random
 
-# board[y][x]: 'R' 'P' 'S' = your pieces (búa, bao, kéo), 'r' 'p' 's' = enemy pieces, '.' = empty.
-# y = 0 is your home row: you start bottom-left and win by reaching the top-right corner
-# (x = W - 1, y = H - 1) or by capturing every enemy piece. The enemy heads for (0, 0).
-# Return (x1, y1, x2, y2): move your piece at (x1, y1) one step, in any of 8 directions.
-# turn = moves already played in this game (both sides), max_turns = when the game stops.
+# gameState.ally = your pieces, gameState.opponent = the enemy's pieces. Each piece has
+#   .pid (1-9, a piece keeps its number all game), .Type ('R' búa, 'P' bao, 'S' kéo), .x, .y
+# Coordinates are from your side: (0, 0) is bottom-left and y = 0 is your home row. You win by
+# reaching the top-right corner (8, 8) or by capturing every enemy piece; the enemy heads for (0, 0).
+# gameState.currentTurn = moves already played (both sides); the game is a draw at gameState.maxTurn.
+# Return (pid, direction): move that piece one step. Directions (up = toward y = 8):
+#   1 up-left     2 up     3 up-right
+#   8 left                 4 right
+#   7 down-left   6 down   5 down-right
 # Only "import math" / "import random" and the play function are allowed; helpers go inside
 # play. print() is fine for debugging.
 
-def play(board, turn, max_turns):
-    H, W = len(board), len(board[0])
+def play(gameState):
+    STEP = {1: (-1, 1), 2: (0, 1), 3: (1, 1), 4: (1, 0), 5: (1, -1), 6: (0, -1), 7: (-1, -1), 8: (-1, 0)}
     BEATS = {'R': 'S', 'S': 'P', 'P': 'R'}  # piece -> the piece it captures
+    mine = {(p.x, p.y) for p in gameState.ally}
+    enemy = {(p.x, p.y): p.Type for p in gameState.opponent}
     moves = []
-    for y in range(H):
-        for x in range(W):
-            me = board[y][x]
-            if me not in ('R', 'P', 'S'):
+    for p in gameState.ally:
+        for d, (dx, dy) in STEP.items():
+            nx, ny = p.x + dx, p.y + dy
+            if not (0 <= nx <= 8 and 0 <= ny <= 8) or (nx, ny) in mine:
                 continue
-            for dy in (-1, 0, 1):
-                for dx in (-1, 0, 1):
-                    nx, ny = x + dx, y + dy
-                    if (dx or dy) and 0 <= nx < W and 0 <= ny < H:
-                        t = board[ny][nx]
-                        # an empty square, or an enemy piece this one captures
-                        if t == '.' or (t in ('r', 'p', 's') and BEATS[me] == t.upper()):
-                            moves.append((x, y, nx, ny))
+            t = enemy.get((nx, ny))
+            # an empty square, or an enemy piece this one captures
+            if t is None or BEATS[p.Type] == t:
+                moves.append((max(8 - nx, 8 - ny), p.pid, d))
     if not moves:
-        return (0, 0, 0, 0)  # no move: this turn is skipped
+        return (0, 0)  # no move: this turn is skipped
     # head for the goal: the move that ends closest to the top-right corner
     random.shuffle(moves)
-    return min(moves, key=lambda m: max(W - 1 - m[2], H - 1 - m[3]))
+    best = min(moves, key=lambda m: m[0])
+    return (best[1], best[2])
 `,
-  cpp: `// board[y][x]: 'R' 'P' 'S' = your pieces (búa, bao, kéo), 'r' 'p' 's' = enemy pieces, '.' = empty.
-// y = 0 is your home row: you start bottom-left and win by reaching the top-right corner
-// (x = W - 1, y = H - 1) or by capturing every enemy piece. The enemy heads for (0, 0).
-// Return Move{fromX, fromY, toX, toY}: one step, in any of 8 directions.
-// turn = moves already played in this game (both sides), maxTurns = when the game stops.
-// Don't write main(). The standard headers and the Move struct are already included.
+  cpp: `// gameState.ally = your pieces, gameState.opponent = the enemy's pieces. Each Piece has
+//   pid (1-9, a piece keeps its number all game), Type ('R' búa, 'P' bao, 'S' kéo), x, y
+// Coordinates are from your side: (0, 0) is bottom-left and y = 0 is your home row. You win by
+// reaching the top-right corner (8, 8) or by capturing every enemy piece; the enemy heads for (0, 0).
+// gameState.currentTurn = moves already played (both sides); the game is a draw at gameState.maxTurn.
+// Return {pid, direction}: move that piece one step. Directions (up = toward y = 8):
+//   1 up-left     2 up     3 up-right
+//   8 left                 4 right
+//   7 down-left   6 down   5 down-right
+// Don't write main(). The standard headers and the Piece / State structs are already included.
 // Globals keep their values for the whole game. Debug with cerr.
 
-Move play(const std::vector<std::string>& board, int turn, int maxTurns) {
-    int H = board.size(), W = board[0].size();
-    Move best{0, 0, 0, 0};  // stays invalid (turn skipped) if there is no move
+std::pair<int, int> play(const State& gameState) {
+    const int DX[9] = {0, -1, 0, 1, 1, 1, 0, -1, -1};
+    const int DY[9] = {0, 1, 1, 1, 0, -1, -1, -1, 0};
+    char at[9][9] = {};  // at[y][x]: 'R' 'P' 'S' = mine, 'r' 'p' 's' = enemy, 0 = empty
+    for (const Piece& p : gameState.ally) at[p.y][p.x] = p.Type;
+    for (const Piece& p : gameState.opponent) at[p.y][p.x] = p.Type - 'A' + 'a';
+    std::pair<int, int> best{0, 0};  // stays invalid (turn skipped) if there is no move
     int bestDist = 1000;
-    for (int y = 0; y < H; y++)
-        for (int x = 0; x < W; x++) {
-            char me = board[y][x];
-            if (me != 'R' && me != 'P' && me != 'S') continue;
-            for (int dy = -1; dy <= 1; dy++)
-                for (int dx = -1; dx <= 1; dx++) {
-                    int nx = x + dx, ny = y + dy;
-                    if ((dx == 0 && dy == 0) || nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
-                    char t = board[ny][nx];
-                    bool captures = (me == 'R' && t == 's') || (me == 'S' && t == 'p') || (me == 'P' && t == 'r');
-                    if (t != '.' && !captures) continue;
-                    // head for the goal: the move that ends closest to the top-right corner
-                    int d = std::max(W - 1 - nx, H - 1 - ny);
-                    if (d < bestDist) { bestDist = d; best = {x, y, nx, ny}; }
-                }
+    for (const Piece& p : gameState.ally)
+        for (int d = 1; d <= 8; d++) {
+            int nx = p.x + DX[d], ny = p.y + DY[d];
+            if (nx < 0 || ny < 0 || nx > 8 || ny > 8) continue;
+            char t = at[ny][nx];
+            // an empty square, or an enemy piece this one captures
+            bool captures = (p.Type == 'R' && t == 's') || (p.Type == 'S' && t == 'p') || (p.Type == 'P' && t == 'r');
+            if (t != 0 && !captures) continue;
+            // head for the goal: the move that ends closest to the top-right corner
+            int dist = std::max(8 - nx, 8 - ny);
+            if (dist < bestDist) { bestDist = dist; best = {p.pid, d}; }
         }
     return best;
 }
 `,
-  java: `// board[y][x]: 'R' 'P' 'S' = your pieces (búa, bao, kéo), 'r' 'p' 's' = enemy pieces, '.' = empty.
-// y = 0 is your home row: you start bottom-left and win by reaching the top-right corner
-// (x = W - 1, y = H - 1) or by capturing every enemy piece. The enemy heads for (0, 0).
-// Return {fromX, fromY, toX, toY}: one step, in any of 8 directions.
-// turn = moves already played in this game (both sides), maxTurns = when the game stops.
-// The class must be called Bot (no package line). One Bot object plays a whole game.
+  java: `// gameState.ally = your pieces, gameState.opponent = the enemy's pieces (List<Piece>). Each Piece
+// has pid (1-9, a piece keeps its number all game), Type ('R' búa, 'P' bao, 'S' kéo), x, y.
+// Coordinates are from your side: (0, 0) is bottom-left and y = 0 is your home row. You win by
+// reaching the top-right corner (8, 8) or by capturing every enemy piece; the enemy heads for (0, 0).
+// gameState.currentTurn = moves already played (both sides); the game is a draw at gameState.maxTurn.
+// Return {pid, direction}: move that piece one step. Directions (up = toward y = 8):
+//   1 up-left     2 up     3 up-right
+//   8 left                 4 right
+//   7 down-left   6 down   5 down-right
+// The class must be called Bot (no package line). Piece and State are provided.
+// One Bot object plays a whole game.
 
 public class Bot {
-    public int[] play(char[][] board, int turn, int maxTurns) {
-        int H = board.length, W = board[0].length;
-        int[] best = {0, 0, 0, 0};  // stays invalid (turn skipped) if there is no move
+    static final int[] DX = {0, -1, 0, 1, 1, 1, 0, -1, -1};
+    static final int[] DY = {0, 1, 1, 1, 0, -1, -1, -1, 0};
+
+    public int[] play(State gameState) {
+        char[][] at = new char[9][9];  // at[y][x]: 'R' 'P' 'S' = mine, 'r' 'p' 's' = enemy, 0 = empty
+        for (Piece p : gameState.ally) at[p.y][p.x] = p.Type;
+        for (Piece p : gameState.opponent) at[p.y][p.x] = Character.toLowerCase(p.Type);
+        int[] best = {0, 0};  // stays invalid (turn skipped) if there is no move
         int bestDist = 1000;
-        for (int y = 0; y < H; y++)
-            for (int x = 0; x < W; x++) {
-                char me = board[y][x];
-                if (me != 'R' && me != 'P' && me != 'S') continue;
-                for (int dy = -1; dy <= 1; dy++)
-                    for (int dx = -1; dx <= 1; dx++) {
-                        int nx = x + dx, ny = y + dy;
-                        if ((dx == 0 && dy == 0) || nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
-                        char t = board[ny][nx];
-                        boolean captures = (me == 'R' && t == 's') || (me == 'S' && t == 'p') || (me == 'P' && t == 'r');
-                        if (t != '.' && !captures) continue;
-                        // head for the goal: the move that ends closest to the top-right corner
-                        int d = Math.max(W - 1 - nx, H - 1 - ny);
-                        if (d < bestDist) { bestDist = d; best = new int[] {x, y, nx, ny}; }
-                    }
+        for (Piece p : gameState.ally)
+            for (int d = 1; d <= 8; d++) {
+                int nx = p.x + DX[d], ny = p.y + DY[d];
+                if (nx < 0 || ny < 0 || nx > 8 || ny > 8) continue;
+                char t = at[ny][nx];
+                // an empty square, or an enemy piece this one captures
+                boolean captures = (p.Type == 'R' && t == 's') || (p.Type == 'S' && t == 'p') || (p.Type == 'P' && t == 'r');
+                if (t != 0 && !captures) continue;
+                // head for the goal: the move that ends closest to the top-right corner
+                int dist = Math.max(8 - nx, 8 - ny);
+                if (dist < bestDist) { bestDist = dist; best = new int[] {p.pid, d}; }
             }
         return best;
     }
@@ -120,22 +133,39 @@ public class Bot {
 
 const BOARD_DOCS = {
   python: `<p>Tệp: <code>bot.py</code>, viết một hàm:</p>
-    <pre>def play(board: list[list[str]], turn: int, max_turns: int) -> (x1, y1, x2, y2)</pre>
-    <p>Chỉ được có dòng <code>import math</code> / <code>import random</code> và hàm <code>play</code> (hàm phụ, hằng số đặt bên trong <code>play</code>). Không dùng được thư viện khác, <code>open</code>, <code>eval</code>, class hay tên bắt đầu bằng <code>__</code>. Muốn nhớ gì giữa các lượt thì dùng tham số mặc định, ví dụ <code>memo={}</code>.</p>`,
+    <pre>def play(gameState) -> (pid, direction)
+
+gameState.ally         # list quân của bạn
+gameState.opponent     # list quân địch
+gameState.maxTurn      # 1000: tới đây thì hòa
+gameState.currentTurn  # số nước đã đi trong ván (cả hai bên)
+piece.pid, piece.Type, piece.x, piece.y</pre>
+    <p>Chỉ được có dòng <code>import math</code> / <code>import random</code> và hàm <code>play</code> (hàm phụ, hằng số đặt bên trong <code>play</code>). Không dùng được thư viện khác, <code>open</code>, <code>eval</code>, class hay tên bắt đầu bằng <code>__</code>. Muốn nhớ gì giữa các lượt thì dùng tham số mặc định, ví dụ <code>def play(gameState, memo={})</code>.</p>`,
   cpp: `<p>Tệp: <code>bot.cpp</code> (C++17, biên dịch bằng g++ -O2), viết một hàm:</p>
-    <pre>Move play(const std::vector&lt;std::string&gt;&amp; board, int turn, int maxTurns);
-struct Move { int fromX, fromY, toX, toY; };  // có sẵn, đừng khai báo lại</pre>
+    <pre>std::pair&lt;int, int&gt; play(const State&amp; gameState);  // trả về {pid, direction}
+
+// có sẵn, đừng khai báo lại:
+struct Piece { int pid; char Type; int x, y; };
+struct State {
+    std::vector&lt;Piece&gt; ally, opponent;
+    int maxTurn, currentTurn;
+};</pre>
     <p>Chỉ viết hàm (và hàm phụ, struct, biến toàn cục nếu cần). Các thư viện chuẩn thường dùng (<code>vector</code>, <code>string</code>, <code>algorithm</code>, <code>queue</code>, ... hoặc <code>bits/stdc++.h</code>) đã có sẵn. Không được dùng <code>#define</code>/<code>#pragma</code>, include thư viện khác, đọc ghi tệp hay gọi hệ thống.</p>`,
   java: `<p>Tệp: <code>Bot.java</code>, một lớp public tên <code>Bot</code> (không có dòng <code>package</code>) với phương thức:</p>
-    <pre>public int[] play(char[][] board, int turn, int maxTurns)  // trả về {fromX, fromY, toX, toY}</pre>
+    <pre>public int[] play(State gameState)  // trả về {pid, direction}
+
+// có sẵn, đừng khai báo lại:
+class Piece { int pid; char Type; int x, y; }
+class State { List&lt;Piece&gt; ally, opponent; int maxTurn, currentTurn; }</pre>
     <p>Chỉ viết lớp <code>Bot</code>. <code>java.util.*</code> và <code>Math</code> luôn có sẵn; không được import gì khác. Trong <code>System</code> chỉ dùng được <code>System.out.println</code>/<code>print</code>/<code>printf</code>, <code>System.nanoTime</code>, <code>System.currentTimeMillis</code>. Không dùng reflection, luồng, tệp hay tiến trình.</p>`,
 };
 
 // Rules shared by both modes (the submit page adds the brawl / campaign specifics).
 function boardRules(maxTurns, cooldownMs) {
   return `
-    <li><b>Bàn cờ 9×9</b>, mỗi bên 9 quân: 3 <b>búa</b> (<code>R</code>), 3 <b>bao</b> (<code>P</code>), 3 <b>kéo</b> (<code>S</code>). <code>board[y][x]</code>: chữ hoa là quân của bạn, chữ thường là quân địch, <code>.</code> là ô trống.</li>
+    <li><b>Bàn cờ 9×9</b>, mỗi bên 9 quân: 3 <b>búa</b> (<code>R</code>), 3 <b>bao</b> (<code>P</code>), 3 <b>kéo</b> (<code>S</code>). Mỗi lượt bot nhận <code>gameState</code>: <code>ally</code> là các quân của bạn, <code>opponent</code> là các quân địch; mỗi quân có <code>pid</code> (số hiệu 1–9, giữ nguyên cả ván), <code>Type</code> (<code>R</code>/<code>P</code>/<code>S</code>), <code>x</code>, <code>y</code> (0–8).</li>
     <li>Bot luôn nhìn bàn cờ <b>từ phía mình</b>: quân của bạn xuất phát ở góc <b>dưới trái</b> (hàng <code>y = 0</code> là hàng nhà), đích của bạn là góc <b>trên phải</b> <code>(8, 8)</code>; đích của địch là góc <code>(0, 0)</code> nhà bạn. Bên đi sau được xoay bàn 180° nên thấy y hệt.</li>
+    <li>Bot trả về <b>(pid, hướng)</b>: quân nào đi, đi hướng nào. Hướng (lên = về phía hàng <code>y = 8</code>): <b>1</b> lên-trái, <b>2</b> lên, <b>3</b> lên-phải, <b>4</b> phải, <b>5</b> xuống-phải, <b>6</b> xuống, <b>7</b> xuống-trái, <b>8</b> trái.</li>
     <li>Mỗi lượt đi <b>một quân, một ô</b> theo 8 hướng. Không được đi vào ô có quân mình, hay vào quân địch <b>cùng loại</b> (hai quân cùng loại chặn nhau).</li>
     <li>Đi vào quân địch: <b>búa đập kéo, kéo cắt bao, bao trùm búa</b>. Quân bị khắc thì mất. Lao vào quân khắc mình thì quân của <b>bạn</b> mất, quân địch đứng yên.</li>
     <li><b>Thắng</b> khi có quân chạm góc đích, hoặc ăn hết quân địch. Sau <b>${maxTurns} nước</b> (tính cả hai bên, kể cả lượt bị mất) mà chưa ai thắng thì <b>hòa</b>.</li>

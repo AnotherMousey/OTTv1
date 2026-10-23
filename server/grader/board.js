@@ -1,8 +1,9 @@
 // Board game matches ("Cờ OTT", rules in public/js/board-rules.js).
 // Every game starts each bot as a fresh process. The bot is asked for a move on its own turns:
-//   grader -> bot : "TURN <turn> <maxTurns> <W> <H> <cells>"  (cells: W*H chars, row y = 0 first,
-//                   from the bot's own side: uppercase = mine, lowercase = enemy, '.' = empty)
-//   bot -> grader : "MOVE x1 y1 x2 y2"
+//   grader -> bot : "STATE <currentTurn> <maxTurn> <n> <pid type x y> * n <m> <pid type x y> * m"
+//                   (its n pieces, then the enemy's m, from the bot's own side: see R.pieces)
+//   bot -> grader : "MOVE <pid> <direction 1-8>"
+// The harnesses turn this into play(gameState) -> (pid, direction).
 // An illegal move, or one that takes over MOVE_TIMEOUT_MS, skips that turn (a late answer is thrown
 // away). A bot that crashes, or misses HUNG_TURNS turns in a row (stuck), loses the game.
 // A match is 2 games with the sides swapped (white moves first): win = 3, draw = 1, loss = 0 per game.
@@ -15,13 +16,17 @@ const MOVE_TIMEOUT_MS = +process.env.MOVE_TIMEOUT_MS || 1000;
 const HUNG_TURNS = 5;
 const MAX_SCORE = GAMES * 3; // best possible match score
 
-const request = (g, side) => `TURN ${g.turn} ${R.MAX_TURNS} ${R.W} ${R.H} ${R.view(g, side)}`;
+function request(g, side) {
+  const { ally, opponent } = R.pieces(g, side);
+  const list = ps => [ps.length, ...ps.map(p => `${p.pid} ${p.type} ${p.x} ${p.y}`)].join(' ');
+  return `STATE ${g.turn} ${R.MAX_TURNS} ${list(ally)} ${list(opponent)}`;
+}
 
-// "x1 y1 x2 y2" (in the bot's view) -> a move on the real board, or null.
-function parse(raw, side) {
+// "pid direction" -> { move } on the real board, or { error }.
+function parse(g, raw, side) {
   const nums = String(raw ?? '').trim().split(/[\s,]+/).filter(Boolean).map(Number);
-  if (nums.length !== 4 || !nums.every(Number.isInteger)) return null;
-  return R.fromView(side, nums);
+  if (nums.length !== 2) return { error: 'phải trả về 2 số: số hiệu quân và hướng (1-8)' };
+  return R.fromAnswer(g, side, nums[0], nums[1]);
 }
 
 // One game. bots = { white: Bot, black: Bot }. Returns { moves, winner, reason, issues } where
@@ -50,11 +55,10 @@ async function playGame(bots) {
       break;
     }
     missed[side] = 0;
-    const move = parse(raw, side);
-    const why = move ? R.problem(g, side, move) : `"${String(raw).slice(0, 30)}" không phải 4 số x1 y1 x2 y2`;
-    if (why && !issues[side]) issues[side] = `Lượt ${g.turn + 1}: nước đi "${String(raw).slice(0, 30)}" không hợp lệ (${why}), mất lượt`;
-    R.apply(g, why ? null : move);
-    moves.push(why ? null : move);
+    const { move, error } = parse(g, raw, side);
+    if (error && !issues[side]) issues[side] = `Lượt ${g.turn + 1}: nước đi "${String(raw).slice(0, 30)}" không hợp lệ (${error}), mất lượt`;
+    R.apply(g, move || null);
+    moves.push(move || null);
   }
   return { moves, winner: g.winner, reason: g.reason, issues };
 }
@@ -101,9 +105,8 @@ async function smokeTest(sub, describe) {
     for (let i = 0; i < 5; i++) {
       const raw = await bot.ask(request(g, 'white'), i === 0 ? FIRST_MOVE_TIMEOUT_MS : MOVE_TIMEOUT_MS);
       if (raw === null) return { ok: false, message: `Bot của bạn ${bot.reason || 'không phản hồi'} ở nước thử thứ ${i + 1}.`, bot };
-      const move = parse(raw, 'white');
-      const why = move ? R.problem(g, 'white', move) : `"${String(raw).slice(0, 30)}" không phải 4 số x1 y1 x2 y2`;
-      if (why) return { ok: false, message: `Nước thử thứ ${i + 1} của bot ("${String(raw).slice(0, 30)}") không hợp lệ: ${why}.\nBàn cờ lúc đó (board[y][x], hàng trên cùng là y = ${R.H - 1}):\n${describe(g)}`, bot };
+      const { move, error } = parse(g, raw, 'white');
+      if (error) return { ok: false, message: `Nước thử thứ ${i + 1} của bot ("${String(raw).slice(0, 30)}") không hợp lệ: ${error}.\n${describe(g)}`, bot };
       R.apply(g, move);
       if (g.winner) break;
       const replies = R.legalMoves(g);
@@ -116,10 +119,12 @@ async function smokeTest(sub, describe) {
   }
 }
 
-// The board as the bot saw it (white's view), top row first, for error messages.
+// What the bot saw (white's view), for error messages: its pieces, then the board drawn top row
+// first (uppercase = its own pieces, lowercase = the enemy's).
 function describe(g) {
+  const { ally } = R.pieces(g, 'white');
   const v = R.view(g, 'white');
-  const rows = [];
+  const rows = [`Quân của bạn lúc đó (pid Type x y): ${ally.map(p => `${p.pid} ${p.type} ${p.x} ${p.y}`).join(' · ')}`, `Bàn cờ (hàng trên cùng là y = ${R.H - 1}):`];
   for (let y = R.H - 1; y >= 0; y--) rows.push(`${y} ${v.slice(y * R.W, (y + 1) * R.W).split('').join(' ')}`);
   rows.push('  ' + Array.from({ length: R.W }, (_, x) => x).join(' '));
   return rows.join('\n');

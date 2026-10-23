@@ -1,6 +1,6 @@
 # Grader harness for Python bots. Your bot.py must define:
 #   def play(my_moves, opponent_moves) -> str                      (rock-paper-scissors)
-#   def play(board, turn, max_turns) -> (x1, y1, x2, y2)            (board game, with --board)
+#   def play(gameState) -> (pid, direction)                         (board game, with --board)
 #
 #   python _runner.py bot.py                 trusted code (built-in and judge bots): runs as is
 #   python _runner.py --restricted bot.py    player code: checked, then run with safe builtins only
@@ -36,6 +36,8 @@ ALLOWED_ATTRS = set().union(*(_public(t) for t in (str, list, dict, set, frozens
 for _m in ALLOWED_MODULES.values():
     ALLOWED_ATTRS |= {n for n in _public(_m) if not isinstance(getattr(_m, n), types.ModuleType)}
 ALLOWED_ATTRS -= {"format", "format_map"}  # format strings can walk attributes
+# board game: the fields of gameState and of its pieces
+STATE_ATTRS = {"ally", "opponent", "maxTurn", "currentTurn", "pid", "Type", "x", "y"}
 
 FORBIDDEN_NODES = {
     ast.ClassDef: "khai báo class", ast.AsyncFunctionDef: "async", ast.Await: "await",
@@ -53,8 +55,9 @@ def _safe_import(name, globals=None, locals=None, fromlist=(), level=0):
 
 def check(src, board=False):
     """Returns None if the code is allowed, otherwise a message saying why not."""
-    signature = "play(board, turn, max_turns)" if board else "play(my_moves, opponent_moves)"
-    min_args = 3 if board else 2
+    signature = "play(gameState)" if board else "play(my_moves, opponent_moves)"
+    min_args = 1 if board else 2
+    allowed = ALLOWED_ATTRS | STATE_ATTRS if board else ALLOWED_ATTRS
     try:
         tree = ast.parse(src, "bot.py")
     except SyntaxError as e:
@@ -109,7 +112,7 @@ def check(src, board=False):
             if not isinstance(node, ast.keyword):
                 bound.update(names)
         elif isinstance(node, ast.Attribute):
-            if node.attr not in ALLOWED_ATTRS:
+            if node.attr not in allowed:
                 return bad(node, f"không được dùng thuộc tính `.{node.attr}`")
         for n in names:
             if n.startswith("__"):
@@ -142,11 +145,26 @@ def load_trusted(path):
 
 
 def board_move(play, line):
-    # "TURN <turn> <maxTurns> <W> <H> <cells>" -> board[y][x], a list of rows of 1-letter strings
+    # "STATE <currentTurn> <maxTurn> <n> <pid type x y>*n <m> <pid type x y>*m" -> gameState with
+    # .ally / .opponent (lists of pieces with .pid .Type .x .y), .maxTurn and .currentTurn
     parts = line.split()
-    turn, max_turns, w, h, cells = int(parts[1]), int(parts[2]), int(parts[3]), int(parts[4]), parts[5]
-    board = [list(cells[y * w:(y + 1) * w]) for y in range(h)]
-    move = play(board, turn, max_turns)
+    pos = 3
+
+    def pieces():
+        nonlocal pos
+        n = int(parts[pos])
+        pos += 1
+        out = []
+        for _ in range(n):
+            pid, kind, x, y = parts[pos:pos + 4]
+            out.append(types.SimpleNamespace(pid=int(pid), Type=kind, x=int(x), y=int(y)))
+            pos += 4
+        return out
+
+    ally = pieces()
+    opponent = pieces()
+    state = types.SimpleNamespace(ally=ally, opponent=opponent, maxTurn=int(parts[2]), currentTurn=int(parts[1]))
+    move = play(state)
     try:
         return " ".join(str(int(v)) for v in move)
     except (TypeError, ValueError):
@@ -178,7 +196,7 @@ def main():
         if line == "END":
             break
         if board:
-            if line.startswith("TURN "):
+            if line.startswith("STATE "):
                 real_stdout.write("\nMOVE " + board_move(play, line) + "\n")
                 real_stdout.flush()
             continue

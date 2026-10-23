@@ -218,11 +218,10 @@ app.put('/api/me/avatar', apiAuth, (req, res) => {
 
 // ---------- tournaments ----------
 app.get('/api/tournaments', apiAuth, (req, res) => {
-  const order = { running: 0, open: 1, finished: 2 };
   const list = db.data.tournaments
     .filter(t => canSee(t, req.user))
     .map(t => publicTournament(t, req.user))
-    .sort((a, b) => order[a.status] - order[b.status] || (a.status === 'finished' ? (a.deadline < b.deadline ? 1 : -1) : a.deadline < b.deadline ? -1 : 1));
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)); // newest first
   res.json({ tournaments: list, serverNow: Date.now() });
 });
 

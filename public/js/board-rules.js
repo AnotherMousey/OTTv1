@@ -113,7 +113,35 @@
   }
   const fromView = (side, [x1, y1, x2, y2]) => (side === 'white' ? [x1, y1, x2, y2] : [W - 1 - x1, H - 1 - y1, W - 1 - x2, H - 1 - y2]);
 
-  const api = { W, H, MAX_TURNS, BEATS, GOAL, other, square, newGame, initialBoard, count, problem, legalMoves, apply, forfeit, view, fromView };
+  // The game state a bot gets, in its own view: { ally, opponent } with each piece as
+  // { pid, type, x, y }. pid = 1..9, fixed for the whole game (each side numbers its own pieces).
+  function pieces(g, side) {
+    const out = { ally: [], opponent: [] };
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const c = side === 'white' ? g.board[y][x] : g.board[H - 1 - y][W - 1 - x];
+      if (c) out[c.side === side ? 'ally' : 'opponent'].push({ pid: +c.id.slice(1) + 1, type: c.kind, x, y });
+    }
+    out.ally.sort((a, b) => a.pid - b.pid);
+    out.opponent.sort((a, b) => a.pid - b.pid);
+    return out;
+  }
+
+  // A bot answers (pid, direction). Directions in its own view, up = toward its goal row:
+  // 1 up-left, 2 up, 3 up-right, 4 right, 5 down-right, 6 down, 7 down-left, 8 left.
+  const DIRS = [null, [-1, 1], [0, 1], [1, 1], [1, 0], [1, -1], [0, -1], [-1, -1], [-1, 0]];
+  // -> { move: [x1, y1, x2, y2] on the real board } or { error: why it isn't a legal move }
+  function fromAnswer(g, side, pid, dir) {
+    if (!Number.isInteger(pid) || !Number.isInteger(dir)) return { error: 'phải trả về 2 số nguyên: số hiệu quân và hướng' };
+    if (dir < 1 || dir > 8) return { error: 'hướng phải từ 1 đến 8' };
+    const p = pieces(g, side).ally.find(q => q.pid === pid);
+    if (!p) return { error: `không có quân nào của bạn mang số ${pid}` };
+    const [dx, dy] = DIRS[dir];
+    const move = fromView(side, [p.x, p.y, p.x + dx, p.y + dy]);
+    const why = problem(g, side, move);
+    return why ? { error: why } : { move };
+  }
+
+  const api = { W, H, MAX_TURNS, BEATS, GOAL, DIRS, other, square, newGame, initialBoard, count, problem, legalMoves, apply, forfeit, view, fromView, pieces, fromAnswer };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.BoardRules = api;
 })(typeof window !== 'undefined' ? window : globalThis);

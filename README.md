@@ -109,17 +109,21 @@ Brawl, campaign, invite-only and hidden tournaments work the same way for both.
 
   Bots always see the board from their own side (black's view is rotated 180°): you start
   bottom-left, your goal is the top-right corner, and the enemy's goal is `(0, 0)`.
-  `board[y][x]` is `'R' 'P' 'S'` for your pieces, `'r' 'p' 's'` for enemy pieces and `'.'` for empty.
+  Every turn the bot gets `gameState`: `ally` (its pieces), `opponent` (the enemy's), `maxTurn`
+  (1000) and `currentTurn` (moves played so far, both sides). Each piece has `pid` (1–9, kept for
+  the whole game), `Type` (`'R'`, `'P'` or `'S'`), `x` and `y` (0–8). The bot returns
+  `(pid, direction)`, direction 1–8 clockwise from up-left: 1 up-left, 2 up, 3 up-right, 4 right,
+  5 down-right, 6 down, 7 down-left, 8 left (up = toward its goal row).
 
   | Language | Signature |
   |---|---|
-  | Python | `def play(board, turn, max_turns) -> (x1, y1, x2, y2)` |
-  | C++17 | `Move play(const std::vector<std::string>& board, int turn, int maxTurns)` (`struct Move { int fromX, fromY, toX, toY; }` is provided) |
-  | Java | `public int[] play(char[][] board, int turn, int maxTurns)` returning `{fromX, fromY, toX, toY}` |
+  | Python | `def play(gameState) -> (pid, direction)` |
+  | C++17 | `std::pair<int, int> play(const State& gameState)` (`struct Piece { int pid; char Type; int x, y; }` and `struct State { std::vector<Piece> ally, opponent; int maxTurn, currentTurn; }` are provided) |
+  | Java | `public int[] play(State gameState)` returning `{pid, direction}` (`Piece` and `State` with `List<Piece>` fields are provided) |
 
-  The same player-code restrictions apply. Each game starts the bot as a fresh process. An illegal
-  move skips that turn, and a crash or timeout loses the game. Protocol:
-  `TURN <turn> <maxTurns> <W> <H> <cells>` in, `MOVE x1 y1 x2 y2` out
+  The same player-code restrictions apply. Each game starts the bot as a fresh process. Protocol:
+  `STATE <currentTurn> <maxTurn> <n> <pid type x y>… <m> <pid type x y>…` in (ally pieces, then
+  opponent pieces), `MOVE <pid> <direction>` out
   ([harness/board/](server/grader/harness/board/), plus `--board` in [runner.py](server/grader/harness/runner.py)).
   The 6 built-in sparring bots, easiest first, are Loạn Bộ (random), Thẳng Tiến (races for the corner),
   Thận Trọng (one move ahead, never hangs a piece), Săn Mồi (hunter), Tính Toán (2-ply minimax) and
