@@ -1,12 +1,14 @@
 // Practice evaluation: every working submission plays one match against each house bot
 // (RPS: one 100-turn game against each of the 10; board game: two games, one per side, against
-// each of the 6). Results live on submission.practice. Outside campaigns each match is also kept
+// each of the 5). Results live on submission.practice. Outside campaigns each match is also kept
 // for replay: one per team and sparring bot, the newest bot's run replacing the older one.
+const os = require('os');
 const db = require('../db');
 const { HOUSE_BOTS, houseBots, defaultRunnable } = require('./house');
 const { runMatch } = require('./match');
 
-const PARALLEL = +process.env.PRACTICE_PARALLEL || 2;
+// practice matches at the same time, across all submissions (default: one per CPU)
+const PARALLEL = +process.env.PRACTICE_PARALLEL || os.cpus().length;
 // Campaign: a sparring bot only counts as beaten if the submission wins this many games
 // against it in a row. The first game it doesn't win ends the series.
 const CAMPAIGN_GAMES = +process.env.CAMPAIGN_GAMES || 5;
@@ -176,4 +178,4 @@ function waitFor(tournamentId) {
   return Promise.all([...running.values()].filter(r => r.tournamentId === tournamentId).map(r => r.promise));
 }
 
-module.exports = { evaluate, waitFor, replayKey, replayName, onUpdate, botsFor, liveOf, gameOf, HOUSE_BOTS, houseBots, CAMPAIGN_GAMES };
+module.exports = { PARALLEL, evaluate, waitFor, replayKey, replayName, onUpdate, botsFor, liveOf, gameOf, HOUSE_BOTS, houseBots, CAMPAIGN_GAMES };

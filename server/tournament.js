@@ -15,7 +15,9 @@ const daily = require('./daily');
 const avatarById = id => avatarOf(db.data.users.find(u => u.id === id) || { teamName: '' });
 const usernameById = id => (db.data.users.find(u => u.id === id) || {}).username || '';
 
-const PARALLEL_MATCHES = +process.env.PARALLEL_MATCHES || Math.max(1, Math.floor(os.cpus().length / 2));
+// tournament matches at the same time (default: one per CPU; a match keeps about one CPU busy,
+// its two bots taking turns)
+const PARALLEL_MATCHES = +process.env.PARALLEL_MATCHES || os.cpus().length;
 const MATCH_PACE_MS = process.env.MATCH_PACE_MS !== undefined ? +process.env.MATCH_PACE_MS : 1500;
 const ROUND_BREAK_MS = process.env.ROUND_BREAK_MS !== undefined ? +process.env.ROUND_BREAK_MS : 5000;
 

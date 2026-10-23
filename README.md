@@ -276,7 +276,8 @@ left off; matches already played are kept.
 | `JUDGE_PASSWORD` | random | password for the auto-created judge |
 | `PYTHON_CMD` | `python` (Windows) / `python3` | Python interpreter |
 | `CXX`, `JAVAC`, `JAVA` | `g++`, `javac`, `java` | compilers/runtimes |
-| `PARALLEL_MATCHES` | CPUs / 2 | matches run at the same time |
+| `PARALLEL_MATCHES` | CPUs | tournament matches run at the same time |
+| `PARALLEL_BUILDS` | CPUs | compiles and submission checks run at the same time |
 | `MATCH_PACE_MS` | 1500 | minimum time per match in old elimination brawls |
 | `ROUND_BREAK_MS` | 5000 | pause between rounds (old elimination brawls only) |
 | `PUBLISH_DELAY_MS` | 600000 | how long a daily brawl's results stay hidden after the day starts |
@@ -288,7 +289,7 @@ left off; matches already played are kept.
 | `HOST_BUILD_ROOT` | `DATA_DIR/builds` | that builds folder as the Docker host sees it (set by docker-compose.yml) |
 | `SANDBOX_MEMORY`, `SANDBOX_CPUS`, `SANDBOX_PIDS` | 512m, 1, 128 | limits of each sandbox container |
 | `DOCKER` | `docker` | the Docker CLI |
-| `PRACTICE_PARALLEL` | 2 | practice games run at the same time |
+| `PRACTICE_PARALLEL` | CPUs | practice matches run at the same time (across all submissions) |
 | `SIGNUP_LIMIT` | 30 | max self-registrations per hour from one IP address |
 | `TURNS` | 100 | turns per game |
 | `CAMPAIGN_GAMES` | 5 | games a campaign submission must win in a row to beat a sparring bot |

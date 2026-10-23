@@ -1,5 +1,6 @@
 // Compiling, validating and launching submissions.
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const db = require('../db');
@@ -12,7 +13,8 @@ const { restrict } = require('./restrict');
 
 const HARNESS = path.join(__dirname, 'harness');
 const BOARD_HARNESS = path.join(HARNESS, 'board');
-const MAX_PARALLEL_BUILDS = 2;
+// compiles + submission checks at the same time (default: one per CPU)
+const MAX_PARALLEL_BUILDS = +process.env.PARALLEL_BUILDS || os.cpus().length;
 // Written into .ok; a build made under older rules is rebuilt (and so re-checked) before it plays.
 const BUILD_VERSION = 'v2-restricted';
 
@@ -34,7 +36,7 @@ function exec({ cmd, args, cwd, container }, timeoutMs = 90000) {
   });
 }
 
-// Simple semaphore so we don't run 30 compilers at once.
+// Simple semaphore so we don't run more compilers at once than the machine can take.
 let activeBuilds = 0;
 const buildQueue = [];
 async function withBuildSlot(fn) {
@@ -242,6 +244,7 @@ function resumePractice() {
 
 // At startup: with the Docker sandbox, make sure Docker answers and the bot image exists.
 async function checkSandbox() {
+  console.log(`[grader] at the same time: ${MAX_PARALLEL_BUILDS} compiles, ${practice.PARALLEL} practice matches`);
   if (!SANDBOX) {
     console.warn('[grader] SANDBOX is off: submitted code runs as ordinary processes on this machine. Use SANDBOX=docker in production.');
     return;

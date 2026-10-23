@@ -43,6 +43,8 @@ services:
       HOST_BUILD_ROOT: ${HOST_DATA_DIR}/builds
       JUDGE_PASSWORD: ${JUDGE_PASSWORD:-}
       PARALLEL_MATCHES: ${PARALLEL_MATCHES:-}
+      PARALLEL_BUILDS: ${PARALLEL_BUILDS:-}
+      PRACTICE_PARALLEL: ${PRACTICE_PARALLEL:-}
       PUBLISH_DELAY_MS: ${PUBLISH_DELAY_MS:-600000}
     volumes:
       # compiled bots (and, on the first start only, a db.json to import)
