@@ -108,6 +108,7 @@
 
     // ---------- daily league (brawl) ----------
     let dailyTimer = null;
+    let lbSort = { key: 'total', desc: true }; // daily board: 'total' | 'eval' | a round number
     function renderDailyBoard(b) {
       lastBoard = b;
       $('#tname').textContent = b.name;
@@ -116,9 +117,19 @@
       const published = b.days.filter(d => d.status === 'published');
       // evaluation | the points of each published day (scrolls sideways, all rows together) | total
       const dayCells = cell => `<div class="dayscroll"><div class="daystrip">${published.map(cell).join('') || '<span class="muted daynone">chưa có vòng nào</span>'}</div></div>`;
-      $('#lhead').innerHTML = `<tr><th>#</th><th>đội</th><th title="điểm đấu tập của bot mới nhất của đội (đấu với các bot đấu tập)">điểm đánh giá</th>
-        <th class="days">${dayCells(d => `<span class="day" title="${esc(fmtDate(d.at))}">Vòng ${d.number}</span>`)}</th>
-        <th title="điểm cộng dồn qua các vòng đấu">tổng điểm</th></tr>`;
+      // a click on a heading sorts by that column (again: the other way round); # stays the real rank
+      if (typeof lbSort.key === 'number' && !published.some(d => d.number === lbSort.key)) lbSort = { key: 'total', desc: true };
+      const sortable = (key, label, title) => `<span class="sorthead ${lbSort.key === key ? 'on' : ''}" data-sort="${key}" title="${title} · bấm để sắp xếp">${label}${lbSort.key === key ? (lbSort.desc ? ' ▼' : ' ▲') : ''}</span>`;
+      $('#lhead').innerHTML = `<tr><th>#</th><th>đội</th><th>${sortable('eval', 'điểm đánh giá', 'điểm đấu tập của bot mới nhất của đội (đấu với các bot đấu tập)')}</th>
+        <th class="days">${dayCells(d => `<span class="day">${sortable(d.number, `Vòng ${d.number}`, esc(fmtDate(d.at)))}</span>`)}</th>
+        <th>${sortable('total', 'tổng điểm', 'điểm cộng dồn qua các vòng đấu')}</th></tr>`;
+      $$('#lhead [data-sort]').forEach(h => h.onclick = () => {
+        const key = h.dataset.sort === 'eval' || h.dataset.sort === 'total' ? h.dataset.sort : +h.dataset.sort;
+        lbSort = lbSort.key === key ? { key, desc: !lbSort.desc } : { key, desc: true };
+        renderDailyBoard(lastBoard);
+      });
+      const valueOf = row => (lbSort.key === 'total' ? row.points : lbSort.key === 'eval' ? (row.eval ?? -1) : ((row.byDay || {})[lbSort.key] ?? -1));
+      const rows = b.rows.slice().sort((x, y) => (lbSort.desc ? valueOf(y) - valueOf(x) : valueOf(x) - valueOf(y)) || x.rank - y.rank);
       const pending = b.days.find(d => d.status !== 'published'); // playing, or waiting to be published
       clearInterval(dailyTimer);
       const tickBanner = () => {
@@ -151,7 +162,7 @@
 
       const tbody = $('#rows');
       const before = rowPositions(tbody);
-      tbody.innerHTML = b.rows.map(row => {
+      tbody.innerHTML = rows.map(row => {
         const top = row.played > 0 && row.rank <= 3; // medals once a team has played
         const cls = [b.champion && b.champion.userId === row.userId ? 'champion' : '', ME && row.userId === ME.id ? 'me' : '', prevPoints[row.userId] !== undefined && prevPoints[row.userId] !== row.points ? 'flash' : ''].join(' ');
         return `<tr class="${cls}" data-id="${row.userId}">
