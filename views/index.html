@@ -58,7 +58,7 @@
         return `
           <div class="box tcard">
             <div>
-              <div class="row"><h2>${esc(t.name)}</h2><span class="tag ${waiting ? 'pending' : t.status}">${statusText}</span>${t.game === 'board' ? '<span class="tag mode" title="bàn cờ 9×9: búa, bao, kéo đi từng ô">♟️ cờ OTT</span>' : ''}<span class="tag mode">${t.mode === 'campaign' ? '🗺️ chiến dịch' : '⚔️ hỗn chiến'}</span>${t.access === 'invite' ? `<span class="tag mode" title="chỉ những đội được trọng tài chỉ định">🔒 ${ME.role === 'judge' ? `${t.members} đội được chỉ định` : 'giải riêng'}</span>` : ''}</div>
+              <div class="row"><h2>${esc(t.name)}</h2><span class="tag ${waiting ? 'pending' : t.status}">${statusText}</span>${t.game === 'board' ? '<span class="tag mode" title="bàn cờ 9×9: búa, bao, kéo đi từng ô">♟️ cờ OTT</span>' : ''}<span class="tag mode">${t.mode === 'campaign' ? '🗺️ chiến dịch' : '⚔️ hỗn chiến'}</span>${t.access === 'invite' ? `<span class="tag mode" title="chỉ những đội được trọng tài chỉ định">🔒 ${ME.role === 'judge' ? `${t.members} đội` : 'giải riêng'}</span>` : ''}</div>
               ${t.description ? `<div class="desc">${esc(t.description)}</div>` : ''}
               <div style="margin-top:6px">${subLine(t)}</div>
             </div>

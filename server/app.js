@@ -733,12 +733,7 @@ app.delete('/api/admin/tournaments/:id/bots/:botId', apiAuth, apiJudge, (req, re
 });
 app.get('/api/admin/tournaments/:id/submissions', apiAuth, apiJudge, wrap(async (req, res) => {
   const subs = await withCode(db.data.submissions.filter(s => s.tournamentId === req.params.id),
-    s => {
-      const u = findUser(s.userId);
-      // (a team name of only invisible characters would leave the row blank)
-      const teamName = !u ? '(deleted user)' : auth.hasVisible(u.teamName) ? u.teamName : '(tên đội trống)';
-      return { teamName, username: (u || {}).username || '' };
-    });
+    s => { const u = findUser(s.userId) || {}; return { teamName: u.teamName || '(deleted user)', username: u.username || '' }; });
   res.json({ submissions: subs });
 }));
 
