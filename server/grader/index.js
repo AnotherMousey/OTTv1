@@ -237,8 +237,9 @@ function resumePractice() {
     const bots = new Set(practice.botsFor(t).map(b => b.id));
     for (const uid of users) {
       const s = activeSubmission(t.id, uid);
-      // also replay practice that ran against a different set of sparring bots
-      const stale = s && s.practice && (s.practice.results.length !== bots.size || s.practice.results.some(r => !bots.has(r.bot)));
+      // also replay practice that ran against a different set of sparring bots, or under older rules
+      const stale = s && s.practice && (s.practice.results.length !== bots.size || s.practice.results.some(r => !bots.has(r.bot))
+        || (s.practice.rules ?? null) !== practice.rulesOf(t));
       if (s && (!s.practice || s.practice.status !== 'done' || stale)) practice.evaluate(s, ensureBuilt);
     }
   }

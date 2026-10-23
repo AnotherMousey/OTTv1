@@ -102,6 +102,11 @@ async function saveReplay(sub, house, r) {
   }
 }
 
+// The match rules practice was played under, per game. Changing it replays the practice of every
+// team's newest bot in open brawls at the next start (resumePractice), so all are scored alike.
+const RULES = { board: 'cpu-180s-per-game' };
+const rulesOf = t => RULES[gameOf(t)] || null;
+
 const running = new Map();
 function evaluate(sub, ensureBuilt) {
   if (running.has(sub.id)) return running.get(sub.id).promise;
@@ -115,6 +120,7 @@ function evaluate(sub, ensureBuilt) {
   };
   sub.practice = {
     status: 'running',
+    rules: rulesOf(tournamentOf(sub)),
     total: 0,
     startedAt: new Date().toISOString(),
     results: opponents.map(h => ({ bot: h.id, name: h.name, status: 'queued' })),
@@ -178,4 +184,4 @@ function waitFor(tournamentId) {
   return Promise.all([...running.values()].filter(r => r.tournamentId === tournamentId).map(r => r.promise));
 }
 
-module.exports = { PARALLEL, evaluate, waitFor, replayKey, replayName, onUpdate, botsFor, liveOf, gameOf, HOUSE_BOTS, houseBots, CAMPAIGN_GAMES };
+module.exports = { PARALLEL, rulesOf, evaluate, waitFor, replayKey, replayName, onUpdate, botsFor, liveOf, gameOf, HOUSE_BOTS, houseBots, CAMPAIGN_GAMES };
