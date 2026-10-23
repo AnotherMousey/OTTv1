@@ -406,7 +406,7 @@ table.admin-tlist td:first-child { min-width: 170px; }
 table.admin-tlist td:nth-child(2) { min-width: 260px; }
 table.admin-tlist .tag { white-space: nowrap; }
 .tactions { display: grid; grid-template-columns: repeat(3, auto); gap: 6px; justify-content: start; }
-.tactions .btn { white-space: nowrap; text-align: center; }
+.tactions .btn { white-space: nowrap; text-align: center; justify-self: start; }
 .member-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 6px; max-height: 420px; overflow: auto; padding: 2px; }
 .member { display: flex; align-items: center; gap: 6px; margin: 0; padding: 4px 8px; border: 2px dashed #ccc; border-radius: 10px; cursor: pointer; font-size: 17px; line-height: 1.1; }
 .member:hover { background: #fffbe6; }
