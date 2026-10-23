@@ -21,7 +21,7 @@ function showBoardNotice(game) {
   if (!el) return;
   const on = game === 'board' && serverNow() < BOARD_NOTICE_UNTIL;
   el.classList.toggle('hidden', !on);
-  if (on) el.innerHTML = '📢 <b>Thông báo:</b> từ nay mỗi bot được dùng tối đa <b>180 giây CPU cho cả ván</b> (vẫn tối đa 1 giây mỗi nước). Dùng hết 180 giây thì thua ván đó.';
+  if (on) el.innerHTML = '📢 <b>Thông báo:</b> từ nay mỗi bot có TL 180 giây cho mỗi ván bên cạnh TL cũ giữa các nước.<br>Mấy đứa spam nhánh cận 1s giữa các nước thì tìm cách quản lý tài nguyên đi chứ tài nguyên trên server có hạn ^^';
 }
 
 function esc(s) {

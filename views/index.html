@@ -10,6 +10,7 @@
 <body>
   <header id="topbar"></header>
   <main>
+    <div class="notice hidden" id="notice"></div>
     <h1>Giải đấu</h1>
     <div class="tlist" id="list"><div class="empty">đang tải…</div></div>
   </main>
@@ -79,6 +80,8 @@
     async function load() {
       const data = await api('/api/tournaments');
       tournaments = data.tournaments;
+      // the cờ OTT notice, while there is a cờ OTT tournament to see
+      showBoardNotice(tournaments.some(t => t.game === 'board') ? 'board' : null);
       render();
     }
 
