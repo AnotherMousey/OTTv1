@@ -194,12 +194,14 @@
             <a class="btn small" href="/tournament/${id}/live">bảng xếp hạng</a>
             ${t.status !== 'running' ? `<button class="btn small" data-del="${t.id}" title="xóa giải">🗑</button>` : ''}
           </div>` : `<div class="tactions">
+            <button class="btn small" data-hide="${t.id}" title="${t.hidden ? 'cho người chơi thấy giải này' : 'chỉ trọng tài thấy giải này'}">${t.hidden ? '👁 hiện' : '🙈 ẩn'}</button>
             <button class="btn small" data-members="${t.id}">${t.access === 'invite' ? '🔒 ' : ''}người chơi</button>
             <button class="btn small" data-bots="${t.id}">bot đấu tập</button>
             <button class="btn small" data-subs="${t.id}">bài nộp</button>
-            <button class="btn small" data-hide="${t.id}" title="${t.hidden ? 'cho người chơi thấy giải này' : 'chỉ trọng tài thấy giải này'}">${t.hidden ? '👁 hiện' : '🙈 ẩn'}</button>
-            ${waiting ? `<button class="btn small yellow" data-opennow="${t.id}">mở nhận bài ngay</button>` : open ? `${t.daily ? `<button class="btn small yellow" data-playnow="${t.id}" title="thêm một vòng đấu ngay bây giờ">⚡ đấu ngay</button><a class="btn small" href="/tournament/${id}/live">bảng xếp hạng</a>` : ''}<button class="btn small ${t.daily ? '' : 'yellow'}" data-now="${t.id}">${t.daily ? 'kết thúc giải ngay' : 'đóng nộp bài ngay'}</button>` : `<a class="btn small" href="/tournament/${id}/live">bảng xếp hạng</a>`}
+            <a class="btn small" href="/tournament/${id}/live">bảng xếp hạng</a>
             <a class="btn small" href="/tournament/${id}/matches">lịch sử trận</a>
+            ${open && !waiting ? `<button class="btn small red" data-now="${t.id}">${t.daily ? 'kết thúc giải ngay' : 'đóng nộp bài ngay'}</button>` : ''}
+            ${waiting ? `<button class="btn small yellow" data-opennow="${t.id}">mở nhận bài ngay</button>` : open && t.daily ? `<button class="btn small yellow" data-playnow="${t.id}" title="thêm một vòng đấu ngay bây giờ">⚡ đấu ngay</button>` : ''}
           </div>`}</td>
         </tr>`;
       }).join('') || `<tr><td colspan="7" class="muted">${allTournaments.length && !focusId ? 'không tìm thấy giải nào 🙈' : 'chưa có giải nào'}</td></tr>`;
@@ -269,12 +271,35 @@
           else loadTournaments();
         } catch (e) { toast(e.message, 'error'); }
       });
-      $$('[data-subs]').forEach(b => b.onclick = () => showSubs(b.dataset.subs, tournaments.find(t => t.id === b.dataset.subs).name));
-      $$('[data-bots]').forEach(b => b.onclick = () => showBots(tournaments.find(t => t.id === b.dataset.bots)));
+      // one panel at a time: opening one closes the others; its own button again leaves it as it is
+      $$('[data-subs]').forEach(b => b.onclick = () => {
+        if (panelShown('subs', b.dataset.subs)) return $('#subsPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        closePanels();
+        showSubs(b.dataset.subs, tournaments.find(t => t.id === b.dataset.subs).name);
+      });
+      $$('[data-bots]').forEach(b => b.onclick = () => {
+        if (panelShown('bots', b.dataset.bots)) return $('#botsPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        closePanels();
+        showBots(tournaments.find(t => t.id === b.dataset.bots));
+      });
       // keep an open bots panel in sync (e.g. a bot finished compiling)
       if (botsOpen) { const t = tournaments.find(x => x.id === botsOpen.t.id); if (t) showBots(t, true); else { botsOpen = null; $('#botsPanel').classList.add('hidden'); } }
-      $$('[data-members]').forEach(b => b.onclick = () => showMembers(tournaments.find(t => t.id === b.dataset.members)));
+      $$('[data-members]').forEach(b => b.onclick = () => {
+        if (panelShown('members', b.dataset.members)) return $('#membersPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        closePanels();
+        showMembers(tournaments.find(t => t.id === b.dataset.members));
+      });
       if (membersOpen && !tournaments.some(x => x.id === membersOpen.t.id)) { membersOpen = null; $('#membersPanel').classList.add('hidden'); }
+    }
+
+    // ---------- the panels under the list (players, sparring bots, submissions) ----------
+    function panelShown(kind, id) {
+      const open = { members: membersOpen && membersOpen.t.id, bots: botsOpen && botsOpen.t.id, subs: subsOpen && subsOpen.id }[kind];
+      return open === id && !$(`#${kind}Panel`).classList.contains('hidden');
+    }
+    function closePanels() {
+      membersOpen = botsOpen = subsOpen = null;
+      ['#membersPanel', '#botsPanel', '#subsPanel'].forEach(p => $(p).classList.add('hidden'));
     }
 
     // ---------- who may play (invite-only tournaments) ----------
@@ -520,7 +545,7 @@ public class Bot {
       let submissions;
       try { ({ submissions } = await api(`/api/admin/tournaments/${encodeURIComponent(id)}/submissions`)); }
       catch (e) { return toast(e.message, 'error'); }
-      subsOpen = { name, all: submissions.slice().reverse(), shown: null };
+      subsOpen = { id, name, all: submissions.slice().reverse(), shown: null };
       const panel = $('#subsPanel');
       panel.classList.remove('hidden');
       panel.innerHTML = `<div class="box">
