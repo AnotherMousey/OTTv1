@@ -57,9 +57,18 @@
     const practiceBot = query.get('practice'); // a practice match: ?practice=<bot>&user=<team>
     const R = BoardRules;
     const COL = { A: '#e2433f', B: '#3a7bd5' }, LIGHT = { A: '#ff9b97', B: '#9cc7ff' };
+    // Point of view. Your own match is shown from your side: the board as your bot saw it (your
+    // pieces start bottom-left, coordinates 1-9 as in gameState), so in the game where you move
+    // second it is turned 180°. Anyone else sees the real board: white starts bottom-left.
+    let mine = null;      // 'A' | 'B': the viewer's team in this match, if any
+    let myView = false;   // showing it from the viewer's side (= the viewer played in it)
+    const flipped = () => myView && replay.teamOf.black === mine;
+    // a real square -> the coordinates the viewer's bot saw (1-based)
+    const botXY = (x, y) => (replay.teamOf.white === mine ? [x + 1, y + 1] : [R.W - x, R.H - y]);
     // board geometry inside the 900 x 530 scene
     const C = 52, X0 = 216, Y0 = 16;
-    const px = x => X0 + x * C, py = y => Y0 + (R.H - 1 - y) * C; // y = 0 is the bottom row
+    const px = x => X0 + (flipped() ? R.W - 1 - x : x) * C;
+    const py = y => Y0 + (flipped() ? y : R.H - 1 - y) * C; // y = 0 is the bottom row (unless flipped)
     const trim = (s, n) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
 
     let M = null, AV = { A: null, B: null };
@@ -100,7 +109,7 @@
     function playerSide(team, cx) {
       const right = cx > 450;
       const side = replay.teamOf.white === team ? 'white' : 'black';
-      const note = side === 'white' ? 'đi trước · đích ↗' : 'đi sau · đích ↙';
+      const note = `${side === 'white' ? 'đi trước' : 'đi sau'} · đích ${(side === 'white') !== flipped() ? '↗' : '↙'}`;
       return `
         <text x="${cx}" y="128" text-anchor="middle" font-size="25" fill="${COL[team]}">${esc(trim(M['team' + team], 14))}</text>
         <text x="${cx}" y="152" text-anchor="middle" font-size="16" fill="#8d8d8d">${note}</text>
@@ -114,8 +123,9 @@
       }
       for (let k = 0; k <= R.W; k++) lines.push(`<path d="M${X0 + k * C} ${Y0} L${X0 + k * C} ${Y0 + R.H * C}"/>`);
       for (let k = 0; k <= R.H; k++) lines.push(`<path d="M${X0} ${Y0 + k * C} L${X0 + R.W * C} ${Y0 + k * C}"/>`);
-      for (let x = 0; x < R.W; x++) labels.push(`<text x="${px(x) + C / 2}" y="${Y0 + R.H * C + 22}" text-anchor="middle" font-size="16" fill="#8d8d8d">${String.fromCharCode(97 + x)}</text>`);
-      for (let y = 0; y < R.H; y++) labels.push(`<text x="${X0 - 20}" y="${py(y) + C / 2 + 6}" text-anchor="middle" font-size="16" fill="#8d8d8d">${y + 1}</text>`);
+      // your view: x and y as your bot saw them; standard view: square names a1..i9
+      for (let x = 0; x < R.W; x++) labels.push(`<text x="${px(x) + C / 2}" y="${Y0 + R.H * C + 22}" text-anchor="middle" font-size="16" fill="#8d8d8d">${myView ? 'x=' + botXY(x, 0)[0] : String.fromCharCode(97 + x)}</text>`);
+      for (let y = 0; y < R.H; y++) labels.push(`<text x="${X0 - 20}" y="${py(y) + C / 2 + 6}" text-anchor="middle" font-size="16" fill="#8d8d8d">${myView ? botXY(0, y)[1] : y + 1}</text>`);
       const goalW = R.GOAL.white, goalB = R.GOAL.black;
       $('#scene').innerHTML = `
         <defs>
@@ -219,7 +229,7 @@
       }
       if (!ev) {
         $('#capMain').textContent = `Ván ${G + 1}: ${M['team' + replay.teamOf.white]} đi trước`;
-        $('#capSub').textContent = `${replay.N} nước. Bấm phát để xem ai chạm đích trước.`;
+        $('#capSub').textContent = `${replay.N} nước. Bấm phát để xem ai chạm đích trước.${myView ? ' · Đang xem từ phía bạn, tọa độ như bot của bạn nhận được.' : ''}`;
       } else {
         $('#capMain').textContent = narrate(ev);
         $('#capSub').textContent = `Nước ${ply}/${replay.N}`;
@@ -235,7 +245,8 @@
       const foe = M['team' + replay.teamOf[R.other(ev.side)]];
       if (ev.result === 'skip') return `${who} mất lượt (nước đi không hợp lệ). 😵`;
       const [x1, y1, x2, y2] = ev.move;
-      const path = `${R.square(x1, y1)} → ${R.square(x2, y2)}`;
+      const at = (x, y) => (myView ? `(${botXY(x, y).join(', ')})` : R.square(x, y));
+      const path = `${at(x1, y1)} → ${at(x2, y2)}`;
       const name = BOARD_KIND_NAME[ev.piece];
       if (ev.result === 'capture') return `${who}: ${name} ${BOARD_VERB[ev.piece]} ${BOARD_KIND_NAME[ev.target]} của ${foe}! (${path}) 💥`;
       if (ev.result === 'bounce') return `${who} cho ${name} lao vào ${BOARD_KIND_NAME[ev.target]} của ${foe}… và mất quân! (${path}) 🙈`;
@@ -346,6 +357,8 @@
       }
       M = data.match;
       AV = data.avatars;
+      mine = ME && M.userA === ME.id ? 'A' : ME && M.userB === ME.id ? 'B' : null;
+      myView = !!mine;
       document.title = `${M.teamA} vs ${M.teamB} · OTTv1`;
       $('#title').textContent = `${M.practice ? 'Đấu tập' : `${M.day ? 'Ngày' : 'Vòng'} ${M.round}`} · ${M.teamA} vs ${M.teamB} · ${M.scoreA} – ${M.scoreB}`;
       const issues = [M.issues && M.issues.A && `${M.teamA}: ${M.issues.A}`, M.issues && M.issues.B && `${M.teamB}: ${M.issues.B}`].filter(Boolean);

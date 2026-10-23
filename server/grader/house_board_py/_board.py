@@ -1,8 +1,8 @@
 import random
 import time
 
-# The game state (gameState.ally / .opponent: pieces with .pid .Type .x .y) is turned into a flat
-# board `cells`: cell i = (x, y) with i = y * W + x, "R" "P" "S" = mine, "r" "p" "s" = enemy,
+# The game state (gameState.ally / .opponent: pieces with .pid .Type .x .y, x and y from 1) is turned
+# into a flat board `cells`: cell i = (x, y) counted from 0, i = y * W + x, "R" "P" "S" = mine, "r" "p" "s" = enemy,
 # "." = empty. I start bottom-left and win on the top-right corner; the enemy wins on (0, 0).
 # A move is (from cell, to cell); to_move turns it into the answer (pid, direction).
 BEATS = {"R": "S", "S": "P", "P": "R"}     # kind -> the kind it captures
@@ -22,10 +22,10 @@ def setup(state):
     cells = ["."] * (W * H)
     PID.clear()
     for p in state.ally:
-        cells[p.y * W + p.x] = p.Type
-        PID[p.y * W + p.x] = p.pid
+        cells[(p.y - 1) * W + p.x - 1] = p.Type
+        PID[(p.y - 1) * W + p.x - 1] = p.pid
     for p in state.opponent:
-        cells[p.y * W + p.x] = p.Type.lower()
+        cells[(p.y - 1) * W + p.x - 1] = p.Type.lower()
     return cells
 
 

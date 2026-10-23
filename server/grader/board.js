@@ -124,9 +124,9 @@ async function smokeTest(sub, describe) {
 function describe(g) {
   const { ally } = R.pieces(g, 'white');
   const v = R.view(g, 'white');
-  const rows = [`Quân của bạn lúc đó (pid Type x y): ${ally.map(p => `${p.pid} ${p.type} ${p.x} ${p.y}`).join(' · ')}`, `Bàn cờ (hàng trên cùng là y = ${R.H - 1}):`];
-  for (let y = R.H - 1; y >= 0; y--) rows.push(`${y} ${v.slice(y * R.W, (y + 1) * R.W).split('').join(' ')}`);
-  rows.push('  ' + Array.from({ length: R.W }, (_, x) => x).join(' '));
+  const rows = [`Quân của bạn lúc đó (pid Type x y): ${ally.map(p => `${p.pid} ${p.type} ${p.x} ${p.y}`).join(' · ')}`, `Bàn cờ (hàng trên cùng là y = ${R.H}):`];
+  for (let y = R.H - 1; y >= 0; y--) rows.push(`${y + 1} ${v.slice(y * R.W, (y + 1) * R.W).split('').join(' ')}`);
+  rows.push('  ' + Array.from({ length: R.W }, (_, x) => x + 1).join(' '));
   return rows.join('\n');
 }
 

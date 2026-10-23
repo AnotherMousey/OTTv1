@@ -1,6 +1,6 @@
 // Grader harness for Java board bots. Your Bot.java must define:
 //   public class Bot { public int[] play(State gameState) }   // returns {pid, direction}
-// Coordinates are from your own side: (0, 0) is bottom-left, y = 0 is your home row, and you win
+// Coordinates are 1-9, from your own side: (1, 1) is bottom-left, y = 1 is your home row, and you win
 // by reaching the top-right corner. Directions: 1 up-left, 2 up, 3 up-right, 4 right,
 // 5 down-right, 6 down, 7 down-left, 8 left (up = toward your goal row).
 import java.io.*;

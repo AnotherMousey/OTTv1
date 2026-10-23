@@ -108,10 +108,10 @@ Brawl, campaign, invite-only and hidden tournaments work the same way for both.
   Rules live in [board-rules.js](public/js/board-rules.js), shared by the grader and the replay page.
 
   Bots always see the board from their own side (black's view is rotated 180°): you start
-  bottom-left, your goal is the top-right corner, and the enemy's goal is `(0, 0)`.
+  bottom-left at `(1, 1)`, your goal is the top-right corner `(9, 9)`, and the enemy's goal is `(1, 1)`.
   Every turn the bot gets `gameState`: `ally` (its pieces), `opponent` (the enemy's), `maxTurn`
   (1000) and `currentTurn` (moves played so far, both sides). Each piece has `pid` (1–9, kept for
-  the whole game), `Type` (`'R'`, `'P'` or `'S'`), `x` and `y` (0–8). The bot returns
+  the whole game), `Type` (`'R'`, `'P'` or `'S'`), `x` and `y` (1–9). The bot returns
   `(pid, direction)`, direction 1–8 clockwise from up-left: 1 up-left, 2 up, 3 up-right, 4 right,
   5 down-right, 6 down, 7 down-left, 8 left (up = toward its goal row).
 

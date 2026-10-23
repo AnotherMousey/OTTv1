@@ -114,12 +114,13 @@
   const fromView = (side, [x1, y1, x2, y2]) => (side === 'white' ? [x1, y1, x2, y2] : [W - 1 - x1, H - 1 - y1, W - 1 - x2, H - 1 - y2]);
 
   // The game state a bot gets, in its own view: { ally, opponent } with each piece as
-  // { pid, type, x, y }. pid = 1..9, fixed for the whole game (each side numbers its own pieces).
+  // { pid, type, x, y }. pid = 1..9, fixed for the whole game (each side numbers its own pieces);
+  // x, y = 1..9, (1, 1) = bottom-left (the board itself counts from 0).
   function pieces(g, side) {
     const out = { ally: [], opponent: [] };
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const c = side === 'white' ? g.board[y][x] : g.board[H - 1 - y][W - 1 - x];
-      if (c) out[c.side === side ? 'ally' : 'opponent'].push({ pid: +c.id.slice(1) + 1, type: c.kind, x, y });
+      if (c) out[c.side === side ? 'ally' : 'opponent'].push({ pid: +c.id.slice(1) + 1, type: c.kind, x: x + 1, y: y + 1 });
     }
     out.ally.sort((a, b) => a.pid - b.pid);
     out.opponent.sort((a, b) => a.pid - b.pid);
@@ -136,7 +137,7 @@
     const p = pieces(g, side).ally.find(q => q.pid === pid);
     if (!p) return { error: `không có quân nào của bạn mang số ${pid}` };
     const [dx, dy] = DIRS[dir];
-    const move = fromView(side, [p.x, p.y, p.x + dx, p.y + dy]);
+    const move = fromView(side, [p.x - 1, p.y - 1, p.x - 1 + dx, p.y - 1 + dy]);
     const why = problem(g, side, move);
     return why ? { error: why } : { move };
   }
