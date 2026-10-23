@@ -119,7 +119,7 @@
       const dayCells = cell => `<div class="dayscroll"><div class="daystrip">${published.map(cell).join('') || '<span class="muted daynone">chưa có vòng nào</span>'}</div></div>`;
       // a click on a heading sorts by that column (again: the other way round); # stays the real rank
       if (typeof lbSort.key === 'number' && !published.some(d => d.number === lbSort.key)) lbSort = { key: 'total', desc: true };
-      const sortable = (key, label, title) => `<span class="sorthead ${lbSort.key === key ? 'on' : ''}" data-sort="${key}" title="${title} · bấm để sắp xếp">${label}${lbSort.key === key ? (lbSort.desc ? ' ▼' : ' ▲') : ''}</span>`;
+      const sortable = (key, label, title) => `<span class="sorthead ${lbSort.key === key ? 'on' : ''}" data-sort="${key}" title="${title} · bấm để sắp xếp">${label} <i>${lbSort.key === key ? (lbSort.desc ? '▼' : '▲') : '⇅'}</i></span>`;
       $('#lhead').innerHTML = `<tr><th>#</th><th>đội</th><th>${sortable('eval', 'điểm đánh giá', 'điểm đấu tập của bot mới nhất của đội (đấu với các bot đấu tập)')}</th>
         <th class="days">${dayCells(d => `<span class="day">${sortable(d.number, `Vòng ${d.number}`, esc(fmtDate(d.at)))}</span>`)}</th>
         <th>${sortable('total', 'tổng điểm', 'điểm cộng dồn qua các vòng đấu')}</th></tr>`;
@@ -149,7 +149,7 @@
       const playing = pending && pending.status === 'running' ? ` · vòng ${pending.number}: đã đấu ${pending.played}/${pending.totalMatches} trận` : '';
       sub.innerHTML = `Mỗi ngày một vòng lúc ${esc(b.dailyTime)} · ${b.pairing === 'swiss' ? 'thể thức Thụy Sĩ' : 'vòng tròn'} · thắng 3 · hòa 1 · thua 0 · đã qua ${published.length} vòng${playing} · ${b.status === 'finished' ? 'kết thúc' : 'kết thúc lúc'} ${esc(fmtDate(b.deadline))}`
         + (b.status === 'open' && ME.role !== 'judge' ? ` · <a href="/tournament/${encodeURIComponent(tid)}/submit">nộp bot</a>` : '')
-        + `<br>Điểm đánh giá: điểm đấu tập của bot mới nhất của đội (tổng điểm khi đấu với các bot đấu tập), cập nhật ngay khi đấu tập xong. Bằng tổng điểm thì đội có điểm đánh giá cao hơn xếp trên.`
+        + '<br>↕️ Bấm vào tiêu đề cột (điểm đánh giá, từng vòng, tổng điểm) để sắp xếp bảng theo cột đó; bấm lần nữa để đảo chiều.'
         + (game === 'board' ? '<br>Thời gian: mỗi bot được dùng tối đa <b>1 giây CPU mỗi nước</b> và <b>180 giây CPU mỗi ván</b> (dùng hết thì thua ván đó).' : '');
 
       const champ = $('#champ');

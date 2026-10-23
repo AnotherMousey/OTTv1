@@ -311,8 +311,12 @@ pre.msg { white-space: pre; background: #f4f2ea; border-radius: 8px; padding: 10
 .daystrip .day { flex: 0 0 74px; text-align: center; font-family: 'Pangolin', cursive; font-size: 22px; }
 .board th .daystrip .day { font-family: inherit; font-size: 17px; }
 .daystrip .daynone { font-size: 16px; padding: 0 8px; }
-.sorthead { cursor: pointer; user-select: none; white-space: nowrap; }
-.sorthead:hover, .sorthead.on { color: var(--ink); text-decoration: underline; }
+/* sortable headings look like small buttons, so it's clear they can be clicked */
+.sorthead { cursor: pointer; user-select: none; white-space: nowrap; display: inline-block; padding: 1px 9px; border: 2px solid var(--ink); border-radius: var(--wobble); background: #fff; color: var(--ink); font-size: 16px; }
+.sorthead i { font-style: normal; color: var(--muted); }
+.sorthead:hover { background: #fff8d6; }
+.sorthead.on { background: var(--yellow); font-weight: 700; }
+.sorthead.on i { color: var(--ink); }
 .board tr.eliminated td { background: #f0efea; color: #999; }
 .board tr.eliminated .team span.n { text-decoration: line-through wavy #c66; }
 .board tr.champion td { background: #fff1a8; }
