@@ -1,13 +1,18 @@
 // Brawl ("hỗn chiến") as a daily league. Every day at t.dailyTime ('HH:MM' in the judge's time
-// zone; t.tzOffset = the judge's Date#getTimezoneOffset()), from the start until the deadline, each
-// team's newest working bot (submitted before that moment) plays every other team once: win = 3,
-// draw = 1, loss = 0. A day's results stay hidden until PUBLISH_DELAY_MS after it started (or until
+// zone; t.tzOffset = the judge's Date#getTimezoneOffset()), from the start until the deadline, the
+// teams' newest working bots (submitted before that moment) play: win = 3, draw = 1, loss = 0.
+// The judge picks the pairing (t.pairing):
+//   'rr'    round robin: every team plays every other team once.
+//   'swiss' ceil(log2(teams)) rounds; each round pairs teams with similar points (all days so far,
+//           this day's earlier rounds included), never the same two teams twice in a day. With an
+//           odd number of teams the lowest-ranked one without a bye that day sits out and gets 3. A day's results stay hidden until PUBLISH_DELAY_MS after it started (or until
 // its last match ends, if that takes longer); then the cumulative standings update for everyone.
 // A team's evaluation is the practice score of its newest working bot (its total against the
 // sparring bots, see grader/practice.js), live: the same number as on the practice board. The
 // standings sort by points, then by evaluation.
 // t.days = [{ number, slot, startedAt, publishAt, entries, status: 'running' | 'done' | 'published',
-//             finishedAt, publishedAt }]
+//             finishedAt, publishedAt, pairing, and for Swiss: rounds, pairs: { r: [{ a, b, name }] },
+//             byes: [{ round, userId }] }]
 const db = require('./db');
 const { avatarOf } = require('./auth');
 const { canPlay } = require('./access');
@@ -20,6 +25,8 @@ const PUBLISH_DELAY_MS = process.env.PUBLISH_DELAY_MS !== undefined ? +process.e
 const POINTS = { win: 3, draw: 1, loss: 0 };
 
 const isDaily = t => t.format === 'daily';
+const pairingOf = t => (t.pairing === 'swiss' ? 'swiss' : 'rr');
+const swissRounds = n => (n < 2 ? 0 : Math.ceil(Math.log2(n)));
 const gameOf = t => (t.game === 'board' ? 'board' : 'rps');
 // The most a bot can score in practice: every match against every sparring bot won outright.
 const evalMax = t => houseBots(gameOf(t)).length * (gameOf(t) === 'board' ? MAX_SCORE : TURNS * 3);
@@ -80,6 +87,49 @@ const pairsOf = day => {
   }
   return out;
 };
+// Swiss pairing for round `r` of `day`: { pairs: [{ a, b, name }], bye } (user ids). Teams are ranked
+// by their points so far, every day's matches and byes counted (published or not: this is only for
+// pairing), then by name; each is paired with the nearest-ranked team it hasn't met that day.
+function swissPairs(t, day, r) {
+  const points = new Map();
+  const add = (id, n) => points.set(id, (points.get(id) || 0) + n);
+  for (const m of Object.values(db.data.matches[t.id] || {})) {
+    if (!m.day) continue;
+    add(m.userA, m.winner === 'A' ? POINTS.win : m.winner === 'draw' ? POINTS.draw : 0);
+    add(m.userB, m.winner === 'B' ? POINTS.win : m.winner === 'draw' ? POINTS.draw : 0);
+  }
+  for (const d of t.days || []) for (const b of d.byes || []) add(b.userId, POINTS.win);
+  const met = new Set();
+  for (const ps of Object.values(day.pairs || {})) for (const p of ps) { met.add(p.a + '|' + p.b); met.add(p.b + '|' + p.a); }
+  let order = day.entries.slice().sort((x, y) => (points.get(y.userId) || 0) - (points.get(x.userId) || 0) || x.teamName.localeCompare(y.teamName));
+  let bye = null;
+  if (order.length % 2) {
+    const had = new Set((day.byes || []).map(b => b.userId));
+    bye = [...order].reverse().find(e => !had.has(e.userId)) || order[order.length - 1];
+    order = order.filter(e => e !== bye);
+  }
+  // top down, each with the nearest one it hasn't met today (backtracking if that leaves someone stuck)
+  const pair = list => {
+    if (!list.length) return [];
+    const [a, ...rest] = list;
+    for (let i = 0; i < rest.length; i++) {
+      if (met.has(a.userId + '|' + rest[i].userId)) continue;
+      const tail = pair([...rest.slice(0, i), ...rest.slice(i + 1)]);
+      if (tail) return [[a, rest[i]], ...tail];
+    }
+    return null;
+  };
+  // (with ceil(log2 n) rounds a pairing without rematches always exists; just in case, allow them)
+  const pairs = pair(order) || order.reduce((out, e, i) => (i % 2 ? out : [...out, [e, order[i + 1]]]), []);
+  return {
+    pairs: pairs.map(([a, b]) => ({ a: a.userId, b: b.userId, name: `day ${day.number} round ${r} - team ${a.teamName} vs team ${b.teamName}` })),
+    bye: bye && bye.userId,
+  };
+}
+
+// Matches a day will have in all.
+const dayTotal = d => (d.pairing === 'swiss' ? (d.rounds || 0) * Math.floor(d.entries.length / 2) : (d.entries.length * (d.entries.length - 1)) / 2);
+
 // Submissions are frozen from a match time until that day's results are published:
 // { day, publishAt } (publishAt is null while the day hasn't been set up yet), or null.
 function frozen(t, now = Date.now()) {
@@ -111,6 +161,12 @@ function standings(t) {
       r.language = e.language;
       r.days++;
       if (day === last) r.lastDay = 0;
+    }
+    for (const b of day.byes || []) {
+      const r = row(b.userId, (day.entries.find(e => e.userId === b.userId) || {}).teamName || '?');
+      r.points += POINTS.win;
+      r.byes = (r.byes || 0) + 1;
+      if (day === last) r.lastDay += POINTS.win;
     }
     for (const m of dayMatches(t, day)) {
       const a = row(m.userA, m.teamA), b = row(m.userB, m.teamB);
@@ -151,15 +207,16 @@ function board(t, now = Date.now()) {
   return {
     id: t.id, name: t.name, mode: 'brawl', format: 'daily', status: t.status, error: t.error || null,
     deadline: t.deadline, startsAt: t.startsAt || null, dailyTime: t.dailyTime, nextAt: t.status === 'open' ? nextSlot(t, now) : null,
-    publishDelayMs: PUBLISH_DELAY_MS,
+    publishDelayMs: PUBLISH_DELAY_MS, pairing: pairingOf(t),
     days: (t.days || []).map(d => {
-      const fights = (d.entries.length * (d.entries.length - 1)) / 2;
+      const fights = dayTotal(d);
       return { number: d.number, at: d.slot || d.startedAt, status: d.status, publishAt: d.publishAt, publishedAt: d.publishedAt || null, teams: d.entries.length,
-        played: Math.min(fights, dayMatches(t, d).length), totalMatches: fights };
+        played: Math.min(fights, dayMatches(t, d).length), totalMatches: fights,
+        ...(d.pairing === 'swiss' ? { rounds: d.rounds, round: Object.keys(d.pairs || {}).length } : {}) };
     }),
     champion: champ ? { userId: champ.userId, teamName: champ.teamName, avatar: champ.avatar } : null,
     rows,
   };
 }
 
-module.exports = { isDaily, frozen, validTime, slotsBetween, dueSlots, nextSlot, entriesAt, pairsOf, dayMatches, isPublished, standings, board, PUBLISH_DELAY_MS };
+module.exports = { isDaily, pairingOf, swissRounds, swissPairs, frozen, validTime, slotsBetween, dueSlots, nextSlot, entriesAt, pairsOf, dayMatches, isPublished, standings, board, PUBLISH_DELAY_MS };

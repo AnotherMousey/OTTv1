@@ -16,7 +16,7 @@ const BOARD_HARNESS = path.join(HARNESS, 'board');
 // compiles + submission checks at the same time (default: one per CPU)
 const MAX_PARALLEL_BUILDS = +process.env.PARALLEL_BUILDS || os.cpus().length;
 // Written into .ok; a build made under older rules is rebuilt (and so re-checked) before it plays.
-const BUILD_VERSION = 'v2-restricted';
+const BUILD_VERSION = 'v3-board-state-meter';
 
 // Runs { cmd, args, cwd, container } (see languages.boxed) to the end; resolves { code, out }.
 function exec({ cmd, args, cwd, container }, timeoutMs = 90000) {
@@ -68,6 +68,8 @@ async function build(sub) {
   }
   fs.writeFileSync(path.join(dir, LANGS[sub.language].file), code);
   const isBoard = gameOf(sub) === 'board';
+  // board bots run under the CPU meter (see harness/meter.py and languages.command)
+  if (isBoard) fs.copyFileSync(path.join(HARNESS, 'meter.py'), path.join(dir, '_meter.py'));
   // a compile step: in the sandbox, as nobody, so the folder must be writable for everyone
   const tool = (cmd, args) => exec(boxed(sub, cmd, args, { writable: true }));
   if (SANDBOX) fs.chmodSync(dir, 0o777);

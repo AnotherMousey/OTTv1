@@ -3,7 +3,20 @@
 //   bot -> grader : "MOVE <R|P|S>"   (any other output line is ignored)
 // Board game (see board.js): "STATE <turn> <maxTurn> <pieces>" in, "MOVE <pid> <direction>" out.
 const { spawn } = require('child_process');
-const { command, removeContainer } = require('./languages');
+const { command, removeContainer, SANDBOX, IS_WIN } = require('./languages');
+
+// Without the sandbox a bot can be more than one process (the CPU meter and the bot under it, or
+// a launcher like Windows' java.exe): stop them all. In the sandbox, removing the container does.
+function killTree(proc) {
+  if (!proc || proc.exitCode !== null) return;
+  try {
+    if (SANDBOX) proc.kill();
+    else if (IS_WIN) spawn('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true }).on('error', () => {});
+    else process.kill(-proc.pid, 'SIGKILL'); // its process group (started detached)
+  } catch {
+    try { proc.kill(); } catch {}
+  }
+}
 
 class Bot {
   constructor(sub) {
@@ -15,13 +28,15 @@ class Bot {
     this.stdoutBuf = '';
     this.stderr = '';
     this.late = 0; // answers still owed to requests that timed out (thrown away when they come)
+    this.cpu = null; // CPU ms the last answer took, as the meter reported it (board bots)
   }
 
   start() {
     try {
       const spec = command(this.sub);
       this.container = spec.container; // sandbox: the container to remove when the bot is stopped
-      this.proc = spawn(spec.cmd, spec.args, { cwd: spec.cwd, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+      // (outside the sandbox on Linux, in its own process group so killTree reaches all of it)
+      this.proc = spawn(spec.cmd, spec.args, { cwd: spec.cwd, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'], detached: !SANDBOX && !IS_WIN });
     } catch (e) {
       return this._die('không khởi động được: ' + e.message);
     }
@@ -41,7 +56,8 @@ class Bot {
     while ((i = this.stdoutBuf.indexOf('\n')) >= 0) {
       const line = this.stdoutBuf.slice(0, i).trim();
       this.stdoutBuf = this.stdoutBuf.slice(i + 1);
-      if (line.startsWith('MOVE ') && this.late > 0) this.late--;
+      if (line.startsWith('CPU ')) this.cpu = +line.slice(4);
+      else if (line.startsWith('MOVE ') && this.late > 0) this.late--;
       else if (line.startsWith('MOVE ') && this.waiter) {
         const w = this.waiter;
         this.waiter = null;
@@ -64,7 +80,7 @@ class Bot {
 
   fail(reason) {
     this.reason = this.reason || reason;
-    try { if (this.proc) this.proc.kill(); } catch {}
+    killTree(this.proc);
     removeContainer(this.container);
     this._die(reason);
   }
@@ -79,6 +95,7 @@ class Bot {
   // its late answer is thrown away.
   ask(line, timeoutMs, { skipLate = false } = {}) {
     if (this.dead || !this.proc) return Promise.resolve(null);
+    this.cpu = null;
     return new Promise(resolve => {
       const done = m => { clearTimeout(timer); resolve(m); };
       const timer = setTimeout(() => {
@@ -100,7 +117,7 @@ class Bot {
     if (!p) return;
     try { p.stdin.write('END\n'); p.stdin.end(); } catch {}
     setTimeout(() => {
-      try { if (p.exitCode === null) { p.kill(); removeContainer(this.container); } } catch {}
+      if (p.exitCode === null) { killTree(p); removeContainer(this.container); }
     }, 300);
   }
 }

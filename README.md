@@ -101,8 +101,14 @@ Brawl, campaign, invite-only and hidden tournaments work the same way for both.
   its own piece or onto an enemy of the same kind. Moving onto an enemy it beats (R > S > P > R)
   captures it, and moving onto one that beats it loses the attacker. You win by reaching the enemy's
   home corner or by eliminating every enemy piece. After 1000 moves (both sides) the game is a draw.
-  Each move has 1 second: an illegal or late move loses the turn (a late answer is thrown away); a bot
-  that crashes, or misses 5 turns in a row, loses the game. A match is
+  Each move may use 1 second of **CPU time** (10 s for a game's first move, start-up included). As with
+  Battlecode's bytecode limit, only the bot's own computation counts, so a busy server doesn't cost it
+  turns: every board bot runs under [meter.py](server/grader/harness/meter.py), which reads the bot's
+  CPU time (`/proc` on Linux) every few ms. The moment a move goes over 1 s of CPU the meter kills the
+  bot, the turn is lost and the bot is started afresh for its next turn (anything it kept in memory is
+  gone). The wall clock only catches bots that
+  wait or hang (3 s, `MOVE_WALL_MS`). An illegal move, too much CPU or no answer loses the turn (a late
+  answer is thrown away); a bot that crashes, or misses 5 turns in a row, loses the game. A match is
   2 games, one with each side moving first, scored 3 / 1 / 0 per game (6 points max). In a campaign
   each of the 5 games in a series is a single game, with the sides taking turns at moving first.
   Rules live in [board-rules.js](public/js/board-rules.js), shared by the grader and the replay page.
@@ -189,7 +195,12 @@ When creating a tournament the judge also picks who may enter it:
    The submit page shows a practice board with every team's total (max 3000). Only you (and the judge)
    can open your per-bot scores. Practice games don't affect the tournament.
 3. **Every day at the match time** (from the start until the end date), each team's newest ✅ bot
-   submitted before that moment plays every other team once. A match (100 RPS turns, or 2 board games
+   submitted before that moment plays. The judge picks the pairing (and can change it for later days):
+   **round robin** (every other team once) or **Swiss**: ⌈log₂(teams)⌉ rounds a day, each round pairing
+   teams with similar points (all days so far, this day's earlier rounds included) and never the same
+   two teams twice in a day; with an odd number of teams the lowest-ranked team that hasn't had a bye
+   that day sits the round out and scores a win. Swiss keeps big tournaments manageable: 1000 teams
+   play 10 rounds (5,000 matches) a day instead of 499,500. A match (100 RPS turns, or 2 board games
    with the sides swapped) scores **win = 3, draw = 1, loss = 0**. Submissions stay open throughout the
    tournament, except from each match time until that day's results are published; a new bot plays
    from the next match day on.

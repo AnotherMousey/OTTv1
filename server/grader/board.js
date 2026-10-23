@@ -4,16 +4,23 @@
 //                   (its n pieces, then the enemy's m, from the bot's own side: see R.pieces)
 //   bot -> grader : "MOVE <pid> <direction 1-8>"
 // The harnesses turn this into play(gameState) -> (pid, direction).
-// An illegal move, or one that takes over MOVE_TIMEOUT_MS, skips that turn (a late answer is thrown
-// away). A bot that crashes, or misses HUNG_TURNS turns in a row (stuck), loses the game.
+// Time per move, as in Battlecode (which counts bytecodes): the limit is on the bot's computation.
+// A bot runs under a meter (harness/meter.py) that counts its CPU time, so a busy server doesn't
+// make it lose turns. Each move may use MOVE_CPU_MS of CPU (FIRST_MOVE_TIMEOUT_MS for a game's first,
+// which includes starting up); the moment a bot goes over, the meter stops it, answers for it and
+// restarts it for its next turn. The wall clock only stops a bot that waits or hangs (MOVE_WALL_MS).
+// An illegal move, too much CPU or no answer in time skips that turn (a late answer is thrown away).
+// A bot that crashes, or misses HUNG_TURNS turns in a row (stuck), loses the game.
 // A match is 2 games with the sides swapped (white moves first): win = 3, draw = 1, loss = 0 per game.
 const Bot = require('./bot');
+const { MOVE_CPU_MS, FIRST_MOVE_TIMEOUT_MS } = require('./languages');
 const R = require('../../public/js/board-rules');
 
 const GAMES = 2;
-const FIRST_MOVE_TIMEOUT_MS = +process.env.FIRST_MOVE_TIMEOUT_MS || 10000;
-const MOVE_TIMEOUT_MS = +process.env.MOVE_TIMEOUT_MS || 1000;
+const MOVE_WALL_MS = +process.env.MOVE_WALL_MS || 3 * MOVE_CPU_MS;
 const HUNG_TURNS = 5;
+// CPU time over the limit for this move, or null if it is fine
+const overCpu = (bot, first) => (bot.cpu !== null && bot.cpu > (first ? FIRST_MOVE_TIMEOUT_MS : MOVE_CPU_MS) ? bot.cpu : null);
 const MAX_SCORE = GAMES * 3; // best possible match score
 
 function request(g, side) {
@@ -40,10 +47,11 @@ async function playGame(bots) {
   while (!g.winner) {
     const side = g.toMove;
     const bot = bots[side];
-    const timeout = asked[side]++ ? MOVE_TIMEOUT_MS : FIRST_MOVE_TIMEOUT_MS;
+    const first = !asked[side]++;
+    const timeout = first ? FIRST_MOVE_TIMEOUT_MS : MOVE_WALL_MS;
     const raw = await bot.ask(request(g, side), timeout, { skipLate: true });
     if (raw === null && !bot.dead && ++missed[side] < HUNG_TURNS) {
-      if (!issues[side]) issues[side] = `Lượt ${g.turn + 1}: bot mất quá ${timeout} ms để ra nước, mất lượt`;
+      if (!issues[side]) issues[side] = `Lượt ${g.turn + 1}: bot không trả lời trong ${timeout} ms, mất lượt`;
       R.apply(g, null);
       moves.push(null);
       continue;
@@ -55,6 +63,13 @@ async function playGame(bots) {
       break;
     }
     missed[side] = 0;
+    const cpu = overCpu(bot, first);
+    if (cpu !== null) {
+      if (!issues[side]) issues[side] = `Lượt ${g.turn + 1}: bot dùng quá ${first ? FIRST_MOVE_TIMEOUT_MS : MOVE_CPU_MS} ms CPU nên bị dừng giữa chừng (và chạy lại từ đầu), mất lượt`;
+      R.apply(g, null);
+      moves.push(null);
+      continue;
+    }
     const { move, error } = parse(g, raw, side);
     if (error && !issues[side]) issues[side] = `Lượt ${g.turn + 1}: nước đi "${String(raw).slice(0, 30)}" không hợp lệ (${error}), mất lượt`;
     R.apply(g, move || null);
@@ -103,8 +118,10 @@ async function smokeTest(sub, describe) {
   const g = R.newGame();
   try {
     for (let i = 0; i < 5; i++) {
-      const raw = await bot.ask(request(g, 'white'), i === 0 ? FIRST_MOVE_TIMEOUT_MS : MOVE_TIMEOUT_MS);
+      const raw = await bot.ask(request(g, 'white'), i === 0 ? FIRST_MOVE_TIMEOUT_MS : MOVE_WALL_MS);
       if (raw === null) return { ok: false, message: `Bot của bạn ${bot.reason || 'không phản hồi'} ở nước thử thứ ${i + 1}.`, bot };
+      const cpu = overCpu(bot, i === 0);
+      if (cpu !== null) return { ok: false, message: `Ở nước thử thứ ${i + 1}, bot của bạn dùng quá ${i === 0 ? FIRST_MOVE_TIMEOUT_MS : MOVE_CPU_MS} ms CPU nên bị dừng.`, bot };
       const { move, error } = parse(g, raw, 'white');
       if (error) return { ok: false, message: `Nước thử thứ ${i + 1} của bot ("${String(raw).slice(0, 30)}") không hợp lệ: ${error}.\n${describe(g)}`, bot };
       R.apply(g, move);

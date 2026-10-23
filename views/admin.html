@@ -21,12 +21,16 @@
             <option value="board">♟️ Cờ OTT: bàn cờ 9×9, quân búa/bao/kéo đi từng ô, chạm góc đích hoặc ăn hết quân địch là thắng</option>
           </select></label>
           <label><span>chế độ</span><select name="mode" style="width:100%">
-            <option value="brawl">⚔️ Hỗn chiến: mỗi ngày vào giờ cố định, các bot đấu vòng tròn, điểm cộng dồn đến hạn chót</option>
+            <option value="brawl">⚔️ Hỗn chiến: mỗi ngày vào giờ cố định các bot đấu với nhau, điểm cộng dồn đến hạn chót</option>
             <option value="campaign">🗺️ Chiến dịch: đua hạ hết các bot đấu tập, ai về đích sớm nhất thắng</option>
           </select></label>
           <label><span>ai được tham gia</span><select name="access" style="width:100%">
             <option value="open">🌍 Mọi người chơi đều được nộp bài</option>
             <option value="invite">🔒 Chỉ những đội được trọng tài chỉ định (chọn sau khi tạo giải)</option>
+          </select></label>
+          <label id="pairingRow"><span>thể thức mỗi ngày</span><select name="pairing" style="width:100%">
+            <option value="rr">🔁 Vòng tròn: mỗi đội đấu với tất cả các đội khác</option>
+            <option value="swiss">🔀 Thụy Sĩ: log₂(số đội) vòng, mỗi vòng đấu đội có điểm gần mình, không gặp lại trong ngày</option>
           </select></label>
           <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" name="hidden"><span>🙈 Ẩn giải với người chơi (chỉ trọng tài thấy, có thể hiện sau)</span></label>
           <label><span>mô tả (không bắt buộc)</span><input name="description" style="width:100%" placeholder="Mang theo những bot xịn nhất"></label>
@@ -109,10 +113,11 @@
     function syncModeFields() {
       const brawl = $('#tform').mode.value === 'brawl';
       $('#dailyRow').classList.toggle('hidden', !brawl);
+      $('#pairingRow').classList.toggle('hidden', !brawl);
       $('#tform').dailyTime.required = brawl;
       $('#dlLabel').textContent = brawl ? 'ngày kết thúc (hạn chót nộp bài)' : 'hạn chót nộp bài';
       $('#timeHint').textContent = brawl
-        ? 'Theo giờ máy bạn. Mỗi ngày vào giờ thi đấu (từ lúc bắt đầu đến hạn chót), bot mới nhất của mỗi đội đấu vòng tròn với tất cả đội khác: thắng 3, hòa 1, thua 0. Bảng xếp hạng cộng dồn được công bố sau 10 phút. Người chơi được nộp bài suốt giải.'
+        ? `Theo giờ máy bạn. Mỗi ngày vào giờ thi đấu (từ lúc bắt đầu đến hạn chót), bot mới nhất của mỗi đội ${$('#tform').pairing.value === 'swiss' ? 'đấu ⌈log₂(số đội)⌉ vòng Thụy Sĩ (mỗi vòng gặp đội có điểm gần mình, không gặp lại trong ngày)' : 'đấu vòng tròn với tất cả đội khác'}: thắng 3, hòa 1, thua 0. Bảng xếp hạng cộng dồn được công bố sau 10 phút. Người chơi được nộp bài suốt giải, trừ lúc đang thi đấu.`
         : 'Theo giờ máy bạn. Trước giờ bắt đầu, người chơi chỉ thấy đồng hồ đếm ngược; số phút của điểm phạt được tính từ giờ bắt đầu.';
     }
     // A daily league runs for days (a week, ending at 23:59); a campaign defaults to an hour.
@@ -124,6 +129,7 @@
     }
     $('#tform').mode.addEventListener('change', () => { $('#tform').deadline.value = defaultDeadline(); });
     $('#tform').mode.addEventListener('change', syncModeFields);
+    $('#tform').pairing.addEventListener('change', syncModeFields);
     syncModeFields();
 
     let startTimer = null;
@@ -138,7 +144,7 @@
           : t.startsAt ? esc(fmtDate(t.startsAt)) : '<span class="muted">–</span>';
         return `<tr>
           <td>${esc(t.name)}</td>
-          <td>${t.game === 'board' ? '♟️ cờ OTT' : '✊ oẳn tù tì'} · ${t.mode === 'campaign' ? '🗺️ chiến dịch' : '⚔️ hỗn chiến'}${t.daily ? `<br><span class="muted" style="font-size:16px">📅 hằng ngày lúc ${open ? `<input type="time" data-daily="${t.id}" value="${t.daily.time}" style="font-size:15px;padding:0 4px">` : t.daily.time} · ${t.daily.days} ngày đã công bố</span>` : ''}${t.access === 'invite' ? `<br><span class="muted" style="font-size:16px">🔒 ${t.members} đội được chỉ định</span>` : ''}${t.hidden ? '<br><span class="muted" style="font-size:16px">🙈 đang ẩn với người chơi</span>' : ''}</td>
+          <td>${t.game === 'board' ? '♟️ cờ OTT' : '✊ oẳn tù tì'} · ${t.mode === 'campaign' ? '🗺️ chiến dịch' : '⚔️ hỗn chiến'}${t.daily ? `<br><span class="muted" style="font-size:16px">📅 hằng ngày lúc ${open ? `<input type="time" data-daily="${t.id}" value="${t.daily.time}" style="font-size:15px;padding:0 4px">` : t.daily.time} · ${open ? `<select data-pairing="${t.id}" style="font-size:15px;padding:0 4px"><option value="rr" ${t.daily.pairing === 'rr' ? 'selected' : ''}>vòng tròn</option><option value="swiss" ${t.daily.pairing === 'swiss' ? 'selected' : ''}>Thụy Sĩ</option></select>` : t.daily.pairing === 'swiss' ? 'Thụy Sĩ' : 'vòng tròn'} · ${t.daily.days} ngày đã công bố</span>` : ''}${t.access === 'invite' ? `<br><span class="muted" style="font-size:16px">🔒 ${t.members} đội được chỉ định</span>` : ''}${t.hidden ? '<br><span class="muted" style="font-size:16px">🙈 đang ẩn với người chơi</span>' : ''}</td>
           <td><span class="tag ${waiting ? 'pending' : t.status}">${waiting ? 'chưa mở' : STATUS_VI[t.status] || t.status}</span></td>
           <td>${startCell}</td>
           <td>${open ? `<input type="datetime-local" data-dl="${t.id}" value="${toLocalInput(new Date(t.deadline))}" style="font-size:16px;padding:2px 6px">` : esc(fmtDate(t.deadline))}</td>
@@ -166,6 +172,9 @@
       $$('[data-start]').forEach(inp => inp.onchange = () =>
         patch(inp.dataset.start, { startsAt: inp.value ? new Date(inp.value).toISOString() : '' }, inp.value ? 'Đã đổi giờ bắt đầu 🕘' : 'Đã bỏ giờ bắt đầu: nhận bài ngay 🚪'));
       $$('[data-nostart]').forEach(b => b.onclick = () => patch(b.dataset.nostart, { startsAt: '' }, 'Đã bỏ giờ bắt đầu: nhận bài ngay 🚪'));
+      $$('[data-pairing]').forEach(sel => sel.onchange = () => {
+        patch(sel.dataset.pairing, { pairing: sel.value }, `Từ ngày thi đấu tiếp theo: ${sel.value === 'swiss' ? 'thể thức Thụy Sĩ 🔀' : 'vòng tròn 🔁'}`);
+      });
       $$('[data-daily]').forEach(inp => inp.onchange = () => {
         if (inp.value) patch(inp.dataset.daily, { dailyTime: inp.value, tzOffset: new Date().getTimezoneOffset() }, `Đã đổi giờ thi đấu hằng ngày sang ${inp.value} ⏰`);
       });
@@ -601,7 +610,7 @@ public class Bot {
       e.preventDefault();
       const f = new FormData(e.target);
       try {
-        const { tournament } = await api('/api/admin/tournaments', { method: 'POST', body: { name: f.get('name'), game: f.get('game'), mode: f.get('mode'), dailyTime: f.get('mode') === 'brawl' ? f.get('dailyTime') : undefined, tzOffset: new Date().getTimezoneOffset(), access: f.get('access'), hidden: f.get('hidden') === 'on', description: f.get('description'), startsAt: f.get('startsAt') ? new Date(f.get('startsAt')).toISOString() : '', deadline: new Date(f.get('deadline')).toISOString() } });
+        const { tournament } = await api('/api/admin/tournaments', { method: 'POST', body: { name: f.get('name'), game: f.get('game'), mode: f.get('mode'), dailyTime: f.get('mode') === 'brawl' ? f.get('dailyTime') : undefined, pairing: f.get('mode') === 'brawl' ? f.get('pairing') : undefined, tzOffset: new Date().getTimezoneOffset(), access: f.get('access'), hidden: f.get('hidden') === 'on', description: f.get('description'), startsAt: f.get('startsAt') ? new Date(f.get('startsAt')).toISOString() : '', deadline: new Date(f.get('deadline')).toISOString() } });
         e.target.reset();
         syncModeFields();
         // invite-only: go straight to picking the players

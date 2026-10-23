@@ -124,7 +124,7 @@
         else if (b.error) banner.innerHTML = `😵 Có lỗi xảy ra: ${esc(b.error)}`;
         else if (pending) {
           const left = Date.parse(pending.publishAt) - serverNow();
-          const what = pending.status !== 'running' ? `⏳ Ngày ${pending.number} đã đấu xong` : `⚔️ Ngày ${pending.number} đang thi đấu`;
+          const what = pending.status !== 'running' ? `⏳ Ngày ${pending.number} đã đấu xong` : `⚔️ Ngày ${pending.number} đang thi đấu${pending.rounds ? ` · vòng ${pending.round}/${pending.rounds}` : ''}`;
           banner.innerHTML = `${what} · kết quả công bố ${left > 0 ? `sau <b>${fmtCountdown(left)}</b>` : 'ngay khi đấu xong'}`;
         } else if (b.nextAt) banner.innerHTML = `📅 Ngày thi đấu tiếp theo sau <b>${fmtCountdown(Date.parse(b.nextAt) - serverNow())}</b>`;
         else banner.innerHTML = b.status === 'running' ? '⏳ Đang công bố ngày cuối…' : '📅 Không còn ngày thi đấu nào trước khi giải kết thúc';
@@ -134,7 +134,7 @@
       prog.classList.toggle('hidden', !(pending && pending.status === 'running'));
       if (pending && pending.status === 'running') prog.firstElementChild.style.width = (pending.totalMatches ? (100 * pending.played) / pending.totalMatches : 0) + '%';
       const playing = pending && pending.status === 'running' ? ` · ngày ${pending.number}: đã đấu ${pending.played}/${pending.totalMatches} trận` : '';
-      sub.innerHTML = `Mỗi ngày lúc ${esc(b.dailyTime)} · thắng 3 · hòa 1 · thua 0 · ${published.length} ngày đã công bố${playing} · ${b.status === 'finished' ? 'kết thúc' : 'kết thúc lúc'} ${esc(fmtDate(b.deadline))}`
+      sub.innerHTML = `Mỗi ngày lúc ${esc(b.dailyTime)} · ${b.pairing === 'swiss' ? 'thể thức Thụy Sĩ' : 'vòng tròn'} · thắng 3 · hòa 1 · thua 0 · ${published.length} ngày đã công bố${playing} · ${b.status === 'finished' ? 'kết thúc' : 'kết thúc lúc'} ${esc(fmtDate(b.deadline))}`
         + (b.status === 'open' && ME.role !== 'judge' ? ` · <a href="/tournament/${encodeURIComponent(tid)}/submit">nộp bot</a>` : '')
         + `<br>Điểm đánh giá: điểm đấu tập của bot mới nhất của đội (tổng điểm khi đấu với các bot đấu tập), cập nhật ngay khi đấu tập xong. Bằng điểm hiện tại thì đội có điểm đánh giá cao hơn xếp trên.`;
 
@@ -272,7 +272,7 @@
         <h3>${heading(n)}</h3>
         <div class="feed">${byRound[n].slice().reverse().map(m => `
           <a href="/tournament/${encodeURIComponent(tid)}/match?name=${encodeURIComponent(m.name)}">
-            <span>${m.winner === 'A' ? '<span class="win">👑</span> ' : ''}${esc(m.teamA)} <span class="muted">vs</span> ${esc(m.teamB)}${m.winner === 'B' ? ' <span class="win">👑</span>' : ''}</span>
+            <span>${m.dayRound ? `<span class="muted">vòng ${m.dayRound} ·</span> ` : ''}${m.winner === 'A' ? '<span class="win">👑</span> ' : ''}${esc(m.teamA)} <span class="muted">vs</span> ${esc(m.teamB)}${m.winner === 'B' ? ' <span class="win">👑</span>' : ''}</span>
             <span class="score">${m.scoreA} – ${m.scoreB} ▶</span>
           </a>`).join('')}</div>`).join('') || '<p class="muted">Chưa có trận nào.</p>';
     }

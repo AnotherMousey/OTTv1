@@ -423,3 +423,9 @@ table.plain tr.editing td { background: #fff8d6; }
   .board .rank { width: 40px; }
   main { padding: 18px 12px 60px; }
 }
+
+/* ---------- judge: match list ---------- */
+.match-days { justify-content: flex-start; margin-bottom: 14px; }
+table.match-list td { white-space: nowrap; }
+table.match-list td.won { font-weight: 700; }
+table.match-list td.score { font-family: 'Pangolin', cursive; }

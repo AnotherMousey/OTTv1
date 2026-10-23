@@ -360,7 +360,7 @@
       mine = ME && M.userA === ME.id ? 'A' : ME && M.userB === ME.id ? 'B' : null;
       myView = !!mine;
       document.title = `${M.teamA} vs ${M.teamB} · OTTv1`;
-      $('#title').textContent = `${M.practice ? 'Đấu tập' : `${M.day ? 'Ngày' : 'Vòng'} ${M.round}`} · ${M.teamA} vs ${M.teamB} · ${M.scoreA} – ${M.scoreB}`;
+      $('#title').textContent = `${M.practice ? 'Đấu tập' : `${M.day ? 'Ngày' : 'Vòng'} ${M.round}${M.dayRound ? ` · vòng ${M.dayRound}` : ''}`} · ${M.teamA} vs ${M.teamB} · ${M.scoreA} – ${M.scoreB}`;
       const issues = [M.issues && M.issues.A && `${M.teamA}: ${M.issues.A}`, M.issues && M.issues.B && `${M.teamB}: ${M.issues.B}`].filter(Boolean);
       $('#issues').textContent = issues.length ? '⚠️ ' + issues.join(' · ') : '';
 

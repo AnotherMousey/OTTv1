@@ -32,7 +32,8 @@ const BOARD_TEMPLATES = {
 #   8 left                 4 right
 #   7 down-left   6 down   5 down-right
 # Only "import math" / "import random" / "import time" and the play function are allowed; helpers
-# go inside play. time.perf_counter() helps you stay under the 1 s limit. print() is fine for debugging.
+# go inside play. The limit is 1 s of CPU per move: measure it with time.process_time().
+# print() is fine for debugging.
 
 def play(gameState):
     STEP = {1: (-1, 1), 2: (0, 1), 3: (1, 1), 4: (1, 0), 5: (1, -1), 6: (0, -1), 7: (-1, -1), 8: (-1, 0)}
@@ -140,7 +141,7 @@ gameState.opponent     # list quân địch
 gameState.maxTurn      # 1000: tới đây thì hòa
 gameState.currentTurn  # số nước đã đi trong ván (cả hai bên)
 piece.pid, piece.Type, piece.x, piece.y</pre>
-    <p>Chỉ được có dòng <code>import math</code> / <code>import random</code> / <code>import time</code> và hàm <code>play</code> (hàm phụ, hằng số đặt bên trong <code>play</code>). Không dùng được thư viện khác, <code>open</code>, <code>eval</code>, class hay tên bắt đầu bằng <code>__</code>. Muốn canh thời gian thì dùng <code>import time</code>: <code>time.perf_counter()</code>, <code>time.time()</code>, <code>time.monotonic()</code>. Muốn nhớ gì giữa các lượt thì dùng tham số mặc định, ví dụ <code>def play(gameState, memo={})</code>.</p>`,
+    <p>Chỉ được có dòng <code>import math</code> / <code>import random</code> / <code>import time</code> và hàm <code>play</code> (hàm phụ, hằng số đặt bên trong <code>play</code>). Không dùng được thư viện khác, <code>open</code>, <code>eval</code>, class hay tên bắt đầu bằng <code>__</code>. Muốn canh thời gian thì dùng <code>import time</code>: <code>time.process_time()</code> đo đúng thời gian CPU bị tính. Muốn nhớ gì giữa các lượt thì dùng tham số mặc định, ví dụ <code>def play(gameState, memo={})</code>.</p>`,
   cpp: `<p>Tệp: <code>bot.cpp</code> (C++17, biên dịch bằng g++ -O2), viết một hàm:</p>
     <pre>std::pair&lt;int, int&gt; play(const State&amp; gameState);  // trả về {pid, direction}
 
@@ -168,9 +169,10 @@ function boardRules(maxTurns, cooldownMs) {
     <li>Bot trả về <b>(pid, hướng)</b>: quân nào đi, đi hướng nào. Hướng (lên = về phía hàng <code>y = 9</code>): <b>1</b> lên-trái, <b>2</b> lên, <b>3</b> lên-phải, <b>4</b> phải, <b>5</b> xuống-phải, <b>6</b> xuống, <b>7</b> xuống-trái, <b>8</b> trái.</li>
     <li>Mỗi lượt đi <b>một quân, một ô</b> theo 8 hướng. Không được đi vào ô có quân mình, hay vào quân địch <b>cùng loại</b> (hai quân cùng loại chặn nhau).</li>
     <li>Đi vào quân địch: <b>búa đập kéo, kéo cắt bao, bao trùm búa</b>. Quân bị khắc thì mất. Lao vào quân khắc mình thì quân của <b>bạn</b> mất, quân địch đứng yên.</li>
-    <li><b>Thắng</b> khi có quân chạm góc đích, hoặc ăn hết quân địch. Sau <b>${maxTurns} nước</b> (tính cả hai bên, kể cả lượt bị mất) mà chưa ai thắng thì <b>hòa</b>.</li>
+    <li><b>Thắng</b> khi có quân chạm góc đích, hoặc ăn hết quân địch. Sau <b>${maxTurns} nước</b> (tính cả hai bên, tức ${maxTurns / 2} nước mỗi bên, kể cả lượt bị mất) mà chưa ai thắng thì <b>hòa</b>.</li>
     <li>Mỗi trận gồm <b>2 ván</b>, mỗi bên được đi trước một ván. Mỗi ván: thắng = <b>3</b> điểm, hòa = <b>1</b>, thua = <b>0</b>.</li>
-    <li>Bạn có <b>1 giây</b> cho mỗi nước (nước đầu của mỗi ván được 10 giây). Nước đi không hợp lệ hoặc quá 1 giây thì <b>mất lượt</b> (câu trả lời muộn bị bỏ qua). Bot bị lỗi và dừng, hoặc quá giờ 5 lượt liền, thì <b>thua ván đó</b>. Mỗi ván bot được khởi động lại từ đầu.</li>
+    <li>Mỗi nước được dùng <b>1 giây CPU</b> (nước đầu của mỗi ván được 10 giây, tính cả lúc khởi động). Giống giới hạn bytecode của Battlecode, chỉ thời gian bot <b>thực sự tính toán</b> mới bị tính, nên máy chủ bận không làm bạn mất lượt. Đo bằng <code>time.process_time()</code> (Python), <code>clock()</code> (C++) hoặc <code>System.nanoTime()</code> (Java, luôn ≥ thời gian CPU).</li>
+    <li>Dùng quá 1 giây CPU thì bot <b>bị dừng ngay</b> và <b>mất lượt</b>; lượt sau bot được chạy lại từ đầu, nên mọi thứ bot nhớ giữa các lượt (biến toàn cục, <code>memo</code>) bị mất. Nước đi không hợp lệ, hoặc không trả lời trong 3 giây (bot ngủ hay bị treo) cũng <b>mất lượt</b> (câu trả lời muộn bị bỏ qua). Bot bị lỗi và dừng, hoặc không trả lời 5 lượt liền, thì <b>thua ván đó</b>. Mỗi ván bot được khởi động lại từ đầu.</li>
     <li>Khi nộp, hệ thống biên dịch bot và cho đi thử 5 nước. Chỉ bot ✅ mới được tham gia.</li>
     <li>Mỗi lần nộp cách nhau ít nhất <b>${Math.round(cooldownMs / 1000)} giây</b>.</li>`;
 }

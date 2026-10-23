@@ -76,9 +76,16 @@ function removeContainer(name) {
   } catch {}
 }
 
-// How to launch a compiled submission.
+// Board game: CPU time a bot may use per move, and for a game's first move (start-up included).
+const MOVE_CPU_MS = +process.env.MOVE_TIMEOUT_MS || 1000;
+const FIRST_MOVE_TIMEOUT_MS = +process.env.FIRST_MOVE_TIMEOUT_MS || 10000;
+
+// How to launch a compiled submission. A board bot runs under the CPU meter (harness/meter.py),
+// which stops it the moment a move goes over its CPU budget: the limit counts computation, not the clock.
 function command(sub) {
-  const box = (cmd, args) => boxed(sub, cmd, args, { interactive: true });
+  const box = (cmd, args) => (gameOf(sub) === 'board'
+    ? boxed(sub, TOOLS.python, ['-u', '-B', '_meter.py', '--limit', String(MOVE_CPU_MS), '--first', String(FIRST_MOVE_TIMEOUT_MS), cmd, ...args], { interactive: true })
+    : boxed(sub, cmd, args, { interactive: true }));
   switch (sub.language) {
     case 'cpp':
       return box(SANDBOX ? './bot' : path.join(buildDir(sub), WIN_EXE ? 'bot.exe' : 'bot'), []);
@@ -91,4 +98,4 @@ function command(sub) {
   }
 }
 
-module.exports = { IS_WIN, WIN_EXE, SANDBOX, DOCKER, BOT_IMAGE, HOST_BUILD_ROOT, BUILD_ROOT, TOOLS, LANGS, buildDir, gameOf, boxed, removeContainer, command };
+module.exports = { MOVE_CPU_MS, FIRST_MOVE_TIMEOUT_MS, IS_WIN, WIN_EXE, SANDBOX, DOCKER, BOT_IMAGE, HOST_BUILD_ROOT, BUILD_ROOT, TOOLS, LANGS, buildDir, gameOf, boxed, removeContainer, command };

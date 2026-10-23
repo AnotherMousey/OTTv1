@@ -110,7 +110,7 @@ function publicTournament(t, user) {
     description: t.description || '',
     deadline: t.deadline,
     startsAt: t.startsAt || null,
-    ...(daily.isDaily(t) ? { daily: { time: t.dailyTime, nextAt: t.status === 'open' ? daily.nextSlot(t, Date.now()) : null, frozen: t.status === 'open' ? daily.frozen(t) : null, days: (t.days || []).filter(d => d.status === 'published').length, publishDelayMs: daily.PUBLISH_DELAY_MS } } : {}),
+    ...(daily.isDaily(t) ? { daily: { time: t.dailyTime, pairing: daily.pairingOf(t), nextAt: t.status === 'open' ? daily.nextSlot(t, Date.now()) : null, frozen: t.status === 'open' ? daily.frozen(t) : null, days: (t.days || []).filter(d => d.status === 'published').length, publishDelayMs: daily.PUBLISH_DELAY_MS } } : {}),
     status: t.status,
     createdAt: t.createdAt || t.startsAt || t.deadline,
     teamsReady: t.entries ? t.entries.length : ready.size,
@@ -140,6 +140,7 @@ app.get('/tournament/:id/live', pageAuth, view('live.html'));
 app.get('/tournament/:id/match', pageAuth, (req, res) => view(gameOf(findTournament(req.params.id)) === 'board' ? 'board-match.html' : 'match.html')(req, res));
 app.get('/me', pageAuth, view('profile.html'));
 app.get('/admin', pageAuth, (req, res) => (isJudge(req.user) ? view('admin.html')(req, res) : res.redirect('/')));
+app.get('/admin/matches', pageAuth, (req, res) => (isJudge(req.user) ? view('matches.html')(req, res) : res.redirect('/')));
 
 // ---------- auth ----------
 app.post('/api/login', (req, res) => {
@@ -380,6 +381,30 @@ app.get('/api/tournaments/:id/matches/:name', apiAuth, wrap(async (req, res) => 
 }));
 
 // ---------- judge ----------
+// Every match of a tournament for the judge's match list, grouped by day (daily league) or round,
+// by match id. Matches from before ids existed are numbered 1..k in the order they were played
+// (new ids start after them, see tournament.js).
+app.get('/api/admin/tournaments/:id/matches', apiAuth, apiJudge, (req, res) => {
+  const t = findTournament(req.params.id);
+  if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
+  const usernameOf = id => (findUser(id) || {}).username || '';
+  const all = Object.values(db.data.matches[t.id] || {});
+  const old = all.filter(m => !m.id).sort((a, b) => ((a.playedAt || '') < (b.playedAt || '') ? -1 : 1));
+  const idOf = new Map(old.map((m, i) => [m, i + 1]));
+  const matches = all
+    .map(m => [m, m.id || idOf.get(m)])
+    .sort((a, b) => a[1] - b[1])
+    .map(([m, id]) => ({
+      id, name: m.name, group: m.day ? `d${m.day}` : `r${m.round}`, dayRound: m.dayRound || null,
+      teamA: m.teamA, teamB: m.teamB, userA: usernameOf(m.userA), userB: usernameOf(m.userB),
+      scoreA: m.scoreA, scoreB: m.scoreB, winner: m.winner, durationMs: m.durationMs ?? null, playedAt: m.playedAt || null,
+    }));
+  const groups = daily.isDaily(t)
+    ? (t.days || []).map(d => ({ key: `d${d.number}`, label: `Ngày ${d.number}`, at: d.slot || d.startedAt, status: d.status, rounds: d.rounds || null }))
+    : [...new Set(matches.map(m => m.group))].map(k => ({ key: k, label: `Vòng ${k.slice(1)}`, at: (matches.find(m => m.group === k) || {}).playedAt || null, status: 'published' }));
+  res.json({ tournament: { id: t.id, name: t.name, game: gameOf(t), status: t.status }, groups, matches });
+});
+
 app.get('/api/admin/users', apiAuth, apiJudge, (req, res) => {
   res.json({ users: db.data.users.map(auth.publicUser) });
 });
@@ -455,7 +480,7 @@ function parseStart(v, deadline) {
   return new Date(ms).toISOString();
 }
 app.post('/api/admin/tournaments', apiAuth, apiJudge, (req, res) => {
-  const { name, deadline, startsAt, description, mode = 'brawl', game = 'rps', access = 'open', hidden = false, dailyTime, tzOffset = 0 } = req.body || {};
+  const { name, deadline, startsAt, description, mode = 'brawl', game = 'rps', access = 'open', hidden = false, dailyTime, tzOffset = 0, pairing = 'rr' } = req.body || {};
   if (!String(name || '').trim()) return fail(res, 400, 'Hãy đặt tên cho giải đấu');
   if (!['rps', 'board'].includes(game)) return fail(res, 400, 'Trò chơi phải là rps (oẳn tù tì) hoặc board (cờ OTT)');
   if (!['brawl', 'campaign'].includes(mode)) return fail(res, 400, 'Chế độ phải là brawl (hỗn chiến) hoặc campaign (chiến dịch)');
@@ -471,7 +496,8 @@ app.post('/api/admin/tournaments', apiAuth, apiJudge, (req, res) => {
     if (!daily.validTime(dailyTime)) return fail(res, 400, 'Hãy chọn giờ thi đấu hằng ngày (HH:MM)');
     if (!Number.isInteger(tzOffset) || Math.abs(tzOffset) > 14 * 60) return fail(res, 400, 'Múi giờ không hợp lệ');
     const now = new Date().toISOString();
-    schedule = { format: 'daily', dailyTime, tzOffset, dailySince: now, days: [] };
+    if (!['rr', 'swiss'].includes(pairing)) return fail(res, 400, 'Thể thức phải là vòng tròn (rr) hoặc Thụy Sĩ (swiss)');
+    schedule = { format: 'daily', pairing, dailyTime, tzOffset, dailySince: now, days: [] };
     if (!daily.nextSlot({ ...schedule, startsAt: start, createdAt: now, deadline: dl }, Date.now())) return fail(res, 400, `Không có ngày thi đấu nào: giờ ${dailyTime} không rơi vào khoảng từ lúc bắt đầu đến hạn chót`);
   }
   const t = { id: db.id(), name: String(name).trim().slice(0, 80), mode, game, ...schedule, access, ...(access === 'invite' ? { members: [] } : {}), ...(start ? { startsAt: start } : {}), ...(hidden === true ? { hidden: true } : {}), description: String(description || '').slice(0, 500), deadline: dl, status: 'open', createdAt: new Date().toISOString() };
@@ -483,12 +509,16 @@ app.post('/api/admin/tournaments', apiAuth, apiJudge, (req, res) => {
 app.patch('/api/admin/tournaments/:id', apiAuth, apiJudge, (req, res) => {
   const t = findTournament(req.params.id);
   if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
-  const { name, deadline, startsAt, description, access, hidden, dailyTime, tzOffset } = req.body || {};
+  const { name, deadline, startsAt, description, access, hidden, dailyTime, tzOffset, pairing } = req.body || {};
   // hiding / showing works at any time; everything else only before the tournament starts
   const onlyHidden = Object.keys(req.body || {}).every(k => k === 'hidden');
   if (t.status !== 'open' && !onlyHidden) return fail(res, 400, 'Chỉ sửa được giải đấu chưa bắt đầu');
   if (hidden !== undefined && typeof hidden !== 'boolean') return fail(res, 400, 'hidden phải là true hoặc false');
   if (access !== undefined && !['open', 'invite'].includes(access)) return fail(res, 400, 'Quyền tham gia phải là open hoặc invite');
+  if (pairing !== undefined) {
+    if (!daily.isDaily(t) || !['rr', 'swiss'].includes(pairing)) return fail(res, 400, 'Thể thức phải là vòng tròn (rr) hoặc Thụy Sĩ (swiss)');
+    t.pairing = pairing; // from the next day on
+  }
   if (dailyTime !== undefined) {
     if (!daily.isDaily(t)) return fail(res, 400, 'Chỉ giải hỗn chiến mới có giờ thi đấu hằng ngày');
     if (!daily.validTime(dailyTime)) return fail(res, 400, 'Giờ thi đấu hằng ngày không hợp lệ (HH:MM)');

@@ -113,13 +113,38 @@ class TournamentManager {
       this.broadcast(t);
       this.io.to('users').emit('tournaments:changed'); // the next match time moved on
     }
-    const played = new Set(daily.dayMatches(t, day).map(m => m.name));
-    const jobs = daily.pairsOf(day).filter(j => !played.has(j.name));
-    await pool(jobs, PARALLEL_MATCHES, job => this.playMatch(t, { number: day.number, day: true }, job, 0));
+    day.pairing = day.pairing || daily.pairingOf(t); // fixed for the day, even if the judge changes it meanwhile
+    if (day.pairing === 'swiss') await this.runSwissDay(t, day);
+    else {
+      const played = new Set(daily.dayMatches(t, day).map(m => m.name));
+      const jobs = daily.pairsOf(day).filter(j => !played.has(j.name));
+      await pool(jobs, PARALLEL_MATCHES, job => this.playMatch(t, { number: day.number, day: true }, job, 0));
+    }
     day.status = 'done';
     day.finishedAt = new Date().toISOString();
     db.save();
     this.broadcast(t);
+  }
+
+  // Swiss day: ceil(log2(teams)) rounds, each paired once the previous one has been played (so the
+  // pairing sees its results). Pairs and byes are kept on the day, so a restart resumes the round.
+  async runSwissDay(t, day) {
+    if (day.rounds === undefined) day.rounds = daily.swissRounds(day.entries.length);
+    day.pairs = day.pairs || {};
+    day.byes = day.byes || [];
+    const entry = id => day.entries.find(e => e.userId === id);
+    for (let r = 1; r <= day.rounds; r++) {
+      if (!day.pairs[r]) {
+        const { pairs, bye } = daily.swissPairs(t, day, r);
+        day.pairs[r] = pairs;
+        if (bye) day.byes.push({ round: r, userId: bye });
+        db.save();
+        this.broadcast(t);
+      }
+      const played = new Set(daily.dayMatches(t, day).map(m => m.name));
+      const jobs = day.pairs[r].filter(p => !played.has(p.name)).map(p => ({ A: entry(p.a), B: entry(p.b), name: p.name, dayRound: r }));
+      await pool(jobs, PARALLEL_MATCHES, job => this.playMatch(t, { number: day.number, day: true }, job, 0));
+    }
   }
 
   publishDay(t, day) {
@@ -266,14 +291,21 @@ class TournamentManager {
     }
   }
 
-  async playMatch(t, round, { A, B, name }, pace = MATCH_PACE_MS) {
+  async playMatch(t, round, { A, B, name, dayRound }, pace = MATCH_PACE_MS) {
     const sub = id => db.data.submissions.find(s => s.id === id);
-    const [res] = await Promise.all([runMatch(sub(A.submissionId), sub(B.submissionId), grader.ensureBuilt), sleep(pace)]);
+    const started = Date.now();
+    const [res] = await Promise.all([runMatch(sub(A.submissionId), sub(B.submissionId), grader.ensureBuilt).then(r => ({ ...r, durationMs: Date.now() - started })), sleep(pace)]);
+    // match ids count up per tournament; the matches from before ids existed are numbered 1..k by
+    // when they were played (see the judge's match list), so new ids start after them
+    t.matchSeq = (t.matchSeq ?? Object.keys(db.data.matches[t.id] || {}).length) + 1;
     const m = {
+      id: t.matchSeq,
+      durationMs: res.durationMs,
       name,
       tournamentId: t.id,
       round: round.number,
       ...(round.day ? { day: round.number } : {}),
+      ...(dayRound ? { dayRound } : {}), // Swiss: the round within the day
       teamA: A.teamName, teamB: B.teamName,
       userA: A.userId, userB: B.userId,
       languageA: A.language, languageB: B.language,
@@ -377,7 +409,7 @@ class TournamentManager {
 }
 
 function matchSummary(m) {
-  return { name: m.name, round: m.round, day: m.day, teamA: m.teamA, teamB: m.teamB, scoreA: m.scoreA, scoreB: m.scoreB, winner: m.winner, playedAt: m.playedAt };
+  return { id: m.id, name: m.name, round: m.round, day: m.day, dayRound: m.dayRound, durationMs: m.durationMs, teamA: m.teamA, teamB: m.teamB, scoreA: m.scoreA, scoreB: m.scoreB, winner: m.winner, playedAt: m.playedAt };
 }
 
 module.exports = { TournamentManager, matchSummary };
