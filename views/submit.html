@@ -10,6 +10,7 @@
 <body>
   <header id="topbar"></header>
   <main class="wide">
+    <div class="notice hidden" id="notice"></div>
     <a href="/">← quay lại danh sách giải đấu</a>
     <div class="row" style="justify-content:space-between;align-items:flex-end">
       <div>
@@ -142,12 +143,12 @@ public class Bot {
       </ul>`;
       }
       return `<ul>${commonRules()}
-        ${tournament && tournament.daily ? `<li><b>Thi đấu hằng ngày:</b> mỗi ngày lúc <b>${tournament.daily.time}</b>, từ lúc giải mở đến khi giải kết thúc, bot ✅ mới nhất mà mỗi đội nộp trước giờ đó ${tournament.daily.pairing === 'swiss'
-          ? 'đấu theo <b>thể thức Thụy Sĩ</b>: mỗi ngày có <b>⌈log₂(số đội)⌉ vòng</b>; mỗi vòng, mỗi đội đấu một đội có điểm gần mình nhất mà chưa gặp trong ngày (không gặp lại cùng một đội trong một ngày). Số đội lẻ thì một đội được nghỉ vòng đó và được tính thắng (3 điểm)'
+        ${tournament && tournament.daily ? `<li><b>Vòng đấu:</b> mỗi ngày một vòng lúc <b>${tournament.daily.time}</b>, từ lúc giải mở đến khi giải kết thúc, bot ✅ mới nhất mà mỗi đội nộp trước giờ đó ${tournament.daily.pairing === 'swiss'
+          ? 'đấu theo <b>thể thức Thụy Sĩ</b>: mỗi vòng có <b>⌈log₂(số đội)⌉ đợt</b>; mỗi đợt, mỗi đội đấu một đội có điểm gần mình nhất mà chưa gặp trong vòng (không gặp lại cùng một đội trong một vòng). Số đội lẻ thì một đội được nghỉ đợt đó và được tính thắng (3 điểm)'
           : 'đấu vòng tròn với tất cả các đội khác'}, mỗi cặp một trận${isBoard() ? ' (2 ván, mỗi bên đi trước một ván)' : ''}. Thắng trận = <b>3</b> điểm, hòa = <b>1</b>, thua = <b>0</b>.</li>
-        <li>Kết quả được giữ kín và công bố sau <b>${Math.round(tournament.daily.publishDelayMs / 60000)} phút</b>: lúc đó bảng xếp hạng (điểm cộng dồn qua các ngày) được cập nhật cho mọi người, và ai cũng xem lại được các trận của ngày đó. Bằng điểm thì xét điểm đánh giá, rồi số trận thắng, rồi điểm phụ (tổng điểm trong các trận).</li>
+        <li>Kết quả được giữ kín và công bố sau <b>${Math.round(tournament.daily.publishDelayMs / 60000)} phút</b>: lúc đó bảng xếp hạng (điểm cộng dồn qua các vòng) được cập nhật cho mọi người, và ai cũng xem lại được các trận của vòng đó. Bằng điểm thì xét điểm đánh giá, rồi số trận thắng, rồi điểm phụ (tổng điểm trong các trận).</li>
         <li><b>Điểm đánh giá:</b> là điểm đấu tập của bot mới nhất của bạn (tổng điểm khi đấu với các bot đấu tập), cập nhật ngay khi đấu tập xong. Kết quả từng trận đấu tập và nút xem lại trận nằm ngay trên trang này. Bảng xếp hạng hiện điểm hiện tại (cộng dồn) và điểm đánh giá; bằng điểm hiện tại thì điểm đánh giá cao hơn xếp trên.</li>
-        <li>Bạn được nộp bài suốt giải, trừ lúc <b>khóa nộp bài</b>: từ giờ thi đấu mỗi ngày đến khi công bố kết quả ngày đó. Bot mới chỉ ra sân từ ngày thi đấu tiếp theo. Đội đứng đầu bảng khi giải kết thúc là nhà vô địch.</li>` : '<li>Mỗi vòng thi đấu vòng tròn. Sau mỗi vòng, <b>min(3, số đội − 2)</b> đội ít điểm nhất bị loại, cho đến khi còn 2 đội vào chung kết.</li>'}
+        <li>Bạn được nộp bài suốt giải, trừ lúc <b>khóa nộp bài</b>: từ lúc một vòng bắt đầu đến khi công bố kết quả vòng đó. Bot mới chỉ ra sân từ vòng đấu tiếp theo. Đội đứng đầu bảng khi giải kết thúc là nhà vô địch.</li>` : '<li>Mỗi vòng thi đấu vòng tròn. Sau mỗi vòng, <b>min(3, số đội − 2)</b> đội ít điểm nhất bị loại, cho đến khi còn 2 đội vào chung kết.</li>'}
         <li>Mỗi bot ✅ sau đó đấu tập ${isBoard() ? 'một trận (2 ván)' : `${TURNS} lượt`} với từng bot trong ${bots.length} bot của nhà. Tổng điểm là điểm đánh giá của bạn; chỉ bạn (và trọng tài) xem được kết quả và xem lại từng trận đấu tập, ngay trên trang này. Đấu tập không cộng vào điểm hiện tại.</li>
       </ul>`;
     }
@@ -201,6 +202,7 @@ public class Bot {
       const data = await api(`/api/tournaments/${encodeURIComponent(tid)}`);
       const firstLoad = !tournament;
       tournament = data.tournament;
+      showBoardNotice(tournament.game);
       bots = data.bots || [];
       if (data.turns) TURNS = data.turns;
       if (data.gamesNeeded) GAMES = data.gamesNeeded;
@@ -310,7 +312,7 @@ public class Bot {
       const next = tournament.daily && tournament.daily.nextAt;
       const fr = tournament.daily && tournament.daily.frozen;
       $('#nextDay').classList.toggle('hidden', !next && !fr);
-      if (fr) $('#nextDay').textContent = `⚔️ Ngày ${fr.day} đang thi đấu: tạm khóa nộp bài${fr.publishAt && Date.parse(fr.publishAt) > serverNow() ? `, công bố kết quả sau ${fmtCountdown(Date.parse(fr.publishAt) - serverNow())}` : ' đến khi công bố kết quả'}`;
+      if (fr) $('#nextDay').textContent = `⚔️ Vòng ${fr.day} đang thi đấu: tạm khóa nộp bài${fr.publishAt && Date.parse(fr.publishAt) > serverNow() ? `, công bố kết quả sau ${fmtCountdown(Date.parse(fr.publishAt) - serverNow())}` : ' đến khi công bố kết quả'}`;
       else if (next) $('#nextDay').textContent = Date.parse(next) > serverNow() ? `📅 trận tiếp theo sau ${fmtCountdown(Date.parse(next) - serverNow())} (khóa nộp bài từ lúc đó đến khi công bố kết quả)` : '⚔️ các bot đang ra sân…';
       $('#countdown').textContent = fmtCountdown(left);
       $('#countdown').classList.toggle('soon', !notYet && left > 0 && left < 60000);

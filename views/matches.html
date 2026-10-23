@@ -18,11 +18,11 @@
     <div class="game-tabs match-days" id="days"></div>
     <div class="box">
       <p class="muted" id="summary" style="margin:0 0 6px;font-size:17px"></p>
-      <div style="overflow-x:auto">
+      <div class="scroll-table" style="max-height:70vh;overflow:auto">
         <table class="plain match-list">
           <!-- fixed column widths: every day's table is the same size, long names are cut short (…) -->
           <colgroup><col style="width:64px"><col style="width:130px"><col><col style="width:40px"><col><col><col style="width:110px"><col style="width:130px"><col style="width:100px"><col style="width:84px"></colgroup>
-          <thead><tr><th>#</th><th>vòng</th><th>đội A</th><th></th><th>đội B</th><th>thắng</th><th>tỉ số</th><th title="thời gian chạy trận đấu, từ lúc bắt đầu tới lúc xong">thời gian chạy</th><th>xong lúc</th><th></th></tr></thead>
+          <thead><tr><th>#</th><th>đợt</th><th>đội A</th><th></th><th>đội B</th><th>thắng</th><th>tỉ số</th><th title="thời gian chạy trận đấu, từ lúc bắt đầu tới lúc xong">thời gian chạy</th><th>xong lúc</th><th></th></tr></thead>
           <tbody id="rows"></tbody>
         </table>
       </div>
@@ -79,14 +79,14 @@
       const label = g => (g.status === 'running' ? ' · đang đấu' : g.status === 'done' ? ' · chưa công bố' : '');
       $('#days').innerHTML = groups.map(g => `<button class="${!q && g.key === group ? 'on' : ''}" data-g="${g.key}">${esc(g.label)}
         <small>${g.at ? esc(fmtDate(g.at)) : ''} · ${count(g.key)} trận${label(g)}</small></button>`).join('')
-        || '<p class="muted">Giải này chưa có ngày thi đấu nào.</p>';
+        || '<p class="muted">Giải này chưa có vòng đấu nào.</p>';
       $$('#days button').forEach(b => b.onclick = () => { group = b.dataset.g; search = ''; $('#q').value = ''; render(); });
 
       const g = groups.find(x => x.key === group);
       const list = q ? all.filter(m => matches(m, q)) : all.filter(m => m.group === group);
       const timed = list.filter(m => m.durationMs !== null);
       const total = timed.reduce((s, m) => s + m.durationMs, 0);
-      const head = q ? `Tìm "${q}" trong mọi ngày` : g ? `${g.label}${g.rounds ? ` · ${g.rounds} vòng Thụy Sĩ` : ''}` : '';
+      const head = q ? `Tìm "${q}" trong mọi vòng` : g ? `${g.label}${g.rounds ? ` · ${g.rounds} đợt Thụy Sĩ` : ''}` : '';
       $('#summary').textContent = head
         ? `${head} · ${list.length} trận${timed.length ? ` · tổng thời gian chạy ${fmtDuration(total)} · trung bình ${fmtDuration(total / timed.length)}` : ''}`
           + (timed.length < list.length ? ` · ${list.length - timed.length} trận đấu trước khi có ghi thời gian chạy (–)` : '')
@@ -94,12 +94,12 @@
       const groupLabel = key => (groups.find(x => x.key === key) || {}).label || '';
       const me = ME && ME.username;
       const empty = q ? 'Không có trận nào khớp.'
-        : g && !data.judge && g.status !== 'published' ? 'Kết quả ngày này chưa được công bố.'
-        : 'Chưa có trận nào trong ngày này.';
+        : g && !data.judge && g.status !== 'published' ? 'Kết quả vòng này chưa được công bố.'
+        : 'Chưa có trận nào trong vòng này.';
       $('#rows').innerHTML = list.map(m => {
         const winner = m.winner === 'A' ? team(m.teamA, m.userA) : m.winner === 'B' ? team(m.teamB, m.userB) : '<span class="muted">hòa 🤝</span>';
         const href = `/tournament/${encodeURIComponent(tournament.id)}/match?name=${encodeURIComponent(m.name)}`;
-        const where = q ? [groupLabel(m.group), m.dayRound ? `vòng ${m.dayRound}` : ''].filter(Boolean).join(' · ') : m.dayRound ? String(m.dayRound) : '';
+        const where = q ? [groupLabel(m.group), m.dayRound ? `đợt ${m.dayRound}` : ''].filter(Boolean).join(' · ') : m.dayRound ? String(m.dayRound) : '';
         return `<tr class="${me && (m.userA === me || m.userB === me) ? 'me' : ''}">
           <td class="muted">${m.id ?? '–'}</td>
           <td class="muted">${esc(where || '–')}</td>

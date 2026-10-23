@@ -30,10 +30,16 @@ function verifyPassword(password, stored) {
   return got.length === want.length && crypto.timingSafeEqual(got, want);
 }
 
+// Whether a name has something you can see: not only spaces, zero-width characters (format
+// characters, which trim() keeps) or blank-looking letters like the Hangul filler "ㅤ".
+const INVISIBLE = /[\s\p{Cf}\p{M}\u115F\u1160\u3164\uFFA0\u2800]/gu;
+const hasVisible = name => String(name || '').replace(INVISIBLE, '') !== '';
+
 // Team names are shown everywhere and must be unique (case-insensitive). `except` = the user being
 // renamed; `others` = accounts about to be created in the same batch.
 function checkTeamName(teamName, except = null, others = []) {
   if (!teamName) throw new Error('Tên đội không được để trống');
+  if (!hasVisible(teamName)) throw new Error('Tên đội phải có ít nhất một ký tự nhìn thấy được');
   if (teamName.length > 32) throw new Error('Tên đội tối đa 32 ký tự');
   if ([...db.data.users, ...others].some(u => u !== except && u.teamName.toLowerCase() === teamName.toLowerCase())) throw new Error('Tên đội đã có người dùng');
 }
@@ -145,4 +151,4 @@ function publicUser(u) {
   return u && { id: u.id, username: u.username, teamName: u.teamName, role: u.role, avatar: avatarOf(u) };
 }
 
-module.exports = { hashPassword, verifyPassword, createUser, createUsers, renameTeam, prepareUsers, ensureJudge, publicUser, avatarOf };
+module.exports = { hasVisible, hashPassword, verifyPassword, createUser, createUsers, renameTeam, prepareUsers, ensureJudge, publicUser, avatarOf };

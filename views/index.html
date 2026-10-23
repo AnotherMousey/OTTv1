@@ -41,9 +41,9 @@
         const statusText = waiting ? 'sắp mở' : { open: 'đang nhận bot', running: 'ĐANG DIỄN RA', finished: 'đã kết thúc' }[t.status];
         let timer = '';
         if (waiting) timer = `<small class="muted">mở nhận bài sau</small><div class="countdown" data-deadline="${t.startsAt}" data-opens="1"></div><small class="muted">mở lúc ${esc(fmtDate(t.startsAt))} · đóng lúc ${esc(fmtDate(t.deadline))}</small>`;
-        else if (t.status === 'open' && t.daily) timer = `<small class="muted">📅 thi đấu mỗi ngày lúc ${t.daily.time}</small><div class="countdown" data-deadline="${t.daily.nextAt || t.deadline}"></div><small class="muted">${t.daily.nextAt ? `trận tiếp theo · ${esc(fmtDate(t.daily.nextAt))}` : 'không còn ngày thi đấu nào'}<br>kết thúc lúc ${esc(fmtDate(t.deadline))}</small>`;
+        else if (t.status === 'open' && t.daily) timer = `<small class="muted">📅 thi đấu mỗi ngày lúc ${t.daily.time}</small><div class="countdown" data-deadline="${t.daily.nextAt || t.deadline}"></div><small class="muted">${t.daily.nextAt ? `trận tiếp theo · ${esc(fmtDate(t.daily.nextAt))}` : 'không còn vòng đấu nào'}<br>kết thúc lúc ${esc(fmtDate(t.deadline))}</small>`;
         else if (t.status === 'open') timer = `<div class="countdown" data-deadline="${t.deadline}"></div><small class="muted">đóng lúc ${esc(fmtDate(t.deadline))}</small>`;
-        else if (t.status === 'running') timer = `<div class="countdown">${t.daily ? '🔥 ngày cuối…' : '🔥 đang đấu…'}</div>`;
+        else if (t.status === 'running') timer = `<div class="countdown">${t.daily ? '🔥 vòng cuối…' : '🔥 đang đấu…'}</div>`;
         else timer = `<div class="countdown">${t.champion ? '🏆 ' + esc(t.champion) : 'không có người thắng'}</div>`;
         const actions = [];
         if (waiting && ME.role !== 'judge') actions.push(`<a class="btn" href="/tournament/${id}/submit">Xem luật & chuẩn bị code 📜</a>`);

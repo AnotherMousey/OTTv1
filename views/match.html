@@ -307,7 +307,7 @@
         cumB.push(cumB[k] + pb);
       }
       document.title = `${M.teamA} vs ${M.teamB} · OTTv1`;
-      $('#title').textContent = `${M.practice ? 'Đấu tập' : `${M.day ? 'Ngày' : 'Vòng'} ${M.round}${M.dayRound ? ` · vòng ${M.dayRound}` : ''}`} · ${M.teamA} vs ${M.teamB}`;
+      $('#title').textContent = `${M.practice ? 'Đấu tập' : `Vòng ${M.round}${M.dayRound ? ` · đợt ${M.dayRound}` : ''}`} · ${M.teamA} vs ${M.teamB}`;
       $('#scrub').max = N;
       const issues = [M.issues && M.issues.A && `${M.teamA}: ${M.issues.A}`, M.issues && M.issues.B && `${M.teamB}: ${M.issues.B}`].filter(Boolean);
       $('#issues').textContent = issues.length ? '⚠️ ' + issues.join(' · ') : '';

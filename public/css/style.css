@@ -293,7 +293,7 @@ pre.msg { white-space: pre; background: #f4f2ea; border-radius: 8px; padding: 10
 .progress { height: 22px; border: 3px solid var(--ink); border-radius: var(--wobble); background: #fff; overflow: hidden; margin: 8px auto 4px; max-width: 520px; }
 .progress > div { height: 100%; background: repeating-linear-gradient(-45deg, var(--yellow) 0 12px, #ffe98a 12px 24px); transition: width .5s; }
 .board { width: 100%; border-collapse: separate; border-spacing: 0 10px; }
-.board th { font-weight: 400; color: var(--muted); font-size: 17px; text-align: left; padding: 0 12px; }
+.board th { font-weight: 400; color: var(--muted); font-size: 17px; text-align: left; padding: 0 12px; white-space: nowrap; }
 .board td { background: #fff; border-top: 3px solid var(--ink); border-bottom: 3px solid var(--ink); padding: 8px 12px; }
 .board td:first-child { border-left: 3px solid var(--ink); border-radius: 18px 4px 4px 22px; }
 .board td:last-child { border-right: 3px solid var(--ink); border-radius: 4px 22px 18px 4px; }
@@ -303,6 +303,14 @@ pre.msg { white-space: pre; background: #f4f2ea; border-radius: 8px; padding: 10
 .board .team .uname { color: var(--muted); font-size: 15px; }
 .board .pts { font-family: 'Pangolin', cursive; font-size: 30px; }
 .board tr.me td { background: #fff8d6; }
+.notice { background: #fff1a8; border: 3px solid var(--ink); border-radius: var(--wobble); padding: 8px 16px; margin: 0 0 14px; font-size: 19px; text-align: center; }
+/* daily league: one column per day, scrolling sideways in step (max-width: 0 lets the cell shrink) */
+.board td.days, .board th.days { width: 100%; max-width: 0; }
+.dayscroll { overflow-x: auto; scrollbar-width: thin; }
+.daystrip { display: flex; width: max-content; }
+.daystrip .day { flex: 0 0 74px; text-align: center; font-family: 'Pangolin', cursive; font-size: 22px; }
+.board th .daystrip .day { font-family: inherit; font-size: 17px; }
+.daystrip .daynone { font-size: 16px; padding: 0 8px; }
 .board tr.eliminated td { background: #f0efea; color: #999; }
 .board tr.eliminated .team span.n { text-decoration: line-through wavy #c66; }
 .board tr.champion td { background: #fff1a8; }
@@ -400,14 +408,23 @@ table.plain tr.editing td { background: #fff8d6; }
 .scroll-table { max-height: 300px; overflow-y: auto; overscroll-behavior: contain; border-radius: 8px; }
 .scroll-table thead th { position: sticky; top: 0; background: #fff; z-index: 1; }
 /* the judge's tournament list: scrolls like the account list, actions in a 3-column grid */
-.scroll-table.tscroll { max-height: 640px; overflow: auto; }
+.scroll-table.tscroll { overflow: auto; } /* height: 5 rows, set by the page */
 table.admin-tlist { min-width: 1100px; }
+table.admin-tlist th, table.admin-tlist td { padding-left: 12px; padding-right: 12px; }
+table.admin-tlist th { white-space: nowrap; }
+/* status, start, deadline, teams: centred under their headings */
+table.admin-tlist th:nth-child(n+3):nth-child(-n+6), table.admin-tlist td:nth-child(n+3):nth-child(-n+6) { text-align: center; white-space: nowrap; }
+table.admin-tlist td:nth-child(4) .row { justify-content: center; }
+.focus-title { text-align: center; }
 table.admin-tlist td:first-child { min-width: 170px; }
 table.admin-tlist td:nth-child(2) { min-width: 260px; }
 table.admin-tlist .tag { white-space: nowrap; }
 /* the judge's account list: the four text columns share the width evenly */
 table.accounts { table-layout: fixed; min-width: 900px; }
 table.accounts td:not(:last-child) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+table.subs { table-layout: fixed; min-width: 900px; }
+table.subs td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sub-code-text { max-height: 560px; overflow: auto; }
 .tactions { display: grid; grid-template-columns: repeat(3, auto); gap: 6px; justify-content: start; }
 .tactions .btn { white-space: nowrap; text-align: center; justify-self: start; }
 .member-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 6px; max-height: 420px; overflow: auto; padding: 2px; }
@@ -445,3 +462,6 @@ table.match-list th, table.match-list td { white-space: nowrap; overflow: hidden
 table.match-list tr.me td { background: #fff8d6; }
 table.match-list td.won { font-weight: 700; }
 table.match-list td.score { font-family: 'Pangolin', cursive; }
+/* only the header row shows the sideways scrollbar; the rows follow it (and scroll with a trackpad) */
+.board td .dayscroll { scrollbar-width: none; }
+.board td .dayscroll::-webkit-scrollbar { display: none; }

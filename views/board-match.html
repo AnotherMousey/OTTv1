@@ -86,12 +86,13 @@
     function buildReplay(game) {
       const g = R.newGame();
       const states = [snapshot(g.board)], events = [];
-      for (const move of game.moves) {
+      game.moves.forEach((move, k) => {
         const side = g.toMove;
         const ev = R.apply(g, move);
-        events.push({ ...ev, side, move });
+        // (games played before verdicts were recorded have none: undefined)
+        events.push({ ...ev, side, move, verdict: (game.verdicts || [])[k] });
         states.push(snapshot(g.board));
-      }
+      });
       const teamOf = { white: game.white, black: game.white === 'A' ? 'B' : 'A' };
       return { states, events, teamOf, N: game.moves.length };
     }
@@ -232,7 +233,8 @@
         $('#capSub').textContent = `${replay.N} nước. Bấm phát để xem ai chạm đích trước.${myView ? ' · Đang xem từ phía bạn, tọa độ như bot của bạn nhận được.' : ''}`;
       } else {
         $('#capMain').textContent = narrate(ev);
-        $('#capSub').textContent = `Nước ${ply}/${replay.N}`;
+        const verdict = verdictText(ev);
+        $('#capSub').textContent = `Nước ${ply}/${replay.N}${verdict ? ` · ${M['team' + replay.teamOf[ev.side]]}: ${verdict}` : ''}`;
       }
 
       const done = ply === replay.N;
@@ -240,10 +242,25 @@
       $('#play').textContent = timer ? '⏸ dừng' : done ? '↺ xem lại' : '▶ phát';
     }
 
+    // How the bot did on this move, like a judge's verdict: why a turn was lost (too slow, or a
+    // bug: an illegal answer), or the CPU time a legal move took.
+    function verdictText(ev) {
+      const v = ev.verdict;
+      if (v === undefined) return ev.result === 'skip' ? '❌ mất lượt' : '';
+      if (!Array.isArray(v)) return `✅ hợp lệ${v !== null ? ` · ${v} ms CPU` : ''}`;
+      if (v[0] === 'timeout') return `⌛ quá thời gian: không trả lời trong ${v[1] / 1000} giây (bot bị treo, chờ hoặc ngủ quá lâu)`;
+      if (v[0] === 'cpu') return `⏱ quá thời gian: dùng hơn ${v[1]} ms CPU nên bị dừng giữa chừng và chạy lại từ đầu`;
+      if (v[0] === 'invalid') return `❌ nước đi không hợp lệ: bot trả về "${v[1]}" (${v[2]})`;
+      return '';
+    }
+
     function narrate(ev) {
       const who = M['team' + replay.teamOf[ev.side]];
       const foe = M['team' + replay.teamOf[R.other(ev.side)]];
-      if (ev.result === 'skip') return `${who} mất lượt (nước đi không hợp lệ). 😵`;
+      if (ev.result === 'skip') {
+        const v = Array.isArray(ev.verdict) ? ev.verdict[0] : null;
+        return `${who} mất lượt (${v === 'timeout' || v === 'cpu' ? 'quá thời gian' : v === 'invalid' ? 'nước đi không hợp lệ' : 'không đi được'}). 😵`;
+      }
       const [x1, y1, x2, y2] = ev.move;
       const at = (x, y) => (myView ? `(${botXY(x, y).join(', ')})` : R.square(x, y));
       const path = `${at(x1, y1)} → ${at(x2, y2)}`;
@@ -270,9 +287,11 @@
       const pts = matchPoints(G);
       const next = !last ? `<div style="margin-top:8px"><button class="btn small yellow" id="nextGame">xem ván ${G + 2} ▶</button></div>` : '';
       const total = last ? `<div class="small">Cả trận: <b style="color:${COL.A}">${pts.A}</b> – <b style="color:${COL.B}">${pts.B}</b>${M.winner === 'draw' ? ' · hòa' : ` · ${esc(M['team' + M.winner])} thắng trận`}</div>` : '';
+      // a bot that crashed or hung: what happened to it
+      const end = g.end ? `<div class="small">💥 ${esc(M['team' + replay.teamOf[g.end.side]])}: bot ${esc(g.end.why)}</div>` : '';
       return `<div class="announce">
         <div class="big" style="color:${winner ? COL[g.winner] : 'inherit'}">${winner ? `🏆 ${esc(winner)} thắng ván ${G + 1}!` : `🤝 Ván ${G + 1} hòa!`}</div>
-        <div class="small">${esc(why)} · ${replay.N} nước</div>${total}${next}
+        <div class="small">${esc(why)} · ${replay.N} nước</div>${end}${total}${next}
       </div>`;
     }
 
@@ -306,7 +325,8 @@
           const ev = replay.events[k];
           const team = replay.teamOf[ev.side].toLowerCase();
           const res = ev.result === 'skip' ? 'd' : team + (ev.result === 'capture' || ev.result === 'bounce' ? ' hit' : ev.result === 'goal' ? ' goal' : '');
-          cells.push(`<i data-k="${k + 1}" data-res="${res}" title="nước ${k + 1}"></i>`);
+          const verdict = verdictText(ev);
+          cells.push(`<i data-k="${k + 1}" data-res="${res}" title="nước ${k + 1}${verdict ? ` · ${esc(M['team' + replay.teamOf[ev.side]])}: ${esc(verdict)}` : ''}"></i>`);
         }
         groups.push(`<div class="tg"><span class="tn">${g + 1}</span><div class="tc">${cells.join('')}</div></div>`);
       }
@@ -360,7 +380,7 @@
       mine = ME && M.userA === ME.id ? 'A' : ME && M.userB === ME.id ? 'B' : null;
       myView = !!mine;
       document.title = `${M.teamA} vs ${M.teamB} · OTTv1`;
-      $('#title').textContent = `${M.practice ? 'Đấu tập' : `${M.day ? 'Ngày' : 'Vòng'} ${M.round}${M.dayRound ? ` · vòng ${M.dayRound}` : ''}`} · ${M.teamA} vs ${M.teamB} · ${M.scoreA} – ${M.scoreB}`;
+      $('#title').textContent = `${M.practice ? 'Đấu tập' : `Vòng ${M.round}${M.dayRound ? ` · đợt ${M.dayRound}` : ''}`} · ${M.teamA} vs ${M.teamB} · ${M.scoreA} – ${M.scoreB}`;
       const issues = [M.issues && M.issues.A && `${M.teamA}: ${M.issues.A}`, M.issues && M.issues.B && `${M.teamB}: ${M.issues.B}`].filter(Boolean);
       $('#issues').textContent = issues.length ? '⚠️ ' + issues.join(' · ') : '';
 

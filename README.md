@@ -101,7 +101,7 @@ Brawl, campaign, invite-only and hidden tournaments work the same way for both.
   its own piece or onto an enemy of the same kind. Moving onto an enemy it beats (R > S > P > R)
   captures it, and moving onto one that beats it loses the attacker. You win by reaching the enemy's
   home corner or by eliminating every enemy piece. After 1000 moves (both sides) the game is a draw.
-  Each move may use 1 second of **CPU time** (10 s for a game's first move, start-up included). As with
+  Each move may use 1 second of **CPU time** (10 s for a game's first move, start-up included), and a bot may use 180 s of CPU over a whole game (`GAME_CPU_MS`); past that it loses the game. As with
   Battlecode's bytecode limit, only the bot's own computation counts, so a busy server doesn't cost it
   turns: every board bot runs under [meter.py](server/grader/harness/meter.py), which reads the bot's
   CPU time (`/proc` on Linux) every few ms. The moment a move goes over 1 s of CPU the meter kills the
@@ -140,8 +140,9 @@ Brawl, campaign, invite-only and hidden tournaments work the same way for both.
 
 The judge picks a mode when creating a tournament (older tournaments without one are brawls):
 
-- **⚔️ Brawl:** a daily league, described below. Every day at the judge's chosen time, every team's
-  newest working bot plays a round robin. Points add up day after day until the end date.
+- **⚔️ Brawl:** a league played in **rounds** (vòng), described below. Every day at the judge's chosen
+  time a round starts (the judge can add more with **⚡ đấu ngay**), and every team's newest working
+  bot plays in it. Points add up round after round until the end date.
 - **🗺️ Campaign:** a race against the 10 sparring bots. Players submit as many bots as they like, and
   each submission picks one sparring bot and plays up to 5 games (100 turns each) against it. A sparring
   bot counts as beaten when one submission wins all 5; the first loss or draw ends that series. A player **finishes** once all 10
@@ -185,7 +186,7 @@ When creating a tournament the judge also picks who may enter it:
 
 1. The judge creates a tournament with an end date (the deadline) and a **daily match time**, e.g. 21:00,
    in the judge's own time zone. Creating it is refused if that time never falls between the start and
-   the end. The main page shows the next match day and the end date.
+   the end. The main page shows the next round and the end date.
 2. Players press **Submit code**, pick a language and paste or upload their bot. Each submission
    is compiled and given a 5-turn test run. The newest ✅ submission is the one that plays.
    Every ✅ bot also plays a practice game (100 turns) against each of 10 built-in sparring bots
@@ -194,30 +195,32 @@ When creating a tournament the judge also picks who may enter it:
    Thức Thời (decay/window), Thiên Cơ (Markov chain), Mưu Lược (n-gram) and Minh Triết (Bayesian inference).
    The submit page shows a practice board with every team's total (max 3000). Only you (and the judge)
    can open your per-bot scores. Practice games don't affect the tournament.
-3. **Every day at the match time** (from the start until the end date), each team's newest ✅ bot
-   submitted before that moment plays. The judge picks the pairing (and can change it for later days):
-   **round robin** (every other team once) or **Swiss**: ⌈log₂(teams)⌉ rounds a day, each round pairing
-   teams with similar points (all days so far, this day's earlier rounds included) and never the same
-   two teams twice in a day; with an odd number of teams the lowest-ranked team that hasn't had a bye
-   that day sits the round out and scores a win. Swiss keeps big tournaments manageable: 1000 teams
-   play 10 rounds (5,000 matches) a day instead of 499,500. A match (100 RPS turns, or 2 board games
-   with the sides swapped) scores **win = 3, draw = 1, loss = 0**. Submissions stay open throughout the
-   tournament, except from each match time until that day's results are published; a new bot plays
-   from the next match day on.
+3. **A round** starts every day at the match time (from the start until the end date), and whenever
+   the judge presses **⚡ đấu ngay**. Each team's newest ✅ bot submitted before that moment plays. The
+   judge picks the pairing (and can change it for later rounds): **round robin** (every other team
+   once) or **Swiss**: ⌈log₂(teams)⌉ stages (đợt) per round, each stage pairing teams with similar
+   points (all rounds so far, this round's earlier stages included) and never the same two teams twice
+   in a round; with an odd number of teams the lowest-ranked team that hasn't had a bye in that round
+   sits the stage out and scores a win. Swiss keeps big tournaments manageable: 1000 teams play 10
+   stages (5,000 matches) a round instead of 499,500. A match (100 RPS turns, or 2 board games with the
+   sides swapped) scores **win = 3, draw = 1, loss = 0**. Submissions stay open throughout the
+   tournament, except from the start of each round until its results are published; a new bot plays
+   from the next round on.
    **Evaluation:** a team's evaluation points are the practice score of its newest ✅ bot (its
    total against the sparring bots, the same number as on the practice board), updated as soon as
-   practice finishes. The ranking table shows each team's **current points** (cumulative) and
-   **evaluation points**. It sorts by current points, then evaluation points.
-4. A day's results stay hidden for **10 minutes** (`PUBLISH_DELAY_MS`), or until its last match ends if
-   that takes longer. Then the cumulative standings update for everyone, and everyone can replay that
-   day's matches. Before that only the judge sees the matches (on the live page, marked
+   practice finishes. The ranking table shows each team's evaluation points, the points it gained in
+   each round (one column per round, scrolling sideways) and its **total points**. It sorts by total
+   points, then evaluation points.
+4. A round's results stay hidden for **10 minutes** (`PUBLISH_DELAY_MS`), or until its last match ends
+   if that takes longer. Then the cumulative standings update for everyone, and everyone can replay that
+   round's matches. Before that only the judge sees the matches (on the live page, marked
    "chưa công bố"). The standings rank by points, then match wins, then the "điểm phụ" (total score
-   in all matches). The live page counts down to the next match day or to the next publication.
+   in all matches). The live page counts down to the next round or to the next publication.
 5. On the Judge desk the judge can change the daily time (it applies from the next occurrence, never
-   retroactively to a time already passed today), add an extra day with **⚡ đấu ngay**, or end the
-   tournament early (**kết thúc giải ngay**). After the end date, submissions close, the last day still
+   retroactively to a time already passed today), add an extra round with **⚡ đấu ngay**, or end the
+   tournament early (**kết thúc giải ngay**). After the end date, submissions close, the last round still
    publishes, and the top team becomes champion. Players can submit at most once every 90 seconds.
-6. If the server is down at a match time, that day is played as soon as it is back, and a day cut
+6. If the server is down at a match time, that round is played as soon as it is back, and a round cut
    off by a restart resumes where it stopped.
 
 Brawls created before the daily league keep their elimination rounds in their records. Old brawls that
@@ -291,7 +294,7 @@ left off; matches already played are kept.
 | `PARALLEL_BUILDS` | CPUs | compiles and submission checks run at the same time |
 | `MATCH_PACE_MS` | 1500 | minimum time per match in old elimination brawls |
 | `ROUND_BREAK_MS` | 5000 | pause between rounds (old elimination brawls only) |
-| `PUBLISH_DELAY_MS` | 600000 | how long a daily brawl's results stay hidden after the day starts |
+| `PUBLISH_DELAY_MS` | 600000 | how long a brawl round's results stay hidden after the round starts |
 | `DATABASE_URL` | (none: `data/db.json`) | PostgreSQL connection string |
 | `PG_POOL_SIZE` | 10 | PostgreSQL connections |
 | `DATA_DIR` | `./data` | where builds (and db.json) are kept |

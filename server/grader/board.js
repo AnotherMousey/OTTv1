@@ -19,6 +19,8 @@ const R = require('../../public/js/board-rules');
 const GAMES = 2;
 const MOVE_WALL_MS = +process.env.MOVE_WALL_MS || 3 * MOVE_CPU_MS;
 const HUNG_TURNS = 5;
+// CPU a bot may use over a whole game (every move counted, the first one too); past it, it loses
+const GAME_CPU_MS = +process.env.GAME_CPU_MS || 180000;
 // CPU time over the limit for this move, or null if it is fine
 const overCpu = (bot, first) => (bot.cpu !== null && bot.cpu > (first ? FIRST_MOVE_TIMEOUT_MS : MOVE_CPU_MS) ? bot.cpu : null);
 const MAX_SCORE = GAMES * 3; // best possible match score
@@ -36,14 +38,28 @@ function parse(g, raw, side) {
   return R.fromAnswer(g, side, nums[0], nums[1]);
 }
 
-// One game. bots = { white: Bot, black: Bot }. Returns { moves, winner, reason, issues } where
-// moves[k] is [x1, y1, x2, y2] or null (a skipped turn) and issues = { white, black }.
+// The error line a crashed bot left behind ("ZeroDivisionError: division by zero"), if any. Only
+// a line that looks like an error: anything else in stderr is the bot's own printing.
+function crashLine(bot) {
+  const lines = String(bot.stderr || '').split('\n').map(l => l.trim()).filter(Boolean);
+  const line = [...lines].reverse().find(l => /^[\w.:]*(Error|Exception|Exit|Interrupt)\b|^terminate called|^Segmentation fault|^Aborted/.test(l));
+  return line ? line.slice(0, 160) : '';
+}
+
+// One game. bots = { white: Bot, black: Bot }. Returns { moves, verdicts, winner, reason, end, issues }
+// where moves[k] is [x1, y1, x2, y2] or null (a skipped turn), verdicts[k] says how the bot did on
+// that move (shown in the replay): the CPU ms it used (a number, null if unknown) for a legal move,
+// or why the turn was lost: ['timeout', wall ms] | ['cpu', limit ms] | ['invalid', answer, why].
+// end = { side, why } when a bot lost the game by crashing or hanging; issues = { white, black }.
 async function playGame(bots) {
   const g = R.newGame();
   const moves = [];
+  const verdicts = [];
+  let end = null;
   const issues = { white: null, black: null };
   const asked = { white: 0, black: 0 };
   const missed = { white: 0, black: 0 }; // turns in a row without an answer in time
+  const used = { white: 0, black: 0 };   // CPU ms each bot has used this game
   while (!g.winner) {
     const side = g.toMove;
     const bot = bots[side];
@@ -54,28 +70,42 @@ async function playGame(bots) {
       if (!issues[side]) issues[side] = `Lượt ${g.turn + 1}: bot không trả lời trong ${timeout} ms, mất lượt`;
       R.apply(g, null);
       moves.push(null);
+      verdicts.push(['timeout', timeout]);
       continue;
     }
     if (raw === null) {
       if (!bot.dead) bot.fail(`không ra nước ${HUNG_TURNS} lượt liền`);
       issues[side] = `Lượt ${g.turn + 1}: bot ${bot.reason || 'không phản hồi'}`;
+      const err = crashLine(bot);
+      end = { side, why: `${bot.reason || 'không phản hồi'}${err ? `: ${err}` : ''}` };
       R.forfeit(g, side);
       break;
     }
     missed[side] = 0;
+    used[side] += bot.cpu || 0;
+    if (used[side] > GAME_CPU_MS) {
+      const s = GAME_CPU_MS / 1000;
+      issues[side] = `Lượt ${g.turn + 1}: bot đã dùng hết ${s} giây CPU của ván, thua ván`;
+      end = { side, why: `dùng hết ${s} giây CPU của cả ván (${Math.round(used[side] / 100) / 10} giây)` };
+      R.forfeit(g, side);
+      g.reason = 'time';
+      break;
+    }
     const cpu = overCpu(bot, first);
     if (cpu !== null) {
       if (!issues[side]) issues[side] = `Lượt ${g.turn + 1}: bot dùng quá ${first ? FIRST_MOVE_TIMEOUT_MS : MOVE_CPU_MS} ms CPU nên bị dừng giữa chừng (và chạy lại từ đầu), mất lượt`;
       R.apply(g, null);
       moves.push(null);
+      verdicts.push(['cpu', first ? FIRST_MOVE_TIMEOUT_MS : MOVE_CPU_MS]);
       continue;
     }
     const { move, error } = parse(g, raw, side);
     if (error && !issues[side]) issues[side] = `Lượt ${g.turn + 1}: nước đi "${String(raw).slice(0, 30)}" không hợp lệ (${error}), mất lượt`;
     R.apply(g, move || null);
     moves.push(move || null);
+    verdicts.push(error ? ['invalid', String(raw).slice(0, 30), error] : bot.cpu);
   }
-  return { moves, winner: g.winner, reason: g.reason, issues };
+  return { moves, verdicts, winner: g.winner, reason: g.reason, end, issues };
 }
 
 // games: how many games; aWhite: whether A takes white (moves first) in the first one.
@@ -102,7 +132,7 @@ async function runMatch(subA, subB, ensureBuilt, { games = GAMES, aWhite = true 
     scoreA += winner === 'A' ? 3 : winner === 'draw' ? 1 : 0;
     scoreB += winner === 'B' ? 3 : winner === 'draw' ? 1 : 0;
     for (const who of ['A', 'B']) if (!issues[who] && game.issues[sideOf[who]]) issues[who] = `Ván ${k + 1}, ${game.issues[sideOf[who]].charAt(0).toLowerCase()}${game.issues[sideOf[who]].slice(1)}`;
-    record.push({ white, moves: game.moves, winner, reason: game.reason });
+    record.push({ white, moves: game.moves, verdicts: game.verdicts, winner, reason: game.reason, ...(game.end ? { end: game.end } : {}) });
   }
   return {
     games: record, scoreA, scoreB,
@@ -147,4 +177,4 @@ function describe(g) {
   return rows.join('\n');
 }
 
-module.exports = { runMatch, smokeTest: sub => smokeTest(sub, describe), GAMES, MAX_SCORE, MAX_TURNS: R.MAX_TURNS };
+module.exports = { GAME_CPU_MS, runMatch, smokeTest: sub => smokeTest(sub, describe), GAMES, MAX_SCORE, MAX_TURNS: R.MAX_TURNS };

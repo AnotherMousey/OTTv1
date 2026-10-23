@@ -255,7 +255,7 @@ app.post('/api/tournaments/:id/submissions', apiAuth, wrap(async (req, res) => {
   if (t.status !== 'open' || Date.parse(t.deadline) <= Date.now()) return fail(res, 400, 'Muộn rồi! Giải này đã hết hạn nộp bài.');
   if (t.startsAt && Date.parse(t.startsAt) > Date.now()) return fail(res, 400, 'Giải chưa bắt đầu, hãy đợi đến giờ mở cửa nhé.');
   const frozen = daily.isDaily(t) && daily.frozen(t);
-  if (frozen) return fail(res, 400, `Ngày ${frozen.day} đang thi đấu: tạm khóa nộp bài đến khi công bố kết quả.`);
+  if (frozen) return fail(res, 400, `Vòng ${frozen.day} đang thi đấu: tạm khóa nộp bài đến khi công bố kết quả.`);
   const { language, code, target } = req.body || {};
   if (!grader.LANGS[language]) return fail(res, 400, 'Hãy chọn ngôn ngữ: cpp, java hoặc python');
   // Campaign: each submission is aimed at one sparring bot.
@@ -360,7 +360,7 @@ app.get('/api/tournaments/:id/practice/:bot', apiAuth, wrap(async (req, res) => 
 app.get('/api/tournaments/:id/leaderboard', apiAuth, (req, res) => {
   const t = visibleTournament(req);
   if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
-  res.json({ leaderboard: manager.leaderboard(t), canSeeMatches: canSeeMatches(t, req.user), serverNow: Date.now() });
+  res.json({ leaderboard: manager.leaderboard(t), game: gameOf(t), canSeeMatches: canSeeMatches(t, req.user), serverNow: Date.now() });
 });
 
 app.get('/api/tournaments/:id/matches', apiAuth, (req, res) => {
@@ -378,7 +378,7 @@ app.get('/api/tournaments/:id/matches/:name', apiAuth, wrap(async (req, res) => 
   if (!canSeeMatches(t, req.user)) return fail(res, 403, 'Các trận đấu sẽ được công khai khi giải kết thúc');
   const m = await db.getMatch(t.id, req.params.name);
   if (!m) return fail(res, 404, 'Không tìm thấy trận đấu');
-  if (!canSeeMatch(t, m, req.user)) return fail(res, 403, 'Kết quả ngày này chưa được công bố');
+  if (!canSeeMatch(t, m, req.user)) return fail(res, 403, 'Kết quả vòng này chưa được công bố');
   res.json({ match: m, avatars: { A: auth.avatarOf(findUser(m.userA) || { teamName: m.teamA }), B: auth.avatarOf(findUser(m.userB) || { teamName: m.teamB }) }, tournament: { id: t.id, name: t.name, status: t.status } });
 }));
 
@@ -403,7 +403,7 @@ app.get('/api/tournaments/:id/history', apiAuth, (req, res) => {
       scoreA: m.scoreA, scoreB: m.scoreB, winner: m.winner, durationMs: m.durationMs ?? null, playedAt: m.playedAt || null,
     }));
   const groups = daily.isDaily(t)
-    ? (t.days || []).map(d => ({ key: `d${d.number}`, label: `Ngày ${d.number}`, at: d.slot || d.startedAt, status: d.status, rounds: d.rounds || null }))
+    ? (t.days || []).map(d => ({ key: `d${d.number}`, label: `Vòng ${d.number}`, at: d.slot || d.startedAt, status: d.status, rounds: d.rounds || null }))
     : [...new Set(matches.map(m => m.group))].map(k => ({ key: k, label: `Vòng ${k.slice(1)}`, at: (matches.find(m => m.group === k) || {}).playedAt || null, status: 'published' }));
   res.json({ tournament: { id: t.id, name: t.name, game: gameOf(t), status: t.status }, judge: isJudge(req.user), groups, matches });
 });
@@ -503,7 +503,7 @@ app.post('/api/admin/tournaments', apiAuth, apiJudge, (req, res) => {
     const now = new Date().toISOString();
     if (!['rr', 'swiss'].includes(pairing)) return fail(res, 400, 'Thể thức phải là vòng tròn (rr) hoặc Thụy Sĩ (swiss)');
     schedule = { format: 'daily', pairing, dailyTime, tzOffset, dailySince: now, days: [] };
-    if (!daily.nextSlot({ ...schedule, startsAt: start, createdAt: now, deadline: dl }, Date.now())) return fail(res, 400, `Không có ngày thi đấu nào: giờ ${dailyTime} không rơi vào khoảng từ lúc bắt đầu đến hạn chót`);
+    if (!daily.nextSlot({ ...schedule, startsAt: start, createdAt: now, deadline: dl }, Date.now())) return fail(res, 400, `Không có vòng đấu nào: giờ ${dailyTime} không rơi vào khoảng từ lúc bắt đầu đến hạn chót`);
   }
   const t = { id: db.id(), name: String(name).trim().slice(0, 80), mode, game, ...schedule, access, ...(access === 'invite' ? { members: [] } : {}), ...(start ? { startsAt: start } : {}), ...(hidden === true ? { hidden: true } : {}), description: String(description || '').slice(0, 500), deadline: dl, status: 'open', createdAt: new Date().toISOString() };
   db.data.tournaments.push(t);
@@ -560,7 +560,7 @@ app.post('/api/admin/tournaments/:id/play-now', apiAuth, apiJudge, (req, res) =>
   const t = findTournament(req.params.id);
   if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
   if (!daily.isDaily(t) || t.status !== 'open') return fail(res, 400, 'Chỉ giải hỗn chiến đang mở mới đấu ngay được');
-  if ((t.days || []).some(d => d.status === 'running')) return fail(res, 400, 'Đang có một ngày thi đấu chưa xong');
+  if ((t.days || []).some(d => d.status === 'running')) return fail(res, 400, 'Đang có một vòng đấu chưa xong');
   t.runNow = true;
   db.save();
   res.json({ ok: true });
@@ -733,7 +733,12 @@ app.delete('/api/admin/tournaments/:id/bots/:botId', apiAuth, apiJudge, (req, re
 });
 app.get('/api/admin/tournaments/:id/submissions', apiAuth, apiJudge, wrap(async (req, res) => {
   const subs = await withCode(db.data.submissions.filter(s => s.tournamentId === req.params.id),
-    s => ({ teamName: (findUser(s.userId) || {}).teamName || '(deleted user)' }));
+    s => {
+      const u = findUser(s.userId);
+      // (a team name of only invisible characters would leave the row blank)
+      const teamName = !u ? '(deleted user)' : auth.hasVisible(u.teamName) ? u.teamName : '(tên đội trống)';
+      return { teamName, username: (u || {}).username || '' };
+    });
   res.json({ submissions: subs });
 }));
 

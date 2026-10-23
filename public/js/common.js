@@ -14,6 +14,16 @@ let ME = null;
 let serverOffset = 0;
 const serverNow = () => Date.now() + serverOffset;
 
+// A short-lived notice at the top of every cờ OTT tournament page (until 12:00 on 24/10, Vietnam time).
+const BOARD_NOTICE_UNTIL = Date.parse('2026-10-24T12:00:00+07:00');
+function showBoardNotice(game) {
+  const el = document.getElementById('notice');
+  if (!el) return;
+  const on = game === 'board' && serverNow() < BOARD_NOTICE_UNTIL;
+  el.classList.toggle('hidden', !on);
+  if (on) el.innerHTML = '📢 <b>Thông báo:</b> từ nay mỗi bot được dùng tối đa <b>180 giây CPU cho cả ván</b> (vẫn tối đa 1 giây mỗi nước). Dùng hết 180 giây thì thua ván đó.';
+}
+
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }

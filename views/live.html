@@ -10,6 +10,7 @@
 <body>
   <header id="topbar"></header>
   <main>
+    <div class="notice hidden" id="notice"></div>
     <div class="live-head">
       <h1 id="tname">…</h1>
       <div class="round-banner" id="banner"></div>
@@ -33,6 +34,7 @@
     const tid = tournamentIdFromPath();
     let lastBoard = null;
     let canSeeMatches = false;
+    let game = null; // 'board' | 'rps'
     let wasFinished = null;
     const prevPoints = {};
 
@@ -110,29 +112,34 @@
       lastBoard = b;
       $('#tname').textContent = b.name;
       document.title = `Trực tiếp · ${b.name}`;
-      $('#lhead').innerHTML = '<tr><th>#</th><th>đội</th><th title="điểm cộng dồn qua các ngày thi đấu">điểm hiện tại</th><th title="điểm đấu tập của bot mới nhất của đội (đấu với các bot đấu tập)">điểm đánh giá</th></tr>';
       const banner = $('#banner'), sub = $('#sub'), prog = $('#progress');
       const published = b.days.filter(d => d.status === 'published');
+      // evaluation | the points of each published day (scrolls sideways, all rows together) | total
+      const dayCells = cell => `<div class="dayscroll"><div class="daystrip">${published.map(cell).join('') || '<span class="muted daynone">chưa có vòng nào</span>'}</div></div>`;
+      $('#lhead').innerHTML = `<tr><th>#</th><th>đội</th><th title="điểm đấu tập của bot mới nhất của đội (đấu với các bot đấu tập)">điểm đánh giá</th>
+        <th class="days">${dayCells(d => `<span class="day" title="${esc(fmtDate(d.at))}">Vòng ${d.number}</span>`)}</th>
+        <th title="điểm cộng dồn qua các vòng đấu">tổng điểm</th></tr>`;
       const pending = b.days.find(d => d.status !== 'published'); // playing, or waiting to be published
       clearInterval(dailyTimer);
       const tickBanner = () => {
-        if (b.status === 'finished') banner.innerHTML = `🏁 Giải kết thúc sau ${published.length} ngày thi đấu.`;
+        if (b.status === 'finished') banner.innerHTML = `🏁 Giải kết thúc sau ${published.length} vòng đấu.`;
         else if (b.error) banner.innerHTML = `😵 Có lỗi xảy ra: ${esc(b.error)}`;
         else if (pending) {
           const left = Date.parse(pending.publishAt) - serverNow();
-          const what = pending.status !== 'running' ? `⏳ Ngày ${pending.number} đã đấu xong` : `⚔️ Ngày ${pending.number} đang thi đấu${pending.rounds ? ` · vòng ${pending.round}/${pending.rounds}` : ''}`;
+          const what = pending.status !== 'running' ? `⏳ Vòng ${pending.number} đã đấu xong` : `⚔️ Vòng ${pending.number} đang thi đấu${pending.rounds ? ` · đợt ${pending.round}/${pending.rounds}` : ''}`;
           banner.innerHTML = `${what} · kết quả công bố ${left > 0 ? `sau <b>${fmtCountdown(left)}</b>` : 'ngay khi đấu xong'}`;
-        } else if (b.nextAt) banner.innerHTML = `📅 Ngày thi đấu tiếp theo sau <b>${fmtCountdown(Date.parse(b.nextAt) - serverNow())}</b>`;
-        else banner.innerHTML = b.status === 'running' ? '⏳ Đang công bố ngày cuối…' : '📅 Không còn ngày thi đấu nào trước khi giải kết thúc';
+        } else if (b.nextAt) banner.innerHTML = `📅 Vòng đấu tiếp theo sau <b>${fmtCountdown(Date.parse(b.nextAt) - serverNow())}</b>`;
+        else banner.innerHTML = b.status === 'running' ? '⏳ Đang công bố vòng cuối…' : '📅 Không còn vòng đấu nào trước khi giải kết thúc';
       };
       tickBanner();
       if (b.status !== 'finished') dailyTimer = setInterval(tickBanner, 500);
       prog.classList.toggle('hidden', !(pending && pending.status === 'running'));
       if (pending && pending.status === 'running') prog.firstElementChild.style.width = (pending.totalMatches ? (100 * pending.played) / pending.totalMatches : 0) + '%';
-      const playing = pending && pending.status === 'running' ? ` · ngày ${pending.number}: đã đấu ${pending.played}/${pending.totalMatches} trận` : '';
-      sub.innerHTML = `Mỗi ngày lúc ${esc(b.dailyTime)} · ${b.pairing === 'swiss' ? 'thể thức Thụy Sĩ' : 'vòng tròn'} · thắng 3 · hòa 1 · thua 0 · ${published.length} ngày đã công bố${playing} · ${b.status === 'finished' ? 'kết thúc' : 'kết thúc lúc'} ${esc(fmtDate(b.deadline))}`
+      const playing = pending && pending.status === 'running' ? ` · vòng ${pending.number}: đã đấu ${pending.played}/${pending.totalMatches} trận` : '';
+      sub.innerHTML = `Mỗi ngày một vòng lúc ${esc(b.dailyTime)} · ${b.pairing === 'swiss' ? 'thể thức Thụy Sĩ' : 'vòng tròn'} · thắng 3 · hòa 1 · thua 0 · ${published.length} vòng đã công bố${playing} · ${b.status === 'finished' ? 'kết thúc' : 'kết thúc lúc'} ${esc(fmtDate(b.deadline))}`
         + (b.status === 'open' && ME.role !== 'judge' ? ` · <a href="/tournament/${encodeURIComponent(tid)}/submit">nộp bot</a>` : '')
-        + `<br>Điểm đánh giá: điểm đấu tập của bot mới nhất của đội (tổng điểm khi đấu với các bot đấu tập), cập nhật ngay khi đấu tập xong. Bằng điểm hiện tại thì đội có điểm đánh giá cao hơn xếp trên.`;
+        + `<br>Điểm đánh giá: điểm đấu tập của bot mới nhất của đội (tổng điểm khi đấu với các bot đấu tập), cập nhật ngay khi đấu tập xong. Bằng tổng điểm thì đội có điểm đánh giá cao hơn xếp trên.`
+        + (game === 'board' ? '<br>Thời gian: mỗi bot được dùng tối đa <b>1 giây CPU mỗi nước</b> và <b>180 giây CPU mỗi ván</b> (dùng hết thì thua ván đó).' : '');
 
       const champ = $('#champ');
       if (b.champion) {
@@ -150,14 +157,35 @@
         return `<tr class="${cls}" data-id="${row.userId}">
           <td class="rank">${b.champion && b.champion.userId === row.userId ? '🏆' : top ? ['🥇', '🥈', '🥉'][row.rank - 1] : row.rank}</td>
           <td><div class="team">${avatarSvg(row.avatar, 40)}<span class="n">${esc(row.teamName)}</span>${row.username ? `<small class="uname">@${esc(row.username)}</small>` : ''}${ME && row.userId === ME.id ? '<span class="muted" style="font-size:16px">← bạn!</span>' : ''}</div></td>
-          <td class="pts" title="${row.w} thắng · ${row.d} hòa · ${row.l} thua${row.lastDay !== null ? ` · ngày gần nhất +${row.lastDay}` : ''}">${row.points}</td>
           <td class="evalcell">${row.eval !== null ? `<span class="pts" style="font-size:26px">${row.eval}<small class="muted" style="font-size:16px">/${row.evalMax}</small></span>`
             : `<span class="muted" style="font-size:18px">${{ queued: '⏳ đang chờ đấu tập', running: '🥊 đang đấu tập…', error: 'chấm thất bại' }[row.evalStatus] || 'chưa đánh giá'}</span>`}</td>
+          <td class="days">${dayCells(d => {
+            const p = (row.byDay || {})[d.number];
+            return p === undefined ? '<span class="day muted" title="không tham gia vòng này">–</span>' : `<span class="day" title="vòng ${d.number}: +${p} điểm">+${p}</span>`;
+          })}</td>
+          <td class="pts" title="${row.w} thắng · ${row.d} hòa · ${row.l} thua${row.lastDay !== null ? ` · vòng gần nhất +${row.lastDay}` : ''}">${row.points}</td>
         </tr>`;
-      }).join('') || '<tr><td colspan="4" class="center muted">chưa có đội nào có bot chạy được</td></tr>';
+      }).join('') || '<tr><td colspan="5" class="center muted">chưa có đội nào có bot chạy được</td></tr>';
+      syncDayScroll(published.length);
       b.rows.forEach(row => { prevPoints[row.userId] = row.points; });
       slideRows(tbody, before);
       showHistory();
+    }
+
+    // The day columns scroll sideways together (header and every row). They keep their place when
+    // the board refreshes; a new day scrolls to the newest.
+    let dayScroll = null, dayCount = 0;
+    function syncDayScroll(count) {
+      const strips = $$('.dayscroll');
+      if (dayScroll === null || count !== dayCount) dayScroll = 1e9; // start at the newest day
+      dayCount = count;
+      strips.forEach(s => { s.scrollLeft = dayScroll; });
+      dayScroll = strips.length ? strips[0].scrollLeft : 0;
+      strips.forEach(s => s.addEventListener('scroll', () => {
+        if (s.scrollLeft === dayScroll) return;
+        dayScroll = s.scrollLeft;
+        strips.forEach(o => { if (o !== s) o.scrollLeft = dayScroll; });
+      }, { passive: true }));
     }
 
     // FLIP animation: remember where rows were, re-render, then slide them.
@@ -257,6 +285,8 @@
       const socket = await boot();
       const data = await api(`/api/tournaments/${encodeURIComponent(tid)}/leaderboard`);
       canSeeMatches = data.canSeeMatches;
+      game = data.game;
+      showBoardNotice(game);
       $('#history').href = `/tournament/${encodeURIComponent(tid)}/matches`;
       renderBoard(data.leaderboard);
       socket.emit('watch', tid);

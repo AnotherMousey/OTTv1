@@ -142,14 +142,15 @@ const dayMatches = (t, day) => Object.values(db.data.matches[t.id] || {}).filter
 const isPublished = (t, dayNumber) => (t.days || []).some(d => d.number === dayNumber && d.status === 'published');
 
 // Cumulative standings over the published days. Teams with a working bot that haven't played a
-// published day yet are listed with 0 points.
+// published day yet are listed with 0 points. byDay[day number] = the points a team gained that day
+// (missing: it didn't take part).
 function standings(t) {
   const rows = new Map();
   const user = id => db.data.users.find(u => u.id === id);
   const row = (id, fallbackName) => {
     if (!rows.has(id)) {
       const u = user(id);
-      rows.set(id, { userId: id, teamName: u ? u.teamName : fallbackName, username: u ? u.username : '', avatar: avatarOf(u || { teamName: fallbackName }), language: null, points: 0, eval: null, evalStatus: 'no-bot', evalMax: evalMax(t), w: 0, d: 0, l: 0, played: 0, score: 0, lastDay: null, days: 0 });
+      rows.set(id, { userId: id, teamName: u ? u.teamName : fallbackName, username: u ? u.username : '', avatar: avatarOf(u || { teamName: fallbackName }), language: null, points: 0, eval: null, evalStatus: 'no-bot', evalMax: evalMax(t), w: 0, d: 0, l: 0, played: 0, score: 0, lastDay: null, days: 0, byDay: {} });
     }
     return rows.get(id);
   };
@@ -160,18 +161,22 @@ function standings(t) {
       const r = row(e.userId, e.teamName);
       r.language = e.language;
       r.days++;
+      r.byDay[day.number] = 0;
       if (day === last) r.lastDay = 0;
     }
     for (const b of day.byes || []) {
       const r = row(b.userId, (day.entries.find(e => e.userId === b.userId) || {}).teamName || '?');
       r.points += POINTS.win;
       r.byes = (r.byes || 0) + 1;
+      r.byDay[day.number] = (r.byDay[day.number] || 0) + POINTS.win;
       if (day === last) r.lastDay += POINTS.win;
     }
     for (const m of dayMatches(t, day)) {
       const a = row(m.userA, m.teamA), b = row(m.userB, m.teamB);
       const [pa, pb] = m.winner === 'A' ? [POINTS.win, POINTS.loss] : m.winner === 'B' ? [POINTS.loss, POINTS.win] : [POINTS.draw, POINTS.draw];
       a.points += pa; b.points += pb;
+      a.byDay[day.number] = (a.byDay[day.number] || 0) + pa;
+      b.byDay[day.number] = (b.byDay[day.number] || 0) + pb;
       a.score += m.scoreA; b.score += m.scoreB;
       a.played++; b.played++;
       if (m.winner === 'A') { a.w++; b.l++; } else if (m.winner === 'B') { b.w++; a.l++; } else { a.d++; b.d++; }

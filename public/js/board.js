@@ -11,6 +11,7 @@ const BOARD_REASON = {
   'limit-distance': 'hết lượt, tổng khoảng cách tới đích ngắn hơn',
   'limit-draw': 'hết lượt, hòa',
   forfeit: 'đối thủ bị lỗi hoặc bị treo',
+  time: 'đối thủ dùng hết 180 giây CPU của ván',
 };
 
 // A piece token for a 64 x 64 box: a team-coloured disc with the R / P / S character on top.
@@ -171,7 +172,7 @@ function boardRules(maxTurns, cooldownMs) {
     <li>Đi vào quân địch: <b>búa đập kéo, kéo cắt bao, bao trùm búa</b>. Quân bị khắc thì mất. Lao vào quân khắc mình thì quân của <b>bạn</b> mất, quân địch đứng yên.</li>
     <li><b>Thắng</b> khi có quân chạm góc đích, hoặc ăn hết quân địch. Sau <b>${maxTurns} nước</b> (tính cả hai bên, tức ${maxTurns / 2} nước mỗi bên, kể cả lượt bị mất) mà chưa ai thắng thì <b>hòa</b>.</li>
     <li>Mỗi trận gồm <b>2 ván</b>, mỗi bên được đi trước một ván. Mỗi ván: thắng = <b>3</b> điểm, hòa = <b>1</b>, thua = <b>0</b>.</li>
-    <li>Mỗi nước được dùng <b>1 giây CPU</b> (nước đầu của mỗi ván được 10 giây, tính cả lúc khởi động). Giống giới hạn bytecode của Battlecode, chỉ thời gian bot <b>thực sự tính toán</b> mới bị tính, nên máy chủ bận không làm bạn mất lượt. Đo bằng <code>time.process_time()</code> (Python), <code>clock()</code> (C++) hoặc <code>System.nanoTime()</code> (Java, luôn ≥ thời gian CPU).</li>
+    <li>Mỗi nước được dùng <b>1 giây CPU</b> (nước đầu của mỗi ván được 10 giây, tính cả lúc khởi động), và cả ván bot được dùng tổng cộng <b>180 giây CPU</b> (mọi nước đều tính, cả nước đầu): dùng hết thì <b>thua ván đó</b>. Giống giới hạn bytecode của Battlecode, chỉ thời gian bot <b>thực sự tính toán</b> mới bị tính, nên máy chủ bận không làm bạn mất lượt. Đo bằng <code>time.process_time()</code> (Python), <code>clock()</code> (C++) hoặc <code>System.nanoTime()</code> (Java, luôn ≥ thời gian CPU).</li>
     <li>Dùng quá 1 giây CPU thì bot <b>bị dừng ngay</b> và <b>mất lượt</b>; lượt sau bot được chạy lại từ đầu, nên mọi thứ bot nhớ giữa các lượt (biến toàn cục, <code>memo</code>) bị mất. Nước đi không hợp lệ, hoặc không trả lời trong 3 giây (bot ngủ hay bị treo) cũng <b>mất lượt</b> (câu trả lời muộn bị bỏ qua). Bot bị lỗi và dừng, hoặc không trả lời 5 lượt liền, thì <b>thua ván đó</b>. Mỗi ván bot được khởi động lại từ đầu.</li>
     <li>Khi nộp, hệ thống biên dịch bot và cho đi thử 5 nước. Chỉ bot ✅ mới được tham gia.</li>
     <li>Mỗi lần nộp cách nhau ít nhất <b>${Math.round(cooldownMs / 1000)} giây</b>.</li>`;

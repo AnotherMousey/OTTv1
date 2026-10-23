@@ -22,16 +22,16 @@
             <option value="board">♟️ Cờ OTT: bàn cờ 9×9, quân búa/bao/kéo đi từng ô, chạm góc đích hoặc ăn hết quân địch là thắng</option>
           </select></label>
           <label><span>chế độ</span><select name="mode" style="width:100%">
-            <option value="brawl">⚔️ Hỗn chiến: mỗi ngày vào giờ cố định các bot đấu với nhau, điểm cộng dồn đến hạn chót</option>
+            <option value="brawl">⚔️ Hỗn chiến: mỗi ngày vào giờ cố định có một vòng đấu giữa các bot, điểm cộng dồn đến hạn chót</option>
             <option value="campaign">🗺️ Chiến dịch: đua hạ hết các bot đấu tập, ai về đích sớm nhất thắng</option>
           </select></label>
           <label><span>ai được tham gia</span><select name="access" style="width:100%">
             <option value="open">🌍 Mọi người chơi đều được nộp bài</option>
             <option value="invite">🔒 Chỉ những đội được trọng tài chỉ định (chọn sau khi tạo giải)</option>
           </select></label>
-          <label id="pairingRow"><span>thể thức mỗi ngày</span><select name="pairing" style="width:100%">
+          <label id="pairingRow"><span>thể thức mỗi vòng</span><select name="pairing" style="width:100%">
             <option value="rr">🔁 Vòng tròn: mỗi đội đấu với tất cả các đội khác</option>
-            <option value="swiss">🔀 Thụy Sĩ: log₂(số đội) vòng, mỗi vòng đấu đội có điểm gần mình, không gặp lại trong ngày</option>
+            <option value="swiss">🔀 Thụy Sĩ: mỗi vòng có log₂(số đội) đợt, mỗi đợt đấu đội có điểm gần mình, không gặp lại trong vòng</option>
           </select></label>
           <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" name="hidden"><span>🙈 Ẩn giải với người chơi (chỉ trọng tài thấy, có thể hiện sau)</span></label>
           <label><span>mô tả (không bắt buộc)</span><input name="description" style="width:100%" placeholder="Mang theo những bot xịn nhất"></label>
@@ -48,7 +48,13 @@
 
     <div class="squiggle" id="listSquiggle"></div>
     <h2 id="listTitle">Các giải đấu</h2>
-    <div class="box"><div class="scroll-table tscroll"><table class="plain admin-tlist"><thead><tr><th>tên</th><th>trò chơi · chế độ</th><th>trạng thái</th><th>bắt đầu</th><th>hạn chót</th><th>số đội</th><th></th></tr></thead><tbody id="tbody"></tbody></table></div></div>
+    <div class="box">
+      <div class="row" style="gap:10px;margin-bottom:8px" id="tTools">
+        <input id="tSearch" type="search" placeholder="🔍 tìm theo tên giải" autocomplete="off" style="flex:1;min-width:200px">
+        <select id="tStatus" title="lọc theo trạng thái"><option value="">mọi trạng thái</option><option value="open">đang mở</option><option value="running">đang diễn ra</option><option value="finished">đã kết thúc</option></select>
+        <span class="muted" id="tCount" style="font-size:17px"></span>
+      </div>
+      <div class="scroll-table tscroll"><table class="plain admin-tlist"><thead><tr><th>tên</th><th>trò chơi · chế độ</th><th>trạng thái</th><th>bắt đầu</th><th>hạn chót</th><th>số đội</th><th></th></tr></thead><tbody id="tbody"></tbody></table></div></div>
     <div id="membersPanel" class="hidden" style="margin-top:20px"></div>
     <div id="botsPanel" class="hidden" style="margin-top:20px"></div>
     <div id="subsPanel" class="hidden" style="margin-top:20px"></div>
@@ -120,7 +126,7 @@
       $('#tform').dailyTime.required = brawl;
       $('#dlLabel').textContent = brawl ? 'ngày kết thúc (hạn chót nộp bài)' : 'hạn chót nộp bài';
       $('#timeHint').textContent = brawl
-        ? `Theo giờ máy bạn. Mỗi ngày vào giờ thi đấu (từ lúc bắt đầu đến hạn chót), bot mới nhất của mỗi đội ${$('#tform').pairing.value === 'swiss' ? 'đấu ⌈log₂(số đội)⌉ vòng Thụy Sĩ (mỗi vòng gặp đội có điểm gần mình, không gặp lại trong ngày)' : 'đấu vòng tròn với tất cả đội khác'}: thắng 3, hòa 1, thua 0. Bảng xếp hạng cộng dồn được công bố sau 10 phút. Người chơi được nộp bài suốt giải, trừ lúc đang thi đấu.`
+        ? `Theo giờ máy bạn. Mỗi ngày vào giờ thi đấu (từ lúc bắt đầu đến hạn chót) có một vòng đấu (trọng tài có thể thêm vòng bằng "⚡ đấu ngay"): bot mới nhất của mỗi đội ${$('#tform').pairing.value === 'swiss' ? 'đấu ⌈log₂(số đội)⌉ đợt Thụy Sĩ (mỗi đợt gặp đội có điểm gần mình, không gặp lại trong vòng)' : 'đấu vòng tròn với tất cả đội khác'}: thắng 3, hòa 1, thua 0. Bảng xếp hạng cộng dồn được công bố sau 10 phút. Người chơi được nộp bài suốt giải, trừ lúc đang thi đấu.`
         : 'Theo giờ máy bạn. Trước giờ bắt đầu, người chơi chỉ thấy đồng hồ đếm ngược; số phút của điểm phạt được tính từ giờ bắt đầu.';
     }
     // A daily league runs for days (a week, ending at 23:59); a campaign defaults to an hour.
@@ -142,14 +148,27 @@
       $('#accountsArea').classList.add('hidden');
       $('#listSquiggle').classList.add('hidden');
       $('#allLink').classList.remove('hidden');
+      $('#listTitle').classList.add('focus-title');
+      $('#tTools').classList.add('hidden');
     }
 
     let startTimer = null;
+    let allTournaments = [];
     async function loadTournaments() {
-      let { tournaments } = await api('/api/tournaments');
+      ({ tournaments: allTournaments } = await api('/api/tournaments'));
+      renderTournaments();
+    }
+    function renderTournaments() {
+      let tournaments = allTournaments;
       if (focusId) {
         tournaments = tournaments.filter(t => t.id === focusId);
         $('#listTitle').textContent = tournaments.length ? `Quản lý giải: ${tournaments[0].name}` : 'Không tìm thấy giải này (có thể đã bị xóa)';
+      } else {
+        // (accents ignored: "thuy si" finds "Thụy Sĩ")
+        const fold = x => x.normalize('NFD').replace(/\p{M}/gu, '').replace(/[đĐ]/g, 'd').toLowerCase();
+        const q = fold($('#tSearch').value.trim()), status = $('#tStatus').value;
+        tournaments = tournaments.filter(t => (!q || fold(t.name).includes(q)) && (!status || t.status === status));
+        $('#tCount').textContent = `${tournaments.length}/${allTournaments.length} giải`;
       }
       $('#tbody').innerHTML = tournaments.map(t => {
         const id = encodeURIComponent(t.id);
@@ -158,11 +177,11 @@
         // the list only shows each tournament; its own page (/admin?t=<id>) changes it
         const edit = open && !!focusId;
         const startCell = edit
-          ? `<div class="row" style="gap:4px;flex-wrap:nowrap"><input type="datetime-local" data-start="${t.id}" value="${t.startsAt ? toLocalInput(new Date(t.startsAt)) : ''}" style="font-size:16px;padding:2px 6px" title="bỏ trống = nhận bài ngay">${t.startsAt ? `<button class="btn small" data-nostart="${t.id}" title="bỏ giờ bắt đầu">✕</button>` : ''}</div>`
+          ? `<div class="row" style="gap:4px;flex-wrap:nowrap"><input type="datetime-local" data-start="${t.id}" value="${t.startsAt ? toLocalInput(new Date(t.startsAt)) : ''}" style="font-size:16px;padding:2px 6px" title="bỏ trống = nhận bài ngay">${waiting ? `<button class="btn small" data-nostart="${t.id}" title="bỏ giờ bắt đầu">✕</button>` : ''}</div>`
           : t.startsAt ? esc(fmtDate(t.startsAt)) : '<span class="muted">–</span>';
         return `<tr>
           <td>${esc(t.name)}</td>
-          <td>${t.game === 'board' ? '♟️ cờ OTT' : '✊ oẳn tù tì'} · ${t.mode === 'campaign' ? '🗺️ chiến dịch' : '⚔️ hỗn chiến'}${t.daily ? `<br><span class="muted" style="font-size:16px">📅 hằng ngày lúc ${edit ? `<input type="time" data-daily="${t.id}" value="${t.daily.time}" style="font-size:15px;padding:0 4px">` : t.daily.time} · ${edit ? `<select data-pairing="${t.id}" style="font-size:15px;padding:0 4px"><option value="rr" ${t.daily.pairing === 'rr' ? 'selected' : ''}>vòng tròn</option><option value="swiss" ${t.daily.pairing === 'swiss' ? 'selected' : ''}>Thụy Sĩ</option></select>` : t.daily.pairing === 'swiss' ? 'Thụy Sĩ' : 'vòng tròn'} · ${t.daily.days} ngày đã công bố</span>` : ''}${t.access === 'invite' ? `<br><span class="muted" style="font-size:16px">🔒 ${t.members} đội được chỉ định</span>` : ''}${t.hidden ? '<br><span class="muted" style="font-size:16px">🙈 đang ẩn với người chơi</span>' : ''}</td>
+          <td>${t.game === 'board' ? '♟️ cờ OTT' : '✊ oẳn tù tì'} · ${t.mode === 'campaign' ? '🗺️ chiến dịch' : '⚔️ hỗn chiến'}${t.daily ? `<br><span class="muted" style="font-size:16px">📅 hằng ngày lúc ${edit ? `<input type="time" data-daily="${t.id}" value="${t.daily.time}" style="font-size:15px;padding:0 4px">` : t.daily.time} · ${edit ? `<select data-pairing="${t.id}" style="font-size:15px;padding:0 4px"><option value="rr" ${t.daily.pairing === 'rr' ? 'selected' : ''}>vòng tròn</option><option value="swiss" ${t.daily.pairing === 'swiss' ? 'selected' : ''}>Thụy Sĩ</option></select>` : t.daily.pairing === 'swiss' ? 'Thụy Sĩ' : 'vòng tròn'} · ${t.daily.days} vòng đã công bố</span>` : ''}${t.access === 'invite' ? `<br><span class="muted" style="font-size:16px">🔒 ${t.members} đội được chỉ định</span>` : ''}${t.hidden ? '<br><span class="muted" style="font-size:16px">🙈 đang ẩn với người chơi</span>' : ''}</td>
           <td><span class="tag ${waiting ? 'pending' : t.status}">${waiting ? 'chưa mở' : STATUS_VI[t.status] || t.status}</span></td>
           <td>${startCell}</td>
           <td>${edit ? `<input type="datetime-local" data-dl="${t.id}" value="${toLocalInput(new Date(t.deadline))}" style="font-size:16px;padding:2px 6px">` : esc(fmtDate(t.deadline))}</td>
@@ -170,17 +189,18 @@
           <td>${!focusId ? `<div class="row" style="gap:6px;flex-wrap:nowrap">
             <a class="btn small yellow" href="/admin?t=${id}">⚙️ quản lý</a>
             <a class="btn small" href="/tournament/${id}/live">xem</a>
+            ${t.status !== 'running' ? `<button class="btn small" data-del="${t.id}" title="xóa giải">🗑</button>` : ''}
           </div>` : `<div class="tactions">
             <button class="btn small" data-members="${t.id}">${t.access === 'invite' ? '🔒 ' : ''}người chơi</button>
             <button class="btn small" data-bots="${t.id}">bot đấu tập</button>
             <button class="btn small" data-subs="${t.id}">bài nộp</button>
             <button class="btn small" data-hide="${t.id}" title="${t.hidden ? 'cho người chơi thấy giải này' : 'chỉ trọng tài thấy giải này'}">${t.hidden ? '👁 hiện' : '🙈 ẩn'}</button>
-            ${waiting ? `<button class="btn small yellow" data-opennow="${t.id}">mở nhận bài ngay</button>` : open ? `${t.daily ? `<button class="btn small yellow" data-playnow="${t.id}" title="thêm một ngày thi đấu ngay bây giờ">⚡ đấu ngay</button><a class="btn small" href="/tournament/${id}/live">xem</a>` : ''}<button class="btn small ${t.daily ? '' : 'yellow'}" data-now="${t.id}">${t.daily ? 'kết thúc giải ngay' : 'đóng nộp bài ngay'}</button>` : `<a class="btn small" href="/tournament/${id}/live">xem</a>`}
+            ${waiting ? `<button class="btn small yellow" data-opennow="${t.id}">mở nhận bài ngay</button>` : open ? `${t.daily ? `<button class="btn small yellow" data-playnow="${t.id}" title="thêm một vòng đấu ngay bây giờ">⚡ đấu ngay</button><a class="btn small" href="/tournament/${id}/live">xem</a>` : ''}<button class="btn small ${t.daily ? '' : 'yellow'}" data-now="${t.id}">${t.daily ? 'kết thúc giải ngay' : 'đóng nộp bài ngay'}</button>` : `<a class="btn small" href="/tournament/${id}/live">xem</a>`}
             <a class="btn small" href="/tournament/${id}/matches">lịch sử trận</a>
-            ${t.status !== 'running' ? `<button class="btn small" data-del="${t.id}">🗑</button>` : ''}
           </div>`}</td>
         </tr>`;
-      }).join('') || '<tr><td colspan="7" class="muted">chưa có giải nào</td></tr>';
+      }).join('') || `<tr><td colspan="7" class="muted">${allTournaments.length && !focusId ? 'không tìm thấy giải nào 🙈' : 'chưa có giải nào'}</td></tr>`;
+      if (!focusId) fitRows('#tbody', VISIBLE_TOURNAMENTS);
 
       const patch = async (id, body, done) => {
         try {
@@ -188,20 +208,27 @@
           toast(done);
         } catch (e) { toast(e.message, 'error'); loadTournaments(); } // put the inputs back
       };
-      $$('[data-dl]').forEach(inp => inp.onchange = () => {
+      // a time is saved once the judge is done with it (leaves the box or presses Enter), not on
+      // every digit typed
+      const onDone = (inp, save) => {
+        let saved = inp.value;
+        inp.addEventListener('blur', () => { if (inp.value !== saved) { saved = inp.value; save(); } });
+        inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); });
+      };
+      $$('[data-dl]').forEach(inp => onDone(inp, () => {
         if (inp.value) patch(inp.dataset.dl, { deadline: new Date(inp.value).toISOString() }, 'Đã đổi hạn chót ⏰');
-      });
-      $$('[data-start]').forEach(inp => inp.onchange = () =>
-        patch(inp.dataset.start, { startsAt: inp.value ? new Date(inp.value).toISOString() : '' }, inp.value ? 'Đã đổi giờ bắt đầu 🕘' : 'Đã bỏ giờ bắt đầu: nhận bài ngay 🚪'));
+      }));
+      $$('[data-start]').forEach(inp => onDone(inp, () =>
+        patch(inp.dataset.start, { startsAt: inp.value ? new Date(inp.value).toISOString() : '' }, inp.value ? 'Đã đổi giờ bắt đầu 🕘' : 'Đã bỏ giờ bắt đầu: nhận bài ngay 🚪')));
       $$('[data-nostart]').forEach(b => b.onclick = () => patch(b.dataset.nostart, { startsAt: '' }, 'Đã bỏ giờ bắt đầu: nhận bài ngay 🚪'));
       $$('[data-pairing]').forEach(sel => sel.onchange = () => {
-        patch(sel.dataset.pairing, { pairing: sel.value }, `Từ ngày thi đấu tiếp theo: ${sel.value === 'swiss' ? 'thể thức Thụy Sĩ 🔀' : 'vòng tròn 🔁'}`);
+        patch(sel.dataset.pairing, { pairing: sel.value }, `Từ vòng đấu tiếp theo: ${sel.value === 'swiss' ? 'thể thức Thụy Sĩ 🔀' : 'vòng tròn 🔁'}`);
       });
-      $$('[data-daily]').forEach(inp => inp.onchange = () => {
+      $$('[data-daily]').forEach(inp => onDone(inp, () => {
         if (inp.value) patch(inp.dataset.daily, { dailyTime: inp.value, tzOffset: new Date().getTimezoneOffset() }, `Đã đổi giờ thi đấu hằng ngày sang ${inp.value} ⏰`);
-      });
+      }));
       $$('[data-playnow]').forEach(b => b.onclick = async () => {
-        if (!confirm('Cho các bot đấu vòng tròn ngay bây giờ? Đây là một ngày thi đấu thêm, kết quả công bố sau 10 phút.')) return;
+        if (!confirm('Cho các bot đấu một vòng ngay bây giờ? Đây là một vòng đấu thêm, kết quả công bố sau 10 phút.')) return;
         try {
           await api(`/api/admin/tournaments/${encodeURIComponent(b.dataset.playnow)}/play-now`, { method: 'POST' });
           toast('Các bot đang ra sân ⚡');
@@ -216,11 +243,11 @@
       });
       // flip "chưa mở" rows when their start time passes
       clearTimeout(startTimer);
-      const next = Math.min(...tournaments.filter(t => t.status === 'open' && t.startsAt).map(t => Date.parse(t.startsAt) - serverNow()).filter(ms => ms > 0));
+      const next = Math.min(...allTournaments.filter(t => t.status === 'open' && t.startsAt).map(t => Date.parse(t.startsAt) - serverNow()).filter(ms => ms > 0));
       if (Number.isFinite(next)) startTimer = setTimeout(loadTournaments, Math.min(next + 500, 2 ** 31 - 1));
       $$('[data-now]').forEach(b => b.onclick = async () => {
         const isDaily = !!tournaments.find(t => t.id === b.dataset.now).daily;
-        if (!confirm(isDaily ? 'Kết thúc giải ngay bây giờ? Nộp bài đóng lại, ngày đang đấu (nếu có) vẫn được công bố, rồi đội đầu bảng vô địch.' : 'Đóng nộp bài và bắt đầu giải này ngay bây giờ?')) return;
+        if (!confirm(isDaily ? 'Kết thúc giải ngay bây giờ? Nộp bài đóng lại, vòng đang đấu (nếu có) vẫn được công bố, rồi đội đầu bảng vô địch.' : 'Đóng nộp bài và bắt đầu giải này ngay bây giờ?')) return;
         try {
           await api(`/api/admin/tournaments/${encodeURIComponent(b.dataset.now)}`, { method: 'PATCH', body: { deadline: new Date().toISOString() } });
         } catch (e) { toast(e.message, 'error'); }
@@ -476,16 +503,64 @@ public class Bot {
       };
     }
 
+    // ---------- every bot submitted to a tournament: search + scrolling list ----------
+    // subsOpen = { name, all, shown: id of the submission whose code is open below the list }
+    let subsOpen = null;
+    const VISIBLE_SUBS = 8;
     async function showSubs(id, name) {
-      const { submissions } = await api(`/api/admin/tournaments/${encodeURIComponent(id)}/submissions`);
+      let submissions;
+      try { ({ submissions } = await api(`/api/admin/tournaments/${encodeURIComponent(id)}/submissions`)); }
+      catch (e) { return toast(e.message, 'error'); }
+      subsOpen = { name, all: submissions.slice().reverse(), shown: null };
       const panel = $('#subsPanel');
       panel.classList.remove('hidden');
-      panel.innerHTML = `<div class="box"><div class="row" style="justify-content:space-between"><h3 style="margin:0">Các bot của ${esc(name)}</h3><button class="btn small" id="closeSubs">đóng</button></div>
-        <table class="plain"><thead><tr><th>đội</th><th>ngôn ngữ</th><th>trạng thái</th><th>lúc</th><th></th></tr></thead><tbody>
-        ${submissions.slice().reverse().map(s => `<tr><td>${esc(s.teamName)}</td><td>${LANG_LABEL[s.language]}${s.target ? ` · vs ${esc(s.target)}` : ''}</td><td><span class="tag ${s.status}">${STATUS_VI[s.status] || s.status}</span></td><td>${esc(fmtDate(s.createdAt))}</td>
-          <td><details><summary style="cursor:pointer">xem code</summary><pre class="msg">${esc(s.code)}</pre>${s.message ? `<pre class="msg">${esc(s.message)}</pre>` : ''}</details></td></tr>`).join('') || '<tr><td colspan="5" class="muted">chưa có bot nào</td></tr>'}
-        </tbody></table></div>`;
-      $('#closeSubs').onclick = () => panel.classList.add('hidden');
+      panel.innerHTML = `<div class="box">
+        <div class="row" style="justify-content:space-between"><h3 style="margin:0">Các bot của ${esc(name)}</h3><button class="btn small" id="closeSubs">đóng</button></div>
+        <div class="row" style="gap:10px;margin:8px 0">
+          <input id="sSearch" type="search" placeholder="🔍 tìm theo tên đội hoặc @username" autocomplete="off" style="flex:1;min-width:200px">
+          <select id="sLang"><option value="">mọi ngôn ngữ</option>${Object.keys(LANG_LABEL).map(l => `<option value="${l}">${LANG_LABEL[l]}</option>`).join('')}</select>
+          <select id="sStatus"><option value="">mọi trạng thái</option><option value="ok">sẵn sàng</option><option value="error">lỗi</option><option value="pending">đang kiểm tra</option></select>
+          <span class="muted" id="sCount" style="font-size:17px"></span>
+        </div>
+        <div class="scroll-table"><table class="plain subs">
+          <colgroup><col><col style="width:200px"><col style="width:150px"><col style="width:220px"><col style="width:120px"></colgroup>
+          <thead><tr><th>đội</th><th>ngôn ngữ</th><th>trạng thái</th><th>lúc nộp</th><th></th></tr></thead>
+          <tbody id="sbody"></tbody></table></div>
+        <div id="sCode"></div>
+      </div>`;
+      $('#closeSubs').onclick = () => { subsOpen = null; panel.classList.add('hidden'); };
+      $('#sSearch').oninput = renderSubs;
+      $('#sLang').onchange = renderSubs;
+      $('#sStatus').onchange = renderSubs;
+      renderSubs();
+      panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    function renderSubs() {
+      const { all } = subsOpen;
+      const fold = x => String(x || '').normalize('NFD').replace(/\p{M}/gu, '').replace(/[đĐ]/g, 'd').toLowerCase();
+      const q = fold($('#sSearch').value.trim().replace(/^@/, '')), lang = $('#sLang').value, status = $('#sStatus').value;
+      const list = all.filter(s => (!q || fold(s.teamName).includes(q) || fold(s.username).includes(q)) && (!lang || s.language === lang) && (!status || s.status === status));
+      $('#sCount').textContent = `${list.length}/${all.length} bot`;
+      $('#sbody').innerHTML = list.map(s => `<tr class="${s.id === subsOpen.shown ? 'editing' : ''}">
+          <td>${esc(s.teamName)}${s.username ? ` <small class="muted">@${esc(s.username)}</small>` : ''}</td>
+          <td>${LANG_LABEL[s.language]}${s.target ? ` · vs ${esc(s.target)}` : ''}</td>
+          <td><span class="tag ${s.status}">${STATUS_VI[s.status] || s.status}</span></td>
+          <td>${esc(fmtDate(s.createdAt))}</td>
+          <td><button class="btn small ${s.id === subsOpen.shown ? 'yellow' : ''}" data-code="${s.id}">${s.id === subsOpen.shown ? 'ẩn code' : 'xem code'}</button></td>
+        </tr>`).join('') || `<tr><td colspan="5" class="muted">${all.length ? 'không tìm thấy bot nào 🙈' : 'chưa có bot nào'}</td></tr>`;
+      fitRows('#sbody', VISIBLE_SUBS);
+      // one submission's code at a time, below the list: another "xem code" replaces it, its own button hides it
+      $$('[data-code]').forEach(b => b.onclick = () => {
+        subsOpen.shown = subsOpen.shown === b.dataset.code ? null : b.dataset.code;
+        renderSubs();
+        if (subsOpen.shown) $('#sCode').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      });
+      const s = all.find(x => x.id === subsOpen.shown);
+      $('#sCode').innerHTML = s ? `<div class="sub-code">
+          <div class="row" style="justify-content:space-between;margin:12px 0 6px"><b>Code của ${esc(s.teamName)}${s.username ? ` <small class="muted">@${esc(s.username)}</small>` : ''} · ${LANG_LABEL[s.language]} · ${esc(fmtDate(s.createdAt))}</b><button class="btn small" id="sHide">ẩn code</button></div>
+          <pre class="msg sub-code-text">${esc(s.code)}</pre>${s.message ? `<pre class="msg">${esc(s.message)}</pre>` : ''}
+        </div>` : '';
+      if ($('#sHide')) $('#sHide').onclick = () => { subsOpen.shown = null; renderSubs(); };
     }
 
     // ---------- accounts: search + scrolling list ----------
@@ -533,19 +608,21 @@ public class Bot {
         try { await api(`/api/admin/users/${b.dataset.udel}`, { method: 'DELETE' }); loadUsers(); }
         catch (e) { toast(e.message, 'error'); }
       });
-      fitUserRows();
+      fitRows('#ubody', VISIBLE_USERS);
     }
 
     // Show exactly 5 accounts; scroll for the rest. Rows can be taller on small screens
     // (buttons wrap), so measure instead of guessing.
-    const VISIBLE_USERS = 5;
-    function fitUserRows() {
-      const box = $('#ubody').closest('.scroll-table');
-      const rows = $$('#ubody tr').slice(0, VISIBLE_USERS);
+    const VISIBLE_USERS = 5, VISIBLE_TOURNAMENTS = 5;
+    function fitRows(tbody, visible) {
+      const box = $(tbody).closest('.scroll-table');
+      const rows = $$(`${tbody} tr`).slice(0, visible);
       const head = box.querySelector('thead').offsetHeight;
       box.style.maxHeight = rows.length ? head + rows.reduce((h, r) => h + r.offsetHeight, 0) + 2 + 'px' : '';
     }
-    window.addEventListener('resize', () => fitUserRows());
+    window.addEventListener('resize', () => { fitRows('#ubody', VISIBLE_USERS); if (!focusId) fitRows('#tbody', VISIBLE_TOURNAMENTS); });
+    $('#tSearch').oninput = renderTournaments;
+    $('#tStatus').onchange = renderTournaments;
 
     $('#uform').addEventListener('submit', async e => {
       e.preventDefault();
