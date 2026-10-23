@@ -424,8 +424,13 @@ table.plain tr.editing td { background: #fff8d6; }
   main { padding: 18px 12px 60px; }
 }
 
-/* ---------- judge: match list ---------- */
+/* ---------- match history ---------- */
+main.full { max-width: 1500px; }
 .match-days { justify-content: flex-start; margin-bottom: 14px; }
-table.match-list td { white-space: nowrap; }
+.match-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 12px; }
+.match-tools input { flex: 1; min-width: 220px; max-width: 460px; }
+table.match-list { width: 100%; min-width: 1150px; table-layout: fixed; }
+table.match-list th, table.match-list td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+table.match-list tr.me td { background: #fff8d6; }
 table.match-list td.won { font-weight: 700; }
 table.match-list td.score { font-family: 'Pangolin', cursive; }

@@ -3,25 +3,27 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Trận đấu · OTTv1</title>
+  <title>Lịch sử trận đấu · OTTv1</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
   <header id="topbar"></header>
-  <main>
-    <h1>Trận đấu 🎩</h1>
-    <div class="row" style="align-items:center;gap:10px;margin-bottom:10px">
-      <label for="pick" class="muted">giải</label>
-      <select id="pick" style="min-width:260px"></select>
-      <a class="btn small" id="live" href="#">bảng xếp hạng ↗</a>
+  <main class="full">
+    <a id="back" href="/">← quay lại bảng xếp hạng</a>
+    <h1 id="tname">Lịch sử trận đấu</h1>
+    <div class="match-tools">
+      <input id="q" type="search" placeholder="tìm theo mã trận (vd 137) hoặc tên đội / @username" autocomplete="off">
+      <span class="muted" id="hint" style="font-size:16px"></span>
     </div>
     <div class="game-tabs match-days" id="days"></div>
     <div class="box">
       <p class="muted" id="summary" style="margin:0 0 6px;font-size:17px"></p>
       <div style="overflow-x:auto">
         <table class="plain match-list">
-          <thead><tr><th>#</th><th>đội A</th><th></th><th>đội B</th><th>thắng</th><th>tỉ số</th><th>thời gian</th><th>lúc</th><th></th></tr></thead>
+          <!-- fixed column widths: every day's table is the same size, long names are cut short (…) -->
+          <colgroup><col style="width:64px"><col style="width:130px"><col><col style="width:40px"><col><col><col style="width:110px"><col style="width:130px"><col style="width:100px"><col style="width:84px"></colgroup>
+          <thead><tr><th>#</th><th>vòng</th><th>đội A</th><th></th><th>đội B</th><th>thắng</th><th>tỉ số</th><th title="thời gian chạy trận đấu, từ lúc bắt đầu tới lúc xong">thời gian chạy</th><th>xong lúc</th><th></th></tr></thead>
           <tbody id="rows"></tbody>
         </table>
       </div>
@@ -33,10 +35,12 @@
   <script src="/js/rps.js"></script>
   <script src="/js/common.js"></script>
   <script>
-    // The judge's list of every match: pick a tournament, then a day (or round); matches by id.
+    // A tournament's match history: a tab per day (or round), matches by id, and a search over every
+    // day by match id or team name / @username. The judge sees every match, players the published ones.
+    const tid = tournamentIdFromPath();
     const query = new URLSearchParams(location.search);
-    let tid = query.get('t');
     let group = query.get('g');
+    let search = query.get('q') || '';
     let data = null;
 
     function fmtDuration(ms) {
@@ -46,69 +50,96 @@
       return `${Math.floor(s / 60)} phút ${Math.round(s % 60)} s`;
     }
     const fmtClock = iso => (iso ? new Date(iso).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '');
+    const tip = (name, user) => `${name}${user ? ` @${user}` : ''}`;
     const team = (name, user) => `${esc(name)}${user ? ` <small class="muted">@${esc(user)}</small>` : ''}`;
+    const fold = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase();
+
+    // "137" / "#137": that match id; anything else: part of a team name or @username (accents ignored)
+    function matches(m, q) {
+      const id = q.replace(/^#/, '');
+      if (/^\d+$/.test(id)) return m.id === +id;
+      const want = fold(q.replace(/^@/, ''));
+      return [m.teamA, m.teamB, m.userA, m.userB].some(x => fold(x).includes(want));
+    }
 
     function remember() {
-      history.replaceState(null, '', `/admin/matches?t=${encodeURIComponent(tid)}${group ? `&g=${encodeURIComponent(group)}` : ''}`);
+      const p = new URLSearchParams();
+      if (group) p.set('g', group);
+      if (search) p.set('q', search);
+      history.replaceState(null, '', `${location.pathname}${p.toString() ? `?${p}` : ''}`);
     }
 
     function render() {
-      const { groups, matches, tournament } = data;
-      $('#live').href = `/tournament/${encodeURIComponent(tournament.id)}/live`;
+      const { groups, matches: all, tournament } = data;
+      $('#tname').textContent = `Lịch sử trận đấu · ${tournament.name}`;
+      document.title = `Lịch sử trận đấu · ${tournament.name} · OTTv1`;
       if (!groups.some(g => g.key === group)) group = (groups[groups.length - 1] || {}).key || null; // newest day by default
       remember();
-      const count = key => matches.filter(m => m.group === key).length;
-      $('#days').innerHTML = groups.map(g => `<button class="${g.key === group ? 'on' : ''}" data-g="${g.key}">${esc(g.label)}
-        <small>${g.at ? esc(fmtDate(g.at)) : ''} · ${count(g.key)} trận${g.status === 'running' ? ' · đang đấu' : g.status === 'done' ? ' · chưa công bố' : ''}</small></button>`).join('')
+      const q = search.trim();
+      const count = key => all.filter(m => m.group === key).length;
+      const label = g => (g.status === 'running' ? ' · đang đấu' : g.status === 'done' ? ' · chưa công bố' : '');
+      $('#days').innerHTML = groups.map(g => `<button class="${!q && g.key === group ? 'on' : ''}" data-g="${g.key}">${esc(g.label)}
+        <small>${g.at ? esc(fmtDate(g.at)) : ''} · ${count(g.key)} trận${label(g)}</small></button>`).join('')
         || '<p class="muted">Giải này chưa có ngày thi đấu nào.</p>';
-      $$('#days button').forEach(b => b.onclick = () => { group = b.dataset.g; render(); });
+      $$('#days button').forEach(b => b.onclick = () => { group = b.dataset.g; search = ''; $('#q').value = ''; render(); });
 
-      const list = matches.filter(m => m.group === group);
       const g = groups.find(x => x.key === group);
-      const total = list.reduce((s, m) => s + (m.durationMs || 0), 0);
-      $('#summary').textContent = g
-        ? `${g.label}${g.rounds ? ` · ${g.rounds} vòng Thụy Sĩ` : ''} · ${list.length} trận · tổng thời gian đấu ${fmtDuration(total)}${list.length ? ` · trung bình ${fmtDuration(total / list.filter(m => m.durationMs !== null).length || 0)}` : ''}`
+      const list = q ? all.filter(m => matches(m, q)) : all.filter(m => m.group === group);
+      const timed = list.filter(m => m.durationMs !== null);
+      const total = timed.reduce((s, m) => s + m.durationMs, 0);
+      const head = q ? `Tìm "${q}" trong mọi ngày` : g ? `${g.label}${g.rounds ? ` · ${g.rounds} vòng Thụy Sĩ` : ''}` : '';
+      $('#summary').textContent = head
+        ? `${head} · ${list.length} trận${timed.length ? ` · tổng thời gian chạy ${fmtDuration(total)} · trung bình ${fmtDuration(total / timed.length)}` : ''}`
+          + (timed.length < list.length ? ` · ${list.length - timed.length} trận đấu trước khi có ghi thời gian chạy (–)` : '')
         : '';
+      const groupLabel = key => (groups.find(x => x.key === key) || {}).label || '';
+      const me = ME && ME.username;
+      const empty = q ? 'Không có trận nào khớp.'
+        : g && !data.judge && g.status !== 'published' ? 'Kết quả ngày này chưa được công bố.'
+        : 'Chưa có trận nào trong ngày này.';
       $('#rows').innerHTML = list.map(m => {
         const winner = m.winner === 'A' ? team(m.teamA, m.userA) : m.winner === 'B' ? team(m.teamB, m.userB) : '<span class="muted">hòa 🤝</span>';
         const href = `/tournament/${encodeURIComponent(tournament.id)}/match?name=${encodeURIComponent(m.name)}`;
-        return `<tr>
-          <td class="muted">${m.id ?? '–'}${m.dayRound ? `<br><small>vòng ${m.dayRound}</small>` : ''}</td>
-          <td class="${m.winner === 'A' ? 'won' : ''}">${team(m.teamA, m.userA)}</td>
+        const where = q ? [groupLabel(m.group), m.dayRound ? `vòng ${m.dayRound}` : ''].filter(Boolean).join(' · ') : m.dayRound ? String(m.dayRound) : '';
+        return `<tr class="${me && (m.userA === me || m.userB === me) ? 'me' : ''}">
+          <td class="muted">${m.id ?? '–'}</td>
+          <td class="muted">${esc(where || '–')}</td>
+          <td class="${m.winner === 'A' ? 'won' : ''}" title="${esc(tip(m.teamA, m.userA))}">${team(m.teamA, m.userA)}</td>
           <td class="muted">vs</td>
-          <td class="${m.winner === 'B' ? 'won' : ''}">${team(m.teamB, m.userB)}</td>
-          <td>${m.winner !== 'draw' ? '👑 ' : ''}${winner}</td>
+          <td class="${m.winner === 'B' ? 'won' : ''}" title="${esc(tip(m.teamB, m.userB))}">${team(m.teamB, m.userB)}</td>
+          <td title="${esc(m.winner === 'A' ? tip(m.teamA, m.userA) : m.winner === 'B' ? tip(m.teamB, m.userB) : '')}">${m.winner !== 'draw' ? '👑 ' : ''}${winner}</td>
           <td class="score">${m.scoreA} – ${m.scoreB}</td>
           <td>${fmtDuration(m.durationMs)}</td>
           <td class="muted">${esc(fmtClock(m.playedAt))}</td>
           <td><a class="btn small" href="${href}">xem ▶</a></td>
         </tr>`;
-      }).join('') || '<tr><td colspan="9" class="center muted">Chưa có trận nào trong ngày này.</td></tr>';
+      }).join('') || `<tr><td colspan="10" class="center muted">${empty}</td></tr>`;
     }
 
     async function load() {
-      if (!tid) return;
-      data = await api(`/api/admin/tournaments/${encodeURIComponent(tid)}/matches`);
+      try {
+        data = await api(`/api/tournaments/${encodeURIComponent(tid)}/history`);
+      } catch (e) {
+        $('#summary').textContent = e.message;
+        return;
+      }
+      $('#hint').textContent = data.judge ? 'trọng tài thấy cả những ngày chưa công bố 🎩' : 'chỉ có các ngày đã công bố kết quả';
       render();
     }
 
     (async () => {
       const socket = await boot();
-      const { tournaments } = await api('/api/tournaments');
-      if (!tournaments.length) {
-        $('#summary').textContent = 'Chưa có giải đấu nào.';
-        return;
-      }
-      if (!tournaments.some(t => t.id === tid)) tid = tournaments[0].id; // newest
-      $('#pick').innerHTML = tournaments.map(t => `<option value="${esc(t.id)}" ${t.id === tid ? 'selected' : ''}>${esc(t.name)} · ${t.game === 'board' ? 'cờ OTT' : 'oẳn tù tì'}</option>`).join('');
-      $('#pick').onchange = () => { tid = $('#pick').value; group = null; load(); };
+      $('#back').href = `/tournament/${encodeURIComponent(tid)}/live`;
+      $('#q').value = search;
+      $('#q').oninput = () => { search = $('#q').value; if (data) render(); };
       await load();
-      // new matches as they finish (at most one reload a second)
+      // new matches (the judge) and newly published days (everyone): at most one reload every 2 s
       let pending = null;
-      socket.on('match:done', m => {
-        if (m.tournamentId !== tid || pending) return;
-        pending = setTimeout(() => { pending = null; load(); }, 1000);
-      });
+      const reload = () => { if (!pending) pending = setTimeout(() => { pending = null; load(); }, 2000); };
+      socket.emit('watch', tid);
+      socket.on('connect', () => socket.emit('watch', tid));
+      socket.on('match:done', m => { if (m.tournamentId === tid) reload(); });
+      socket.on('leaderboard', b => { if (b.id === tid) reload(); });
     })().catch(e => toast(e.message, 'error'));
   </script>
 </body>

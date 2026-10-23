@@ -286,8 +286,8 @@
 
     (async () => {
       await boot();
-      $('#back').href = `/tournament/${encodeURIComponent(tid)}/${practiceBot ? 'submit' : 'live'}`;
-      if (practiceBot) $('#back').textContent = '← quay lại bảng luyện tập';
+      $('#back').href = `/tournament/${encodeURIComponent(tid)}/${practiceBot ? 'submit' : 'matches'}`;
+      $('#back').textContent = practiceBot ? '← quay lại bảng luyện tập' : '← quay lại lịch sử trận đấu';
       let data;
       try {
         data = await api(practiceBot

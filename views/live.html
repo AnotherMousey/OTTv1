@@ -15,17 +15,13 @@
       <div class="round-banner" id="banner"></div>
       <div class="progress hidden" id="progress"><div></div></div>
       <div class="muted" id="sub" style="font-size:18px"></div>
+      <a class="btn yellow hidden" id="history" style="margin-top:10px">📜 Lịch sử trận đấu</a>
     </div>
     <div class="champ-banner hidden" id="champ"></div>
     <table class="board">
       <thead id="lhead"><tr><th>#</th><th>đội</th><th class="hide-sm">ngôn ngữ</th><th>điểm vòng</th><th class="hide-sm">T · H · B</th><th class="hide-sm">tổng</th></tr></thead>
       <tbody id="rows"></tbody>
     </table>
-    <section id="matches" class="hidden">
-      <div class="squiggle"></div>
-      <h2 id="matchesTitle">Các trận đấu</h2>
-      <div id="feed"></div>
-    </section>
   </main>
 
   <script src="/socket.io/socket.io.js"></script>
@@ -109,7 +105,7 @@
     }
 
     // ---------- daily league (brawl) ----------
-    let dailyTimer = null, shownDays = null;
+    let dailyTimer = null;
     function renderDailyBoard(b) {
       lastBoard = b;
       $('#tname').textContent = b.name;
@@ -161,10 +157,7 @@
       }).join('') || '<tr><td colspan="4" class="center muted">chưa có đội nào có bot chạy được</td></tr>';
       b.rows.forEach(row => { prevPoints[row.userId] = row.points; });
       slideRows(tbody, before);
-
-      // new results published: refresh the replays
-      if (shownDays !== null && shownDays !== published.length) loadMatches();
-      shownDays = published.length;
+      showHistory();
     }
 
     // FLIP animation: remember where rows were, re-render, then slide them.
@@ -251,53 +244,21 @@
       b.rows.forEach(row => { prevPoints[row.userId] = row.total; });
       slideRows(tbody, before);
 
-      if (b.status === 'finished' && !canSeeMatches) {
-        canSeeMatches = true;
-        loadMatches();
-      }
+      if (b.status === 'finished') canSeeMatches = true;
+      showHistory();
     }
 
-    const matches = [];
-    function renderFeed() {
-      const byRound = {};
-      for (const m of matches) (byRound[m.round] = byRound[m.round] || []).push(m);
-      const rounds = Object.keys(byRound).map(Number).sort((a, b) => b - a);
-      const isDaily = lastBoard && lastBoard.format === 'daily';
-      const heading = n => {
-        if (!isDaily) return `Vòng ${n}`;
-        const d = lastBoard.days.find(x => x.number === n);
-        return `Ngày ${n}${d ? ` <small class="muted">${esc(fmtDate(d.at))}${d.status !== 'published' ? ' · chưa công bố 🎩' : ''}</small>` : ''}`;
-      };
-      $('#feed').innerHTML = rounds.map(n => `
-        <h3>${heading(n)}</h3>
-        <div class="feed">${byRound[n].slice().reverse().map(m => `
-          <a href="/tournament/${encodeURIComponent(tid)}/match?name=${encodeURIComponent(m.name)}">
-            <span>${m.dayRound ? `<span class="muted">vòng ${m.dayRound} ·</span> ` : ''}${m.winner === 'A' ? '<span class="win">👑</span> ' : ''}${esc(m.teamA)} <span class="muted">vs</span> ${esc(m.teamB)}${m.winner === 'B' ? ' <span class="win">👑</span>' : ''}</span>
-            <span class="score">${m.scoreA} – ${m.scoreB} ▶</span>
-          </a>`).join('')}</div>`).join('') || '<p class="muted">Chưa có trận nào.</p>';
-    }
-    async function loadMatches() {
-      if (!canSeeMatches || (lastBoard && lastBoard.mode === 'campaign')) return;
-      try {
-        const data = await api(`/api/tournaments/${encodeURIComponent(tid)}/matches`);
-        matches.length = 0;
-        matches.push(...data.matches);
-        $('#matches').classList.remove('hidden');
-        const daily = lastBoard && lastBoard.format === 'daily';
-        $('#matchesTitle').textContent = ME.role === 'judge' && lastBoard && lastBoard.status !== 'finished'
-          ? (daily ? 'Các trận đấu (trọng tài thấy cả ngày chưa công bố 🎩)' : 'Diễn biến các trận (chỉ trọng tài xem được 🎩)')
-          : 'Xem lại các trận';
-        $('#matches').classList.toggle('hidden', !matches.length && daily);
-        renderFeed();
-      } catch {}
+    // the match history has its own page (once players may watch matches; not in campaign mode)
+    function showHistory() {
+      $('#history').classList.toggle('hidden', !canSeeMatches || (lastBoard && lastBoard.mode === 'campaign'));
     }
 
     (async () => {
       const socket = await boot();
       const data = await api(`/api/tournaments/${encodeURIComponent(tid)}/leaderboard`);
       canSeeMatches = data.canSeeMatches;
+      $('#history').href = `/tournament/${encodeURIComponent(tid)}/matches`;
       renderBoard(data.leaderboard);
-      loadMatches();
       socket.emit('watch', tid);
       socket.on('connect', () => socket.emit('watch', tid));
       socket.on('leaderboard', b => {
@@ -305,11 +266,6 @@
         renderBoard(b);
         // keep an open campaign breakdown fresh too
         if (b.mode === 'campaign' && cstate.openUser) openCampaignRow(cstate.openUser);
-      });
-      socket.on('match:done', m => {
-        if (m.tournamentId !== tid || !canSeeMatches) return;
-        matches.push(m);
-        renderFeed();
       });
     })().catch(e => toast(e.message, 'error'));
   </script>

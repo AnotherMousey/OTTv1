@@ -140,7 +140,9 @@ app.get('/tournament/:id/live', pageAuth, view('live.html'));
 app.get('/tournament/:id/match', pageAuth, (req, res) => view(gameOf(findTournament(req.params.id)) === 'board' ? 'board-match.html' : 'match.html')(req, res));
 app.get('/me', pageAuth, view('profile.html'));
 app.get('/admin', pageAuth, (req, res) => (isJudge(req.user) ? view('admin.html')(req, res) : res.redirect('/')));
-app.get('/admin/matches', pageAuth, (req, res) => (isJudge(req.user) ? view('matches.html')(req, res) : res.redirect('/')));
+app.get('/tournament/:id/matches', pageAuth, view('matches.html'));
+// (the old judge-only address)
+app.get('/admin/matches', pageAuth, (req, res) => res.redirect(req.query.t ? `/tournament/${encodeURIComponent(req.query.t)}/matches` : '/admin'));
 
 // ---------- auth ----------
 app.post('/api/login', (req, res) => {
@@ -380,19 +382,20 @@ app.get('/api/tournaments/:id/matches/:name', apiAuth, wrap(async (req, res) => 
   res.json({ match: m, avatars: { A: auth.avatarOf(findUser(m.userA) || { teamName: m.teamA }), B: auth.avatarOf(findUser(m.userB) || { teamName: m.teamB }) }, tournament: { id: t.id, name: t.name, status: t.status } });
 }));
 
-// ---------- judge ----------
-// Every match of a tournament for the judge's match list, grouped by day (daily league) or round,
-// by match id. Matches from before ids existed are numbered 1..k in the order they were played
-// (new ids start after them, see tournament.js).
-app.get('/api/admin/tournaments/:id/matches', apiAuth, apiJudge, (req, res) => {
-  const t = findTournament(req.params.id);
+// A tournament's match history, grouped by day (daily league) or round, by match id: the judge sees
+// every match, players what they may watch (canSeeMatch). Matches from before ids existed are
+// numbered 1..k in the order they were played (new ids start after them, see tournament.js).
+app.get('/api/tournaments/:id/history', apiAuth, (req, res) => {
+  const t = visibleTournament(req);
   if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
+  if (!canSeeMatches(t, req.user)) return fail(res, 403, 'Các trận đấu sẽ được công khai khi giải kết thúc');
   const usernameOf = id => (findUser(id) || {}).username || '';
   const all = Object.values(db.data.matches[t.id] || {});
   const old = all.filter(m => !m.id).sort((a, b) => ((a.playedAt || '') < (b.playedAt || '') ? -1 : 1));
   const idOf = new Map(old.map((m, i) => [m, i + 1]));
   const matches = all
     .map(m => [m, m.id || idOf.get(m)])
+    .filter(([m]) => canSeeMatch(t, m, req.user))
     .sort((a, b) => a[1] - b[1])
     .map(([m, id]) => ({
       id, name: m.name, group: m.day ? `d${m.day}` : `r${m.round}`, dayRound: m.dayRound || null,
@@ -402,8 +405,10 @@ app.get('/api/admin/tournaments/:id/matches', apiAuth, apiJudge, (req, res) => {
   const groups = daily.isDaily(t)
     ? (t.days || []).map(d => ({ key: `d${d.number}`, label: `Ngày ${d.number}`, at: d.slot || d.startedAt, status: d.status, rounds: d.rounds || null }))
     : [...new Set(matches.map(m => m.group))].map(k => ({ key: k, label: `Vòng ${k.slice(1)}`, at: (matches.find(m => m.group === k) || {}).playedAt || null, status: 'published' }));
-  res.json({ tournament: { id: t.id, name: t.name, game: gameOf(t), status: t.status }, groups, matches });
+  res.json({ tournament: { id: t.id, name: t.name, game: gameOf(t), status: t.status }, judge: isJudge(req.user), groups, matches });
 });
+
+// ---------- judge ----------
 
 app.get('/api/admin/users', apiAuth, apiJudge, (req, res) => {
   res.json({ users: db.data.users.map(auth.publicUser) });

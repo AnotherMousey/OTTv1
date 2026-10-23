@@ -63,7 +63,7 @@ function renderTopbar() {
     <a class="logo" href="/"><span class="trio">${rpsIcon('R', 34)}${rpsIcon('P', 34)}${rpsIcon('S', 34)}</span> OTTv1</a>
     <nav>
       <a href="/">Giải đấu</a>
-      ${ME.role === 'judge' ? '<a href="/admin">Bàn trọng tài</a><a href="/admin/matches">Trận đấu</a>' : ''}
+      ${ME.role === 'judge' ? '<a href="/admin">Bàn trọng tài</a>' : ''}
     </nav>
     <div class="mebox">
       <a href="/me" class="me-link" title="tùy chỉnh nhân vật">
