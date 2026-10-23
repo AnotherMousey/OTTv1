@@ -424,7 +424,7 @@ table.accounts { table-layout: fixed; min-width: 900px; }
 table.accounts td:not(:last-child) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 table.subs { table-layout: fixed; min-width: 900px; }
 table.subs td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sub-code-text { max-height: 560px; overflow: auto; }
+pre.msg.sub-code-text { max-height: 75vh; } /* most of the screen; scrolls for the rest */
 .tactions { display: grid; grid-template-columns: repeat(3, auto); gap: 6px; justify-content: start; }
 .tactions .btn { white-space: nowrap; text-align: center; justify-self: start; }
 .member-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 6px; max-height: 420px; overflow: auto; padding: 2px; }

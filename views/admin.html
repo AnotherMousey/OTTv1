@@ -188,14 +188,14 @@
           <td>${t.teamsReady}</td>
           <td>${!focusId ? `<div class="row" style="gap:6px;flex-wrap:nowrap">
             <a class="btn small yellow" href="/admin?t=${id}">⚙️ quản lý</a>
-            <a class="btn small" href="/tournament/${id}/live">xem</a>
+            <a class="btn small" href="/tournament/${id}/live">bảng xếp hạng</a>
             ${t.status !== 'running' ? `<button class="btn small" data-del="${t.id}" title="xóa giải">🗑</button>` : ''}
           </div>` : `<div class="tactions">
             <button class="btn small" data-members="${t.id}">${t.access === 'invite' ? '🔒 ' : ''}người chơi</button>
             <button class="btn small" data-bots="${t.id}">bot đấu tập</button>
             <button class="btn small" data-subs="${t.id}">bài nộp</button>
             <button class="btn small" data-hide="${t.id}" title="${t.hidden ? 'cho người chơi thấy giải này' : 'chỉ trọng tài thấy giải này'}">${t.hidden ? '👁 hiện' : '🙈 ẩn'}</button>
-            ${waiting ? `<button class="btn small yellow" data-opennow="${t.id}">mở nhận bài ngay</button>` : open ? `${t.daily ? `<button class="btn small yellow" data-playnow="${t.id}" title="thêm một vòng đấu ngay bây giờ">⚡ đấu ngay</button><a class="btn small" href="/tournament/${id}/live">xem</a>` : ''}<button class="btn small ${t.daily ? '' : 'yellow'}" data-now="${t.id}">${t.daily ? 'kết thúc giải ngay' : 'đóng nộp bài ngay'}</button>` : `<a class="btn small" href="/tournament/${id}/live">xem</a>`}
+            ${waiting ? `<button class="btn small yellow" data-opennow="${t.id}">mở nhận bài ngay</button>` : open ? `${t.daily ? `<button class="btn small yellow" data-playnow="${t.id}" title="thêm một vòng đấu ngay bây giờ">⚡ đấu ngay</button><a class="btn small" href="/tournament/${id}/live">bảng xếp hạng</a>` : ''}<button class="btn small ${t.daily ? '' : 'yellow'}" data-now="${t.id}">${t.daily ? 'kết thúc giải ngay' : 'đóng nộp bài ngay'}</button>` : `<a class="btn small" href="/tournament/${id}/live">bảng xếp hạng</a>`}
             <a class="btn small" href="/tournament/${id}/matches">lịch sử trận</a>
           </div>`}</td>
         </tr>`;
