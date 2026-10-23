@@ -54,7 +54,8 @@
         <select id="tStatus" title="lọc theo trạng thái"><option value="">mọi trạng thái</option><option value="open">đang mở</option><option value="running">đang diễn ra</option><option value="finished">đã kết thúc</option></select>
         <span class="muted" id="tCount" style="font-size:17px"></span>
       </div>
-      <div class="scroll-table tscroll"><table class="plain admin-tlist"><thead><tr><th>tên</th><th>trò chơi · chế độ</th><th>trạng thái</th><th>bắt đầu</th><th>hạn chót</th><th>số đội</th><th></th></tr></thead><tbody id="tbody"></tbody></table></div></div>
+      <div class="scroll-table tscroll"><table class="plain admin-tlist"><thead><tr><th>tên</th><th>trò chơi · chế độ</th><th>trạng thái</th><th>bắt đầu</th><th>hạn chót</th><th>số đội</th><th></th></tr></thead><tbody id="tbody"></tbody></table></div>
+      <div id="focusActions" class="focus-actions hidden"></div></div>
     <div id="membersPanel" class="hidden" style="margin-top:20px"></div>
     <div id="botsPanel" class="hidden" style="margin-top:20px"></div>
     <div id="subsPanel" class="hidden" style="margin-top:20px"></div>
@@ -150,6 +151,8 @@
       $('#allLink').classList.remove('hidden');
       $('#listTitle').classList.add('focus-title');
       $('#tTools').classList.add('hidden');
+      $('.admin-tlist').classList.add('focus');
+      $('#focusActions').classList.remove('hidden');
     }
 
     let startTimer = null;
@@ -201,6 +204,12 @@
         </tr>`;
       }).join('') || `<tr><td colspan="7" class="muted">${allTournaments.length && !focusId ? 'không tìm thấy giải nào 🙈' : 'chưa có giải nào'}</td></tr>`;
       if (!focusId) fitRows('#tbody', VISIBLE_TOURNAMENTS);
+      // a tournament's own page: its buttons go in a row under the table, so the table fits the page
+      else {
+        const actions = $('#tbody .tactions');
+        $('#focusActions').innerHTML = '';
+        if (actions) $('#focusActions').append(actions);
+      }
 
       const patch = async (id, body, done) => {
         try {
