@@ -327,7 +327,7 @@ app.get('/api/tournaments/:id/practice', apiAuth, (req, res) => {
   rows.forEach((r, i) => { r.rank = i + 1; });
 
   let details = null;
-  const house = grader.practice.houseBots(gameOf(t));
+  const house = grader.practice.botsFor(t);
   const want = String(req.query.user || req.user.id);
   if (want === req.user.id || isJudge(req.user)) {
     const s = grader.activeSubmission(t.id, want);
@@ -638,7 +638,8 @@ app.delete('/api/admin/tournaments/:id', apiAuth, apiJudge, wrap(async (req, res
   res.json({ ok: true });
 }));
 // Sparring bots the judge controls, per tournament:
-//  - t.bots: bots added to a campaign (on top of the 10 built-in ones), any language;
+//  - t.bots: bots added on top of the built-in ones, any language (a campaign: more bots to beat;
+//    a brawl: more practice opponents, so more points in the evaluation score);
 //  - t.houseEdits[houseId]: an edited Python copy of a built-in bot (all modes; in a brawl it
 //    only changes the practice games).
 // Each keeps its latest code (status = result of its check) and `live`, the last version that
@@ -647,6 +648,7 @@ const houseBot = (t, id) => grader.practice.houseBots(gameOf(t)).find(h => h.id 
 const publicBot = b => ({ id: b.id, name: b.name, language: b.language, code: b.code, status: b.status, message: b.message || '', live: !!grader.practice.liveOf(b), stale: b.status !== 'ok' && !!grader.practice.liveOf(b), createdAt: b.createdAt, updatedAt: b.updatedAt || null });
 // A judge bot was added, edited or finished compiling: refresh pickers, campaign boards and the judge desk.
 function botChanged(t) {
+  grader.replayStalePractice(t); // brawl: a bot added or removed changes everyone's practice
   io.to('users').emit('tournaments:changed');
   io.to('users').emit('practice:updated', { tournamentId: t.id });
   manager.broadcast(t);
@@ -724,7 +726,6 @@ function checkBotName(t, name, except = null) {
 app.post('/api/admin/tournaments/:id/bots', apiAuth, apiJudge, (req, res) => {
   const t = editableTournament(req, res);
   if (!t) return;
-  if (t.mode !== 'campaign') return fail(res, 400, 'Chỉ giải chiến dịch mới thêm được bot đấu tập');
   const { language, code } = req.body || {};
   const name = String((req.body || {}).name || '').trim().slice(0, 40);
   const bad = checkBotName(t, name) || (!grader.LANGS[language] && 'Hãy chọn ngôn ngữ: cpp, java hoặc python') || badCode(code);

@@ -37,7 +37,7 @@ const isCampaign = sub => (tournamentOf(sub) || {}).mode === 'campaign';
 // 'rps' (also every tournament made before the board game existed) or 'board'.
 const gameOf = t => (t && t.game === 'board' ? 'board' : 'rps');
 
-// Judge-written bot code (a bot added to a campaign, or an edited copy of a built-in bot) keeps
+// Judge-written bot code (a bot the judge added, or an edited copy of a built-in bot) keeps
 // the last version that passed its check in `live` ({ buildId, language, code }). That version
 // plays while a newer edit is being checked, or if the newer edit failed.
 function liveOf(b) {
@@ -47,7 +47,7 @@ function liveOf(b) {
 const runnable = (live, game) => ({ id: live.buildId, language: live.language || 'python', code: live.code, trusted: true, game });
 
 // The sparring bots of a tournament: the built-in ones of its game (or the judge's edited Python
-// copy of one, once it works), plus (campaign only) the working bots the judge added. Every bot
+// copy of one, once it works), plus the working bots the judge added. Every bot
 // carries `custom`: something shaped like a submission, compiled and run as a process by the grader.
 function botsFor(t) {
   const game = gameOf(t);
@@ -56,7 +56,7 @@ function botsFor(t) {
     const live = edits[h.id] && edits[h.id].live;
     return { id: h.id, name: h.name, desc: h.desc, custom: live ? runnable(live, game) : defaultRunnable(h.id) };
   });
-  const extra = t && t.mode === 'campaign' ? (t.bots || []).filter(liveOf) : [];
+  const extra = t ? (t.bots || []).filter(liveOf) : [];
   return [...house, ...extra.map(b => ({ id: b.id, name: b.name, custom: runnable(liveOf(b), game) }))];
 }
 
@@ -108,7 +108,11 @@ const RULES = { board: 'cpu-180s-per-game' };
 const rulesOf = t => RULES[gameOf(t)] || null;
 
 const running = new Map();
-function evaluate(sub, ensureBuilt) {
+// topUp (brawl, after the judge added or removed a sparring bot): if this submission's practice
+// already finished against every bot there was, under the current rules, keep those results,
+// drop the ones against bots that are gone and only play the bots it hasn't met yet.
+// Otherwise (and without topUp) every bot is played from scratch.
+function evaluate(sub, ensureBuilt, { topUp = false } = {}) {
   if (running.has(sub.id)) return running.get(sub.id).promise;
   supersede(sub);
   // Campaign submissions aimed at one sparring bot only fight that bot.
@@ -118,17 +122,30 @@ function evaluate(sub, ensureBuilt) {
     const r = await runMatch(sub, house.custom, ensureBuilt, opts);
     return { ...r, issue: r.issues.A };
   };
+  const old = sub.practice;
+  const kept = topUp && !isCampaign(sub) && old && old.status === 'done' && (old.rules ?? null) === rulesOf(tournamentOf(sub))
+    ? new Map(old.results.filter(r => r.status === 'done').map(r => [r.bot, r]))
+    : new Map();
+  const results = opponents.map(h => (kept.has(h.id) ? { ...kept.get(h.id), name: h.name } : { bot: h.id, name: h.name, status: 'queued' }));
+  const total = () => results.reduce((s, x) => s + (x.score || 0), 0);
+  const toPlay = opponents.map((h, i) => [h, i]).filter(([, i]) => results[i].status === 'queued');
+  if (kept.size && !toPlay.length) { // only a bot was removed: nothing to play
+    Object.assign(old, { results, total: total() });
+    db.save();
+    listener(sub);
+    return Promise.resolve();
+  }
   sub.practice = {
     status: 'running',
     rules: rulesOf(tournamentOf(sub)),
-    total: 0,
-    startedAt: new Date().toISOString(),
-    results: opponents.map(h => ({ bot: h.id, name: h.name, status: 'queued' })),
+    total: total(),
+    startedAt: kept.size ? old.startedAt : new Date().toISOString(),
+    results,
   };
   db.save();
   listener(sub);
 
-  const promise = Promise.all(opponents.map((house, i) => withSlot(async () => {
+  const promise = Promise.all(toPlay.map(([house, i]) => withSlot(async () => {
     const slot = sub.practice.results[i];
     if (sub.practice.cancelled || !canEvaluate(sub)) { slot.status = 'skipped'; return; }
     slot.status = 'playing';
@@ -156,7 +173,7 @@ function evaluate(sub, ensureBuilt) {
         winner: last.winner === 'A' ? 'A' : last.winner, // 'A' only after 5 straight wins
       });
     }
-    sub.practice.total = sub.practice.results.reduce((s, x) => s + (x.score || 0), 0);
+    sub.practice.total = total();
     db.save();
     listener(sub);
   })))
@@ -179,9 +196,12 @@ function evaluate(sub, ensureBuilt) {
   return promise;
 }
 
+// The evaluation of this submission still going, if any (a promise).
+const runningFor = sub => (running.get(sub.id) || {}).promise || null;
+
 // Resolves once every evaluation currently queued for this tournament has finished.
 function waitFor(tournamentId) {
   return Promise.all([...running.values()].filter(r => r.tournamentId === tournamentId).map(r => r.promise));
 }
 
-module.exports = { PARALLEL, rulesOf, evaluate, waitFor, replayKey, replayName, onUpdate, botsFor, liveOf, gameOf, HOUSE_BOTS, houseBots, CAMPAIGN_GAMES };
+module.exports = { PARALLEL, rulesOf, evaluate, runningFor, waitFor, replayKey, replayName, onUpdate, botsFor, liveOf, gameOf, HOUSE_BOTS, houseBots, CAMPAIGN_GAMES };

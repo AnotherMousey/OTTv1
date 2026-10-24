@@ -162,7 +162,6 @@ async function check(sub) {
   }
 }
 
-// A sparring bot the judge added to a campaign: same checks as a submission, but no practice games.
 // Judge-written bot code (an added bot, or an edited built-in): checks the latest version
 // (`buildId`, `language`, `code`). If it passes it becomes the live one that plays; if not, the
 // previous live version keeps playing. A result for a version the judge has since replaced is dropped.
@@ -232,16 +231,29 @@ function resumePractice() {
       }
       continue;
     }
-    if (t.status !== 'open') continue;
-    const users = new Set(db.data.submissions.filter(s => s.tournamentId === t.id).map(s => s.userId));
-    const bots = new Set(practice.botsFor(t).map(b => b.id));
-    for (const uid of users) {
-      const s = activeSubmission(t.id, uid);
-      // also replay practice that ran against a different set of sparring bots, or under older rules
-      const stale = s && s.practice && (s.practice.results.length !== bots.size || s.practice.results.some(r => !bots.has(r.bot))
-        || (s.practice.rules ?? null) !== practice.rulesOf(t));
-      if (s && (!s.practice || s.practice.status !== 'done' || stale)) practice.evaluate(s, ensureBuilt);
-    }
+    replayStalePractice(t, true);
+  }
+}
+
+// Brawl: brings the practice of each team's newest bot up to date if it ran against a different
+// set of sparring bots (the judge added or removed one) or under older rules, so every team is
+// scored against the same bots. A finished run under the current rules only plays the bots it
+// is missing (see practice.evaluate's topUp); anything else is played again from scratch.
+// resumeCutOff: also finish practice a restart cut off.
+function replayStalePractice(t, resumeCutOff = false) {
+  if (t.mode === 'campaign' || t.status !== 'open') return;
+  const users = new Set(db.data.submissions.filter(s => s.tournamentId === t.id).map(s => s.userId));
+  const bots = new Set(practice.botsFor(t).map(b => b.id));
+  for (const uid of users) {
+    const s = activeSubmission(t.id, uid);
+    if (!s) continue;
+    const stale = s.practice && (s.practice.results.length !== bots.size || s.practice.results.some(r => !bots.has(r.bot))
+      || (s.practice.rules ?? null) !== practice.rulesOf(t));
+    if (!stale && !(resumeCutOff && (!s.practice || s.practice.status !== 'done'))) continue;
+    // a run still going against the old set finishes first, then this checks again
+    const run = practice.runningFor(s);
+    if (run) run.then(() => replayStalePractice(t));
+    else practice.evaluate(s, ensureBuilt, { topUp: true });
   }
 }
 
@@ -257,4 +269,4 @@ async function checkSandbox() {
   else console.log(`[grader] Docker sandbox ready: image ${BOT_IMAGE}, builds on the host at ${HOST_BUILD_ROOT}`);
 }
 
-module.exports = { LANGS, checkSandbox, validate, checkBot, removeBuild, housePython: require('./house').pythonSource, ensureBuilt, waitForValidations, activeSubmission, resumePractice, practice };
+module.exports = { LANGS, checkSandbox, validate, checkBot, removeBuild, housePython: require('./house').pythonSource, ensureBuilt, waitForValidations, activeSubmission, resumePractice, replayStalePractice, practice };

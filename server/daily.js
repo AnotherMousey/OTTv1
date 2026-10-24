@@ -16,7 +16,7 @@
 const db = require('./db');
 const { avatarOf } = require('./auth');
 const { canPlay } = require('./access');
-const { houseBots } = require('./grader/house');
+const { botsFor } = require('./grader/practice');
 const { MAX_SCORE } = require('./grader/board');
 const { TURNS } = require('./grader/match');
 
@@ -29,7 +29,7 @@ const pairingOf = t => (t.pairing === 'swiss' ? 'swiss' : 'rr');
 const swissRounds = n => (n < 2 ? 0 : Math.ceil(Math.log2(n)));
 const gameOf = t => (t.game === 'board' ? 'board' : 'rps');
 // The most a bot can score in practice: every match against every sparring bot won outright.
-const evalMax = t => houseBots(gameOf(t)).length * (gameOf(t) === 'board' ? MAX_SCORE : TURNS * 3);
+const evalMax = t => botsFor(t).length * (gameOf(t) === 'board' ? MAX_SCORE : TURNS * 3);
 const validTime = v => typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
 
 // Match times in [from, to] (ms timestamps), oldest first.

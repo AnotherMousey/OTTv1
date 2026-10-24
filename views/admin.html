@@ -518,9 +518,9 @@ public class Bot {
       panel.classList.remove('hidden');
       panel.innerHTML = `<div class="box alt">
         <div class="row" style="justify-content:space-between"><h3 style="margin:0">Bot đấu tập của ${esc(t.name)}</h3><button class="btn small" id="closeBots">đóng</button></div>
-        <p class="muted" style="font-size:17px;margin:4px 0 8px">Sửa code của từng bot riêng cho giải này (giải khác không bị ảnh hưởng). Bản sửa chỉ được dùng khi đã qua bước kiểm tra; trong lúc kiểm tra hoặc nếu bị lỗi, bản đang chạy vẫn được giữ.${campaign ? ` Bot bạn thêm đứng sau ${n} bot có sẵn, và người chơi phải hạ cả chúng mới về đích.` : ''}${open ? '' : ' Giải đã đóng, chỉ xem được code.'}</p>
+        <p class="muted" style="font-size:17px;margin:4px 0 8px">Sửa code của từng bot riêng cho giải này (giải khác không bị ảnh hưởng). Bản sửa chỉ được dùng khi đã qua bước kiểm tra; trong lúc kiểm tra hoặc nếu bị lỗi, bản đang chạy vẫn được giữ.${campaign ? ` Bot bạn thêm đứng sau ${n} bot có sẵn, và người chơi phải hạ cả chúng mới về đích.` : ' Bot bạn thêm cũng đấu tập với mọi đội và được cộng vào điểm đánh giá; khi thêm hoặc xóa bot, bot mới nhất của mỗi đội sẽ đấu tập lại.'}${open ? '' : ' Giải đã đóng, chỉ xem được code.'}</p>
         <table class="plain"><thead><tr><th>#</th><th>tên</th><th>loại</th><th>phiên bản đang chạy</th><th></th></tr></thead><tbody>${rows.join('')}</tbody></table>
-        ${open && campaign && !(editing && editing.kind === 'new') ? '<button class="btn small" id="addBot" style="margin-top:10px">➕ Thêm bot đấu tập</button>' : ''}
+        ${open && !(editing && editing.kind === 'new') ? '<button class="btn small" id="addBot" style="margin-top:10px">➕ Thêm bot đấu tập</button>' : ''}
         ${editor}
       </div>`;
 
