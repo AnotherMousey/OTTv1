@@ -243,18 +243,26 @@ function resumePractice() {
 function replayStalePractice(t, resumeCutOff = false) {
   if (t.mode === 'campaign' || t.status !== 'open') return;
   const users = new Set(db.data.submissions.filter(s => s.tournamentId === t.id).map(s => s.userId));
-  const bots = new Set(practice.botsFor(t).map(b => b.id));
   for (const uid of users) {
     const s = activeSubmission(t.id, uid);
-    if (!s) continue;
-    const stale = s.practice && (s.practice.results.length !== bots.size || s.practice.results.some(r => !bots.has(r.bot))
-      || (s.practice.rules ?? null) !== practice.rulesOf(t));
-    if (!stale && !(resumeCutOff && (!s.practice || s.practice.status !== 'done'))) continue;
-    // a run still going against the old set finishes first, then this checks again
-    const run = practice.runningFor(s);
-    if (run) run.then(() => replayStalePractice(t));
-    else practice.evaluate(s, ensureBuilt, { topUp: true });
+    if (s) topUpPractice(t, s, resumeCutOff);
   }
+}
+const waitingTopUp = new Set(); // submissions whose running practice is checked again once it ends
+function topUpPractice(t, s, resumeCutOff = false) {
+  const bots = new Set(practice.botsFor(t).map(b => b.id));
+  const stale = s.practice && (s.practice.results.length !== bots.size || s.practice.results.some(r => !bots.has(r.bot))
+    || (s.practice.rules ?? null) !== practice.rulesOf(t));
+  if (!stale && !(resumeCutOff && (!s.practice || s.practice.status !== 'done'))) return;
+  // a run still going against the old set finishes first, then only this submission is checked again
+  const run = practice.runningFor(s);
+  if (!run) return practice.evaluate(s, ensureBuilt, { topUp: true });
+  if (waitingTopUp.has(s.id)) return;
+  waitingTopUp.add(s.id);
+  run.then(() => {
+    waitingTopUp.delete(s.id);
+    if (t.status === 'open' && activeSubmission(t.id, s.userId) === s) topUpPractice(t, s);
+  });
 }
 
 // At startup: with the Docker sandbox, make sure Docker answers and the bot image exists.
