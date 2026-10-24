@@ -29,8 +29,15 @@ function exec({ cmd, args, cwd, container }, timeoutMs = 90000) {
       return resolve({ code: -1, out: e.message });
     }
     const timer = setTimeout(() => { out += '\n(timed out)'; p.kill(); removeContainer(container); }, timeoutMs);
-    p.stdout.on('data', d => { out = (out + d).slice(-8000); });
-    p.stderr.on('data', d => { out = (out + d).slice(-8000); });
+    // keep the start: a compiler's first error is the one that matters, the rest often follow from it
+    let cut = false;
+    const keep = d => {
+      if (cut) return;
+      out += d;
+      if (out.length > 8000) { cut = true; out = out.slice(0, 8000) + '\n… (còn nữa, đã lược bớt)'; }
+    };
+    p.stdout.on('data', keep);
+    p.stderr.on('data', keep);
     p.on('error', e => { clearTimeout(timer); resolve({ code: -1, out: `${cmd}: ${e.message}` }); });
     p.on('close', code => { clearTimeout(timer); resolve({ code, out }); });
   });
@@ -76,11 +83,10 @@ async function build(sub) {
   let r;
   if (sub.language === 'cpp') {
     fs.copyFileSync(path.join(isBoard ? BOARD_HARNESS : HARNESS, 'main.cpp'), path.join(dir, 'harness_main.cpp'));
-    const prelude = [];
-    if (!sub.trusted) {
-      fs.copyFileSync(path.join(HARNESS, 'prelude.hpp'), path.join(dir, 'prelude.hpp'));
-      prelude.push('-include', 'prelude.hpp');
-    }
+    // every C++ bot gets the standard headers, so judge bots can be written like player bots
+    // (judge code may still #include more; the headers' guards make repeats harmless)
+    fs.copyFileSync(path.join(HARNESS, 'prelude.hpp'), path.join(dir, 'prelude.hpp'));
+    const prelude = ['-include', 'prelude.hpp'];
     if (isBoard) {
       // the Piece and State structs, for the bot and the harness alike
       fs.copyFileSync(path.join(BOARD_HARNESS, 'api.hpp'), path.join(dir, 'board_api.hpp'));

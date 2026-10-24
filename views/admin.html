@@ -6,6 +6,8 @@
   <title>Bàn trọng tài · OTTv1</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/ott-icons.css">
+  <script src="/js/ott-icons.js" defer></script>
 </head>
 <body>
   <header id="topbar"></header>
@@ -480,17 +482,20 @@ public class Bot {
       const n = data.builtIn.length;
       const isEditing = (kind, id) => editing && editing.kind === kind && editing.id === id;
       const rows = [
-        ...data.builtIn.map((h, i) => `<tr class="${isEditing('house', h.id) ? 'editing' : ''}">
-          <td>${i + 1}</td><td title="${esc(h.desc)}">${esc(h.name)}</td><td class="muted">có sẵn</td><td>${versionText(h.edit, true)}</td>
+        ...data.builtIn.map((h, i) => h.removed ? `<tr class="muted">
+          <td>${i + 1}</td><td title="${esc(h.desc)}"><s>${esc(h.name)}</s></td><td>có sẵn</td><td>🗑 đã bỏ khỏi giải</td>
+          <td>${open ? `<button class="btn small" data-restore="${h.id}" title="cho bot này đấu tập lại trong giải">↺ khôi phục</button>` : ''}</td></tr>` : `<tr class="${isEditing('house', h.id) ? 'editing' : ''}">
+          <td>${i + 1}</td><td title="${esc(h.desc)}">${esc(h.name)}${h.name !== h.defaultName ? ` <small class="muted">(gốc: ${esc(h.defaultName)})</small>` : ''}</td><td class="muted">có sẵn</td><td>${versionText(h.edit, true)}</td>
           <td><div class="row" style="gap:6px">
             <button class="btn small" data-edit-house="${h.id}">${open ? 'sửa code' : 'xem code'}</button>
             ${open && h.edit ? `<button class="btn small" data-reset="${h.id}" title="dùng lại bot gốc">↺ mặc định</button>` : ''}
+            ${open ? `<button class="btn small" data-rename-house="${h.id}" title="đổi tên bot trong giải này">✏️ đổi tên</button><button class="btn small" data-housedel="${h.id}" title="bỏ bot này khỏi giải">🗑</button>` : ''}
           </div></td></tr>`),
         ...data.bots.map((b, i) => `<tr class="${isEditing('bot', b.id) ? 'editing' : ''}">
           <td>${n + i + 1}</td><td>${esc(b.name)}</td><td class="muted">thêm · ${LANG_LABEL[b.language]}</td><td>${versionText(b, false)}</td>
           <td><div class="row" style="gap:6px">
             <button class="btn small" data-edit-bot="${b.id}">${open ? 'sửa code' : 'xem code'}</button>
-            ${open ? `<button class="btn small" data-botdel="${b.id}">🗑</button>` : ''}
+            ${open ? `<button class="btn small" data-rename-bot="${b.id}" title="đổi tên bot">✏️ đổi tên</button><button class="btn small" data-botdel="${b.id}" title="xóa bot">🗑</button>` : ''}
           </div></td></tr>`),
       ];
 
@@ -537,6 +542,36 @@ public class Bot {
           showBots(t, true);
         } catch (e) { toast(e.message, 'error'); }
       });
+      // renaming and removing: straight away, without opening the code
+      const botAction = async (url, method, body, done) => {
+        try {
+          await api(url, { method, body });
+          toast(done);
+          showBots(t, true);
+        } catch (e) { toast(e.message, 'error'); }
+      };
+      $$('[data-rename-house]', panel).forEach(b => b.onclick = () => {
+        const h = data.builtIn.find(x => x.id === b.dataset.renameHouse);
+        const name = prompt(`Tên mới cho ${h.name} trong giải này (để trống = tên gốc "${h.defaultName}"):`, h.name);
+        if (name === null || name.trim() === h.name) return;
+        if (isEditing('house', h.id)) botsOpen.draft.name = name.trim() || h.defaultName;
+        botAction(`${botsUrl(t)}/house/${encodeURIComponent(h.id)}`, 'PATCH', { name: name.trim() }, 'Đã đổi tên bot ✏️');
+      });
+      $$('[data-rename-bot]', panel).forEach(b => b.onclick = () => {
+        const x = data.bots.find(y => y.id === b.dataset.renameBot);
+        const name = prompt('Tên mới cho bot:', x.name);
+        if (name === null || !name.trim() || name.trim() === x.name) return;
+        if (isEditing('bot', x.id)) botsOpen.draft.name = name.trim();
+        botAction(`${botsUrl(t)}/bots/${encodeURIComponent(x.id)}`, 'PATCH', { name: name.trim() }, 'Đã đổi tên bot ✏️');
+      });
+      $$('[data-housedel]', panel).forEach(b => b.onclick = () => {
+        const h = data.builtIn.find(x => x.id === b.dataset.housedel);
+        if (!confirm(`Bỏ ${h.name} khỏi giải này? ${campaign ? 'Người chơi không cần hạ nó nữa để về đích.' : 'Kết quả đấu tập với nó bị bỏ khỏi điểm đánh giá của mọi đội.'} Có thể khôi phục lại sau.`)) return;
+        if (isEditing('house', h.id)) botsOpen.editing = null;
+        botAction(`${botsUrl(t)}/house/${encodeURIComponent(h.id)}`, 'PATCH', { removed: true }, 'Đã bỏ bot khỏi giải 🗑');
+      });
+      $$('[data-restore]', panel).forEach(b => b.onclick = () =>
+        botAction(`${botsUrl(t)}/house/${encodeURIComponent(b.dataset.restore)}`, 'PATCH', { removed: false }, 'Đã khôi phục bot ↺'));
       $$('[data-botdel]', panel).forEach(b => b.onclick = async () => {
         if (!confirm('Xóa bot này? Những lần người chơi đã hạ nó sẽ không còn được tính.')) return;
         try {

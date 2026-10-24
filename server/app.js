@@ -641,7 +641,9 @@ app.delete('/api/admin/tournaments/:id', apiAuth, apiJudge, wrap(async (req, res
 //  - t.bots: bots added on top of the built-in ones, any language (a campaign: more bots to beat;
 //    a brawl: more practice opponents, so more points in the evaluation score);
 //  - t.houseEdits[houseId]: an edited Python copy of a built-in bot (all modes; in a brawl it
-//    only changes the practice games).
+//    only changes the practice games);
+//  - t.houseNames[houseId]: a built-in bot's name in this tournament, t.houseRemoved: the
+//    built-in bots taken out of it (they can be put back).
 // Each keeps its latest code (status = result of its check) and `live`, the last version that
 // passed, which is the one that plays (see grader/practice.js).
 const houseBot = (t, id) => grader.practice.houseBots(gameOf(t)).find(h => h.id === id);
@@ -687,7 +689,7 @@ app.get('/api/admin/tournaments/:id/bots', apiAuth, apiJudge, (req, res) => {
     game: gameOf(t),
     builtIn: grader.practice.houseBots(gameOf(t)).map(h => {
       const e = edits[h.id];
-      return { id: h.id, name: h.name, desc: h.desc, defaultCode: grader.housePython(h.id), edit: e ? { ...publicBot({ ...e, name: h.name }), language: 'python' } : null };
+      return { id: h.id, name: houseName(t)(h), defaultName: h.name, removed: (t.houseRemoved || []).includes(h.id), desc: h.desc, defaultCode: grader.housePython(h.id), edit: e ? { ...publicBot({ ...e, name: h.name }), language: 'python' } : null };
     }),
     bots: (t.bots || []).map(publicBot),
     languages: grader.LANGS,
@@ -707,6 +709,33 @@ app.put('/api/admin/tournaments/:id/house/:houseId', apiAuth, apiJudge, (req, re
   res.json({ ok: true });
 });
 // Back to the original built-in bot.
+// A built-in bot's name ('' = its own name again) and whether it plays in this tournament.
+// Body: { name?, removed? }.
+app.patch('/api/admin/tournaments/:id/house/:houseId', apiAuth, apiJudge, (req, res) => {
+  const t = editableTournament(req, res);
+  if (!t) return;
+  const h = houseBot(t, req.params.houseId);
+  if (!h) return fail(res, 404, 'Không tìm thấy bot');
+  const { name, removed } = req.body || {};
+  if (removed !== undefined && typeof removed !== 'boolean') return fail(res, 400, 'removed phải là true hoặc false');
+  if (name !== undefined) {
+    const n = String(name).trim().slice(0, 40);
+    const bad = n && checkBotName(t, n, h.id);
+    if (bad) return fail(res, 400, bad);
+    const names = (t.houseNames = t.houseNames || {});
+    if (n && n !== h.name) names[h.id] = n; else delete names[h.id];
+    if (!Object.keys(names).length) delete t.houseNames;
+  }
+  if (removed !== undefined) {
+    const was = new Set(t.houseRemoved || []);
+    if (removed && !was.has(h.id) && botCount(t) <= 1) return fail(res, 400, LAST_BOT);
+    if (removed) was.add(h.id); else was.delete(h.id);
+    if (was.size) t.houseRemoved = [...was]; else delete t.houseRemoved;
+  }
+  db.save();
+  botChanged(t);
+  res.json({ ok: true });
+});
 app.delete('/api/admin/tournaments/:id/house/:houseId', apiAuth, apiJudge, (req, res) => {
   const t = editableTournament(req, res);
   if (!t) return;
@@ -718,11 +747,20 @@ app.delete('/api/admin/tournaments/:id/house/:houseId', apiAuth, apiJudge, (req,
   botChanged(t);
   res.json({ ok: true });
 });
+// except: the bot being renamed (an added bot, or a built-in one's id).
 function checkBotName(t, name, except = null) {
   if (!name) return 'Hãy đặt tên cho bot';
-  if ([...grader.practice.houseBots(gameOf(t)), ...(t.bots || [])].some(h => h !== except && h.name.toLowerCase() === name.toLowerCase())) return 'Đã có bot đấu tập tên này';
+  const names = [
+    ...grader.practice.houseBots(gameOf(t)).filter(h => h.id !== except).map(houseName(t)),
+    ...(t.bots || []).filter(b => b !== except).map(b => b.name),
+  ];
+  if (names.some(n => n.toLowerCase() === name.toLowerCase())) return 'Đã có bot đấu tập tên này';
   return null;
 }
+const houseName = t => h => (t.houseNames || {})[h.id] || h.name;
+// A tournament must keep at least one sparring bot.
+const botCount = t => grader.practice.houseBots(gameOf(t)).length - (t.houseRemoved || []).length + (t.bots || []).length;
+const LAST_BOT = 'Giải cần ít nhất một bot đấu tập';
 app.post('/api/admin/tournaments/:id/bots', apiAuth, apiJudge, (req, res) => {
   const t = editableTournament(req, res);
   if (!t) return;
@@ -750,11 +788,26 @@ app.put('/api/admin/tournaments/:id/bots/:botId', apiAuth, apiJudge, (req, res) 
   else { db.save(); botChanged(t); }
   res.json({ bot: publicBot(bot) });
 });
+// An added bot's name only (its code stays as it is).
+app.patch('/api/admin/tournaments/:id/bots/:botId', apiAuth, apiJudge, (req, res) => {
+  const t = editableTournament(req, res);
+  if (!t) return;
+  const bot = (t.bots || []).find(b => b.id === req.params.botId);
+  if (!bot) return fail(res, 404, 'Không tìm thấy bot');
+  const name = String((req.body || {}).name || '').trim().slice(0, 40);
+  const bad = checkBotName(t, name, bot);
+  if (bad) return fail(res, 400, bad);
+  bot.name = name;
+  db.save();
+  botChanged(t);
+  res.json({ bot: publicBot(bot) });
+});
 app.delete('/api/admin/tournaments/:id/bots/:botId', apiAuth, apiJudge, (req, res) => {
   const t = editableTournament(req, res);
   if (!t) return;
   const bot = (t.bots || []).find(b => b.id === req.params.botId);
   if (!bot) return fail(res, 404, 'Không tìm thấy bot');
+  if (botCount(t) <= 1) return fail(res, 400, LAST_BOT);
   t.bots = t.bots.filter(b => b !== bot);
   db.save();
   [bot.id, bot.buildId, bot.live && bot.live.buildId].filter(Boolean).forEach(id => grader.removeBuild({ id }));

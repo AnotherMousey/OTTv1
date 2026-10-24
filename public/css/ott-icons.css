@@ -1,0 +1,143 @@
+/* OTTv1 hand-drawn symbols and native-control artwork. Load after style.css. */
+.ott-icon {
+  display: inline-block;
+  width: 1.15em;
+  height: 1.15em;
+  flex-shrink: 0;
+  vertical-align: -.17em;
+  overflow: visible;
+  pointer-events: none;
+}
+.btn .ott-icon { width: 1.15em; height: 1.15em; }
+.tag .ott-icon, .countdown .ott-icon { width: 1em; height: 1em; }
+.rank .ott-icon { width: 1.35em; height: 1.35em; }
+.confetti .ott-icon { width: 30px; height: 30px; }
+.hn .ott-icon { width: 1.1em; height: 1.1em; }
+.series .ott-icon, .pips .ott-icon, .choice .ott-icon { width: 1em; height: 1em; }
+.ott-select-symbol { display: inline !important; }
+
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-position: right 9px center;
+  background-repeat: no-repeat;
+  background-size: 18px;
+  padding-right: 34px !important;
+}
+input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 22px !important;
+  height: 22px !important;
+  min-width: 22px;
+  min-height: 22px;
+  margin: 0;
+  display: inline-block;
+  vertical-align: middle;
+  border: 2px solid #2b2b2b;
+  border-radius: 4px 2px 4px 3px !important;
+  background: #fff;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 20px;
+  box-shadow: none;
+  padding: 0 !important;
+  flex-shrink: 0;
+}
+input[type="checkbox"]:checked { background-color: #ffd84d; }
+input[type="radio"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  min-height: 22px;
+  margin: 0;
+  border: 2px solid #2b2b2b;
+  border-radius: 50%;
+  padding: 0;
+  background: #fff;
+  flex-shrink: 0;
+}
+input[type="radio"]:checked {
+  background: radial-gradient(circle, #2b2b2b 0 5px, #ffd84d 5.5px 100%);
+}
+input[type="datetime-local"], input[type="date"], input[type="time"] {
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+  background-size: 24px;
+  padding-right: 38px;
+}
+input::-webkit-calendar-picker-indicator { opacity: 0; cursor: pointer; }
+input[type="range"] {
+  appearance: none;
+  -webkit-appearance: none;
+  height: 10px;
+  min-height: 10px;
+  padding: 0;
+  border: 2px solid #2b2b2b;
+  border-radius: 9px;
+  background: #e4e0d2;
+}
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 24px;
+  height: 24px;
+  border: 2px solid #2b2b2b;
+  border-radius: 45% 55% 40% 50%;
+  background: #ffd84d;
+  cursor: pointer;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #2b2b2b;
+  border-radius: 45% 55% 40% 50%;
+  background: #ffd84d;
+  cursor: pointer;
+}
+summary { list-style: none; cursor: pointer; }
+summary::-webkit-details-marker { display: none; }
+summary::before {
+  content: '';
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  margin-right: 9px;
+  vertical-align: -1px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  transition: transform .15s;
+}
+details[open] > summary::before { transform: rotate(90deg); }
+.ott-search-field {
+  background-size: 24px;
+  background-position: 10px center;
+  background-repeat: no-repeat;
+  padding-left: 42px !important;
+}
+button:focus-visible, a:focus-visible, summary:focus-visible,
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 3px solid #245b9d;
+  outline-offset: 4px;
+}
+@media (prefers-reduced-motion: reduce) {
+  summary::before { transition: none; }
+}
+@media (forced-colors: active) {
+  input[type="checkbox"], input[type="radio"], input[type="range"], select {
+    appearance: auto;
+    -webkit-appearance: auto;
+    background-image: none !important;
+  }
+  input::-webkit-calendar-picker-indicator { opacity: 1; }
+}
+
+/* Embedded SVG control artwork. */
+select { background-image: url("data:image/svg+xml,%3Csvg%20class%3D%22ott-icon%22%20viewBox%3D%220%200%2064%2064%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2264%22%20height%3D%2264%22%20role%3D%22img%22%20aria-label%3D%22chevron%22%20focusable%3D%22false%22%3E%3Cg%20stroke%3D%22%232b2b2b%22%20stroke-width%3D%222.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M16%2024%20Q32%2040%2048%2024%22%20fill%3D%22none%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E"); }
+input[type="checkbox"]:checked { background-image: url("data:image/svg+xml,%3Csvg%20class%3D%22ott-icon%22%20viewBox%3D%220%200%2064%2064%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2264%22%20height%3D%2264%22%20role%3D%22img%22%20aria-label%3D%22tick%22%20focusable%3D%22false%22%3E%3Cg%20stroke%3D%22%232b2b2b%22%20stroke-width%3D%222.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M17%2033%20L27%2043%20L49%2020%22%20fill%3D%22none%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E"); }
+input[type="datetime-local"], input[type="date"] { background-image: url("data:image/svg+xml,%3Csvg%20class%3D%22ott-icon%22%20viewBox%3D%220%200%2064%2064%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2264%22%20height%3D%2264%22%20role%3D%22img%22%20aria-label%3D%22calendar%22%20focusable%3D%22false%22%3E%3Cg%20stroke%3D%22%232b2b2b%22%20stroke-width%3D%222.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M10%2014%20Q32%2011%2054%2014%20L54%2055%20L9%2054Z%22%20fill%3D%22%23fff%22%2F%3E%3Cpath%20d%3D%22M10%2014%20L54%2014%20L54%2025%20L10%2024Z%22%20fill%3D%22%239cc7ff%22%2F%3E%3Cpath%20d%3D%22M21%207%20L21%2019%20M43%207%20L43%2019%22%20fill%3D%22none%22%2F%3E%3Crect%20x%3D%2217%22%20y%3D%2232%22%20width%3D%224%22%20height%3D%224%22%20rx%3D%221%22%20fill%3D%22%23b9b5c6%22%2F%3E%3Crect%20x%3D%2217%22%20y%3D%2243%22%20width%3D%224%22%20height%3D%224%22%20rx%3D%221%22%20fill%3D%22%23b9b5c6%22%2F%3E%3Crect%20x%3D%2229%22%20y%3D%2232%22%20width%3D%224%22%20height%3D%224%22%20rx%3D%221%22%20fill%3D%22%23b9b5c6%22%2F%3E%3Crect%20x%3D%2229%22%20y%3D%2243%22%20width%3D%224%22%20height%3D%224%22%20rx%3D%221%22%20fill%3D%22%23b9b5c6%22%2F%3E%3Crect%20x%3D%2241%22%20y%3D%2232%22%20width%3D%224%22%20height%3D%224%22%20rx%3D%221%22%20fill%3D%22%23b9b5c6%22%2F%3E%3Crect%20x%3D%2241%22%20y%3D%2243%22%20width%3D%224%22%20height%3D%224%22%20rx%3D%221%22%20fill%3D%22%23b9b5c6%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E"); }
+input[type="time"] { background-image: url("data:image/svg+xml,%3Csvg%20class%3D%22ott-icon%22%20viewBox%3D%220%200%2064%2064%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2264%22%20height%3D%2264%22%20role%3D%22img%22%20aria-label%3D%22clock%22%20focusable%3D%22false%22%3E%3Cg%20stroke%3D%22%232b2b2b%22%20stroke-width%3D%222.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2232%22%20cy%3D%2232%22%20r%3D%2223%22%20fill%3D%22%23fff%22%2F%3E%3Cpath%20d%3D%22M32%2017%20L32%2033%20L43%2039%22%20fill%3D%22none%22%2F%3E%3Ccircle%20cx%3D%2232%22%20cy%3D%2232%22%20r%3D%222%22%20fill%3D%22%23ffd84d%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E"); }
+summary::before { background-image: url("data:image/svg+xml,%3Csvg%20class%3D%22ott-icon%22%20viewBox%3D%220%200%2064%2064%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2264%22%20height%3D%2264%22%20role%3D%22img%22%20aria-label%3D%22play%22%20focusable%3D%22false%22%3E%3Cg%20stroke%3D%22%232b2b2b%22%20stroke-width%3D%222.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M21%2011%20L50%2032%20L21%2054Z%22%20fill%3D%22%23ffd84d%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E"); }
+.ott-search-field { background-image: url("data:image/svg+xml,%3Csvg%20class%3D%22ott-icon%22%20viewBox%3D%220%200%2064%2064%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2264%22%20height%3D%2264%22%20role%3D%22img%22%20aria-label%3D%22search%22%20focusable%3D%22false%22%3E%3Cg%20stroke%3D%22%232b2b2b%22%20stroke-width%3D%222.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2227%22%20cy%3D%2226%22%20r%3D%2217%22%20fill%3D%22%23fff%22%2F%3E%3Cpath%20d%3D%22M39%2039%20L55%2055%20M17%2023%20Q19%2016%2027%2016%22%20fill%3D%22none%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E"); }
