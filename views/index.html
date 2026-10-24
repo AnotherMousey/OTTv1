@@ -80,8 +80,8 @@
     async function load() {
       const data = await api('/api/tournaments');
       tournaments = data.tournaments;
-      // the cờ OTT notice, while there is a cờ OTT tournament to see
-      showBoardNotice(tournaments.some(t => t.game === 'board') ? 'board' : null);
+      // every visible tournament's announcements, each under the tournament's name
+      showAnnouncements(tournaments.flatMap(t => (t.announcements || []).map(a => ({ ...a, tournament: t.name }))).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)));
       render();
     }
 

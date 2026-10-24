@@ -56,6 +56,13 @@
       </div>
       <div class="scroll-table tscroll"><table class="plain admin-tlist"><thead><tr><th>tên</th><th>trò chơi · chế độ</th><th>trạng thái</th><th>bắt đầu</th><th>hạn chót</th><th>số đội</th><th></th></tr></thead><tbody id="tbody"></tbody></table></div>
       <div id="focusActions" class="focus-actions hidden"></div></div>
+    <section id="announceArea" class="box hidden" style="margin-top:20px">
+      <h3 style="margin-top:0">📢 Thông báo</h3>
+      <p class="muted" style="font-size:17px;margin:-6px 0 8px">Hiện ở đầu trang giải và trang danh sách giải cho mọi người chơi thấy được giải này, tự biến mất sau 24 giờ.</p>
+      <textarea id="annText" maxlength="1000" style="width:100%;min-height:90px" placeholder="Ví dụ: Vòng đấu tối nay dời sang 22:00."></textarea>
+      <div class="row" style="gap:10px;margin-top:8px"><button class="btn red" id="annPost">Đăng thông báo 📢</button><span class="muted" id="annCount" style="font-size:17px"></span></div>
+      <div id="annList" style="margin-top:12px"></div>
+    </section>
     <div id="membersPanel" class="hidden" style="margin-top:20px"></div>
     <div id="botsPanel" class="hidden" style="margin-top:20px"></div>
     <div id="subsPanel" class="hidden" style="margin-top:20px"></div>
@@ -153,6 +160,42 @@
       $('#tTools').classList.add('hidden');
       $('.admin-tlist').classList.add('focus');
       $('#focusActions').classList.remove('hidden');
+      $('#announceArea').classList.remove('hidden');
+      const annLeft = () => { $('#annCount').textContent = `${$('#annText').value.length}/1000`; };
+      $('#annText').addEventListener('input', annLeft);
+      annLeft();
+      $('#annPost').onclick = async () => {
+        const text = $('#annText').value.trim();
+        if (!text) return toast('Thông báo đang trống', 'error');
+        try {
+          await api(`/api/admin/tournaments/${encodeURIComponent(focusId)}/announcements`, { method: 'POST', body: { text } });
+          $('#annText').value = '';
+          annLeft();
+          toast('Đã đăng thông báo 📢');
+          loadTournaments();
+        } catch (e) { toast(e.message, 'error'); }
+      };
+    }
+    // the tournament's announcements still showing, each with how long it has left
+    let annTimer = null;
+    const timeLeft = ms => { const m = Math.ceil(ms / 60000); return m >= 60 ? `${Math.floor(m / 60)} giờ ${m % 60} phút` : `${m} phút`; };
+    function renderAnnouncements(t) {
+      clearTimeout(annTimer);
+      const list = ((t && t.announcements) || []).filter(a => Date.parse(a.expiresAt) > serverNow());
+      $('#annList').innerHTML = list.map(a => `<div class="row" style="justify-content:space-between;align-items:flex-start;gap:10px;border-top:2px dashed var(--ink);padding:8px 0">
+          <div style="flex:1;min-width:0"><div class="announcement">${esc(a.text)}</div><small class="muted" style="font-size:15px">đăng lúc ${esc(fmtDate(a.createdAt))} · còn ${timeLeft(Date.parse(a.expiresAt) - serverNow())}</small></div>
+          <button class="btn small" data-anndel="${a.id}" title="gỡ thông báo này ngay">🗑 gỡ</button>
+        </div>`).join('') || '<span class="muted">chưa có thông báo nào đang hiện</span>';
+      $$('[data-anndel]').forEach(b => b.onclick = async () => {
+        if (!confirm('Gỡ thông báo này?')) return;
+        try {
+          await api(`/api/admin/tournaments/${encodeURIComponent(t.id)}/announcements/${encodeURIComponent(b.dataset.anndel)}`, { method: 'DELETE' });
+          toast('Đã gỡ thông báo');
+          loadTournaments();
+        } catch (e) { toast(e.message, 'error'); }
+      });
+      // keep the time left fresh, and drop announcements as they expire
+      if (list.length) annTimer = setTimeout(() => renderAnnouncements(t), 30000);
     }
 
     let startTimer = null;
@@ -211,6 +254,7 @@
         const actions = $('#tbody .tactions');
         $('#focusActions').innerHTML = '';
         if (actions) $('#focusActions').append(actions);
+        renderAnnouncements(tournaments[0]);
       }
 
       const patch = async (id, body, done) => {

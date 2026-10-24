@@ -118,6 +118,7 @@ function publicTournament(t, user) {
     members: isInviteOnly(t) && isJudge(user) ? (t.members || []).filter(id => findUser(id)).length : undefined,
     hidden: isJudge(user) ? !!t.hidden : undefined,
     champion: champion ? champion.teamName : null,
+    announcements: publicAnnouncements(t),
     mySubmission: mine[0] ? publicSubmission(mine[0]) : null,
     myActive: (mine.find(s => s.status === 'ok') || {}).id || null,
   };
@@ -130,6 +131,13 @@ function publicSubmission(s) {
 const daily = require('./daily');
 const canSeeMatches = (t, user) => isJudge(user) || t.status === 'finished' || daily.isDaily(t);
 const canSeeMatch = (t, m, user) => isJudge(user) || !daily.isDaily(t) || daily.isPublished(t, m.day);
+// The judge's announcements (t.announcements), shown on the tournament's pages for 24 hours each.
+const ANNOUNCEMENT_TTL_MS = 24 * 3600 * 1000;
+const MAX_ANNOUNCEMENT_LENGTH = 1000;
+const liveAnnouncements = t => (t.announcements || []).filter(a => Date.parse(a.createdAt) + ANNOUNCEMENT_TTL_MS > Date.now());
+const publicAnnouncements = t => liveAnnouncements(t)
+  .map(a => ({ id: a.id, text: a.text, createdAt: a.createdAt, expiresAt: new Date(Date.parse(a.createdAt) + ANNOUNCEMENT_TTL_MS).toISOString() }))
+  .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)); // newest first
 
 // ---------- pages ----------
 app.get('/login', (req, res) => (currentUser(req) ? res.redirect('/') : view('login.html')(req, res)));
@@ -360,7 +368,7 @@ app.get('/api/tournaments/:id/practice/:bot', apiAuth, wrap(async (req, res) => 
 app.get('/api/tournaments/:id/leaderboard', apiAuth, (req, res) => {
   const t = visibleTournament(req);
   if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
-  res.json({ leaderboard: manager.leaderboard(t), game: gameOf(t), canSeeMatches: canSeeMatches(t, req.user), serverNow: Date.now() });
+  res.json({ leaderboard: manager.leaderboard(t), game: gameOf(t), canSeeMatches: canSeeMatches(t, req.user), announcements: publicAnnouncements(t), serverNow: Date.now() });
 });
 
 app.get('/api/tournaments/:id/matches', apiAuth, (req, res) => {
@@ -564,6 +572,27 @@ app.post('/api/admin/tournaments/:id/play-now', apiAuth, apiJudge, (req, res) =>
   t.runNow = true;
   db.save();
   res.json({ ok: true });
+});
+// Announcements: a short message to everyone who can see the tournament, gone after 24 hours.
+app.post('/api/admin/tournaments/:id/announcements', apiAuth, apiJudge, (req, res) => {
+  const t = findTournament(req.params.id);
+  if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
+  const text = String((req.body || {}).text || '').trim();
+  if (!text) return fail(res, 400, 'Thông báo đang trống');
+  if (text.length > MAX_ANNOUNCEMENT_LENGTH) return fail(res, 400, `Thông báo dài tối đa ${MAX_ANNOUNCEMENT_LENGTH} ký tự`);
+  t.announcements = [...liveAnnouncements(t), { id: db.id(), text, createdAt: new Date().toISOString(), by: req.user.id }]; // expired ones are dropped here
+  db.save();
+  io.to('users').emit('tournaments:changed');
+  res.json({ announcements: publicAnnouncements(t) });
+});
+app.delete('/api/admin/tournaments/:id/announcements/:aid', apiAuth, apiJudge, (req, res) => {
+  const t = findTournament(req.params.id);
+  if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
+  t.announcements = liveAnnouncements(t).filter(a => a.id !== req.params.aid);
+  if (!t.announcements.length) delete t.announcements;
+  db.save();
+  io.to('users').emit('tournaments:changed');
+  res.json({ announcements: publicAnnouncements(t) });
 });
 // Stop live updates to players who were watching a tournament they may no longer see.
 async function kickWatchers(t) {

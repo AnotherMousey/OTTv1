@@ -304,6 +304,9 @@ pre.msg { white-space: pre; background: #f4f2ea; border-radius: 8px; padding: 10
 .board .pts { font-family: 'Pangolin', cursive; font-size: 30px; }
 .board tr.me td { background: #fff8d6; }
 .notice { background: #fff1a8; border: 3px solid var(--ink); border-radius: var(--wobble); padding: 8px 16px; margin: 0 0 14px; font-size: 19px; text-align: center; }
+.announcement { white-space: pre-line; overflow-wrap: anywhere; }
+.announcement + .announcement { border-top: 2px dashed var(--ink); margin-top: 6px; padding-top: 6px; }
+.announcement small { font-size: 15px; }
 /* daily league: one column per day, scrolling sideways in step (max-width: 0 lets the cell shrink) */
 .board td.days, .board th.days { width: 100%; max-width: 0; }
 .dayscroll { overflow-x: auto; scrollbar-width: thin; }

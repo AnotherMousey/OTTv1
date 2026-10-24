@@ -202,7 +202,7 @@ public class Bot {
       const data = await api(`/api/tournaments/${encodeURIComponent(tid)}`);
       const firstLoad = !tournament;
       tournament = data.tournament;
-      showBoardNotice(tournament.game);
+      showAnnouncements(tournament.announcements);
       bots = data.bots || [];
       if (data.turns) TURNS = data.turns;
       if (data.gamesNeeded) GAMES = data.gamesNeeded;

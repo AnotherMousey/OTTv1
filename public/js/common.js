@@ -14,14 +14,21 @@ let ME = null;
 let serverOffset = 0;
 const serverNow = () => Date.now() + serverOffset;
 
-// A short-lived notice at the top of every cờ OTT tournament page (until 12:00 on 24/10, Vietnam time).
-const BOARD_NOTICE_UNTIL = Date.parse('2026-10-24T12:00:00+07:00');
-function showBoardNotice(game) {
+// The judge's announcements at the top of the page (in #notice), newest first. Each one is gone
+// 24 hours after it was posted: the server stops sending it and the page drops it on time.
+// list: [{ text, createdAt, expiresAt, tournament? }] (tournament: name shown before the text).
+let noticeTimer = null;
+function showAnnouncements(list) {
   const el = document.getElementById('notice');
   if (!el) return;
-  const on = game === 'board' && serverNow() < BOARD_NOTICE_UNTIL;
-  el.classList.toggle('hidden', !on);
-  if (on) el.innerHTML = '📢 <b>Thông báo:</b> từ nay mỗi bot có TL 180 giây cho mỗi ván bên cạnh TL cũ giữa các nước.<br>Mấy đứa spam nhánh cận 1s giữa các nước thì tìm cách quản lý tài nguyên đi chứ tài nguyên trên server có hạn ^^';
+  clearTimeout(noticeTimer);
+  const live = (list || []).filter(a => Date.parse(a.expiresAt) > serverNow());
+  el.classList.toggle('hidden', !live.length);
+  el.innerHTML = live.map(a => `<div class="announcement">📢 <b>${a.tournament ? esc(a.tournament) : 'Thông báo'}:</b> ${esc(a.text)}<small class="muted"> · ${esc(fmtDate(a.createdAt))}</small></div>`).join('');
+  if (live.length) {
+    const next = Math.min(...live.map(a => Date.parse(a.expiresAt))) - serverNow();
+    noticeTimer = setTimeout(() => showAnnouncements(live), Math.min(next + 500, 2 ** 31 - 1));
+  }
 }
 
 function esc(s) {

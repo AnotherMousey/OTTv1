@@ -297,11 +297,13 @@
       const data = await api(`/api/tournaments/${encodeURIComponent(tid)}/leaderboard`);
       canSeeMatches = data.canSeeMatches;
       game = data.game;
-      showBoardNotice(game);
+      showAnnouncements(data.announcements);
       $('#history').href = `/tournament/${encodeURIComponent(tid)}/matches`;
       renderBoard(data.leaderboard);
       socket.emit('watch', tid);
       socket.on('connect', () => socket.emit('watch', tid));
+      // a new or removed announcement
+      socket.on('tournaments:changed', () => api(`/api/tournaments/${encodeURIComponent(tid)}/leaderboard`).then(d => showAnnouncements(d.announcements)).catch(() => {}));
       socket.on('leaderboard', b => {
         if (b.id !== tid) return;
         renderBoard(b);
