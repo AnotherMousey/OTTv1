@@ -245,8 +245,8 @@
             <button class="btn small" data-subs="${t.id}">bài nộp</button>
             <a class="btn small" href="/tournament/${id}/live">bảng xếp hạng</a>
             <a class="btn small" href="/tournament/${id}/matches">lịch sử trận</a>
-            ${open && !waiting ? `<button class="btn small red" data-now="${t.id}">${t.daily ? 'kết thúc giải ngay' : 'đóng nộp bài ngay'}</button>` : ''}
             ${t.daily && t.daily.played ? `<button class="btn small" data-rejudge="${t.id}" title="xóa kết quả một vòng đấu và cho các bot đấu lại vòng đó">🔁 rejudge</button>` : ''}
+            ${open && !waiting ? `<button class="btn small red" data-now="${t.id}">${t.daily ? 'kết thúc' : 'đóng nộp bài ngay'}</button>` : ''}
             ${waiting ? `<button class="btn small yellow" data-opennow="${t.id}">mở nhận bài ngay</button>` : open && t.daily ? `<button class="btn small yellow" data-playnow="${t.id}" title="thêm một vòng đấu ngay bây giờ">⚡ đấu ngay</button>` : ''}
           </div>`}</td>
         </tr>`;
