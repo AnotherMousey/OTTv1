@@ -110,7 +110,7 @@ function publicTournament(t, user) {
     description: t.description || '',
     deadline: t.deadline,
     startsAt: t.startsAt || null,
-    ...(daily.isDaily(t) ? { daily: { time: t.dailyTime, pairing: daily.pairingOf(t), nextAt: t.status === 'open' ? daily.nextSlot(t, Date.now()) : null, frozen: t.status === 'open' ? daily.frozen(t) : null, days: (t.days || []).filter(d => d.status === 'published').length, publishDelayMs: daily.PUBLISH_DELAY_MS } } : {}),
+    ...(daily.isDaily(t) ? { daily: { time: t.dailyTime, pairing: daily.pairingOf(t), nextAt: t.status === 'open' ? daily.nextSlot(t, Date.now()) : null, frozen: t.status === 'open' ? daily.frozen(t) : null, days: (t.days || []).filter(d => d.status === 'published').length, played: (t.days || []).length, publishDelayMs: daily.PUBLISH_DELAY_MS } } : {}),
     status: t.status,
     createdAt: t.createdAt || t.startsAt || t.deadline,
     teamsReady: t.entries ? t.entries.length : ready.size,
@@ -573,6 +573,36 @@ app.post('/api/admin/tournaments/:id/play-now', apiAuth, apiJudge, (req, res) =>
   db.save();
   res.json({ ok: true });
 });
+// Daily league: play day :n again from scratch (e.g. it ran with the wrong pairing). Its matches are
+// deleted and the day goes back to 'running' with the same teams and bots; the next tick plays it,
+// and its results publish PUBLISH_DELAY_MS from now. `pairing` also becomes the tournament's.
+app.post('/api/admin/tournaments/:id/days/:n/rejudge', apiAuth, apiJudge, wrap(async (req, res) => {
+  const t = findTournament(req.params.id);
+  if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
+  if (!daily.isDaily(t)) return fail(res, 400, 'Chỉ giải hỗn chiến mới chấm lại được một vòng');
+  const day = (t.days || []).find(d => d.number === +req.params.n);
+  if (!day) return fail(res, 404, 'Không tìm thấy vòng đấu này');
+  const { pairing = daily.pairingOf(t) } = req.body || {};
+  if (!['rr', 'swiss'].includes(pairing)) return fail(res, 400, 'Thể thức phải là vòng tròn (rr) hoặc Thụy Sĩ (swiss)');
+  if (manager.active.has(t.id) || (t.days || []).some(d => d.status === 'running')) return fail(res, 400, 'Đang có một vòng đấu chưa xong');
+  await db.deleteMatches(t.id, daily.dayMatches(t, day).map(m => m.name));
+  t.pairing = pairing;
+  day.pairing = pairing;
+  day.status = 'running';
+  day.publishAt = new Date(Date.now() + daily.PUBLISH_DELAY_MS).toISOString();
+  for (const k of ['rounds', 'pairs', 'byes', 'finishedAt', 'publishedAt']) delete day[k];
+  if (t.status === 'finished') { // the champion is decided again once every day is published
+    t.status = 'running';
+    delete t.championId;
+    delete t.finishedAt;
+  }
+  delete t.error;
+  db.save();
+  console.log(`[daily] "${t.name}" day ${day.number}: rejudging (${pairing})`);
+  manager.broadcast(t);
+  io.to('users').emit('tournaments:changed');
+  res.json({ ok: true });
+}));
 // Announcements: a short message to everyone who can see the tournament, gone after 24 hours.
 app.post('/api/admin/tournaments/:id/announcements', apiAuth, apiJudge, (req, res) => {
   const t = findTournament(req.params.id);

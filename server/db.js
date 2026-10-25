@@ -89,6 +89,10 @@ const jsonBackend = {
   async getCodes(ids) { return Object.fromEntries(ids.map(id => [id, this.codes[id] ?? ''])); },
   async putMatch(m, detail) { this.details[`${m.tournamentId}\n${m.name}`] = detail; },
   async getDetail(tid, name) { return this.details[`${tid}\n${name}`] || null; },
+  async deleteMatches(tid, names) {
+    for (const name of names) delete this.details[`${tid}
+${name}`];
+  },
   async deleteTournament(tid, subIds) {
     for (const key of Object.keys(this.details)) if (key.startsWith(tid + '\n')) delete this.details[key];
     for (const id of subIds) delete this.codes[id];
@@ -223,6 +227,9 @@ const pgBackend = {
     const r = (await this.pool.query('SELECT detail FROM matches WHERE tournament_id = $1 AND name = $2', [tid, name])).rows[0];
     return r ? r.detail : null;
   },
+  async deleteMatches(tid, names) {
+    await this.pool.query('DELETE FROM matches WHERE tournament_id = $1 AND name = ANY($2)', [tid, names]);
+  },
   async deleteTournament(tid) {
     await this.pool.query('DELETE FROM matches WHERE tournament_id = $1', [tid]); // its submission rows go with the next save
   },
@@ -287,6 +294,13 @@ const db = {
     const summary = (this.data.matches[tid] || {})[name];
     if (!summary) return null;
     return { ...summary, ...((await backend.getDetail(tid, name)) || {}) };
+  },
+  // Some of a tournament's matches, by name (a day being played again).
+  async deleteMatches(tid, names) {
+    const byName = this.data.matches[tid] || {};
+    for (const name of names) delete byName[name];
+    await backend.deleteMatches(tid, names);
+    this.save();
   },
   // A deleted tournament's matches and code. (Remove it and its submissions from db.data first.)
   async deleteTournament(tid, subIds) {

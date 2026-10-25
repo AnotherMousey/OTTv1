@@ -246,6 +246,7 @@
             <a class="btn small" href="/tournament/${id}/live">bảng xếp hạng</a>
             <a class="btn small" href="/tournament/${id}/matches">lịch sử trận</a>
             ${open && !waiting ? `<button class="btn small red" data-now="${t.id}">${t.daily ? 'kết thúc giải ngay' : 'đóng nộp bài ngay'}</button>` : ''}
+            ${t.daily && t.daily.played ? `<button class="btn small" data-rejudge="${t.id}" title="xóa kết quả một vòng đấu và cho các bot đấu lại vòng đó">🔁 rejudge</button>` : ''}
             ${waiting ? `<button class="btn small yellow" data-opennow="${t.id}">mở nhận bài ngay</button>` : open && t.daily ? `<button class="btn small yellow" data-playnow="${t.id}" title="thêm một vòng đấu ngay bây giờ">⚡ đấu ngay</button>` : ''}
           </div>`}</td>
         </tr>`;
@@ -289,6 +290,22 @@
         try {
           await api(`/api/admin/tournaments/${encodeURIComponent(b.dataset.playnow)}/play-now`, { method: 'POST' });
           toast('Các bot đang ra sân ⚡');
+        } catch (e) { toast(e.message, 'error'); }
+      });
+      $$('[data-rejudge]').forEach(b => b.onclick = async () => {
+        const t = tournaments.find(x => x.id === b.dataset.rejudge);
+        const n = prompt(`Chấm lại vòng đấu số mấy? (1–${t.daily.played})`, t.daily.played);
+        if (n === null) return;
+        if (!(+n >= 1 && +n <= t.daily.played && Number.isInteger(+n))) return toast('Số vòng không hợp lệ', 'error');
+        const p = prompt('Thể thức cho vòng này (và các vòng sau): rr = vòng tròn, swiss = Thụy Sĩ', t.daily.pairing);
+        if (p === null) return;
+        const pairing = p.trim().toLowerCase();
+        if (!['rr', 'swiss'].includes(pairing)) return toast('Thể thức phải là rr hoặc swiss', 'error');
+        if (!confirm(`Xóa toàn bộ kết quả vòng ${+n} và cho các bot đấu lại theo thể thức ${pairing === 'swiss' ? 'Thụy Sĩ' : 'vòng tròn'}?`)) return;
+        try {
+          await api(`/api/admin/tournaments/${encodeURIComponent(t.id)}/days/${+n}/rejudge`, { method: 'POST', body: { pairing } });
+          toast(`Vòng ${+n} đang được đấu lại 🔁`);
+          loadTournaments();
         } catch (e) { toast(e.message, 'error'); }
       });
       $$('[data-hide]').forEach(b => b.onclick = () => {
