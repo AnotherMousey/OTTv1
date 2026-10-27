@@ -95,15 +95,12 @@ input, select, textarea {
   padding: 7px 12px; background: #fff; outline: none;
 }
 input:focus, select:focus, textarea:focus { box-shadow: 0 0 0 4px var(--yellow); }
-/* a bot's name or description edited in place (judge desk) */
-.inline-edit {
-  display: block; min-width: 0; max-width: 100%; box-sizing: border-box; margin: 0; padding: 0 2px;
-  font-size: inherit; line-height: inherit; background: transparent;
-  border: 0; border-bottom: 2px dashed var(--ink); border-radius: 0;
-}
-.inline-edit:focus, .inline-edit:focus-visible { outline: none; box-shadow: none; border-bottom-style: solid; background: #fffbe6; }
-.inline-edit.desc { font-size: 80%; color: #555; margin-top: 2px; }
-.inline-edit.bad { border-bottom-color: var(--red); }
+/* a bot's name or description edited in place (judge desk): the text itself, nothing resized */
+.inline-edit { outline: none; background: #fffbe6; box-shadow: 0 2px 0 var(--ink); cursor: text; }
+.inline-edit:focus-visible { outline: none; }
+.inline-edit:empty { display: inline-block; min-width: 8em; }
+.inline-edit:empty::before { content: attr(data-hint); color: #aaa; }
+.inline-edit.bad { box-shadow: 0 2px 0 var(--red); }
 label { display: block; margin-bottom: 10px; }
 label > span { display: block; font-size: 18px; color: #555; }
 

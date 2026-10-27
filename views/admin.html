@@ -500,15 +500,18 @@ public class Bot {
       const campaign = t.mode === 'campaign';
       const n = data.builtIn.length;
       const isEditing = (kind, id) => editing && editing.kind === kind && editing.id === id;
-      // a bot's name and description, or a text box in place of one while the judge edits it
+      // a bot's name and description; while the judge edits one, that same text becomes editable
+      // in place (no separate box, so the table keeps its layout)
       const isInline = (kind, id, field) => inline && inline.kind === kind && inline.id === id && inline.field === field;
-      const inlineBox = (value, max, hint, cls = '') => `<input class="inline-edit ${cls}" id="inlineEdit" style="width:${inline.width}px" maxlength="${max}" value="${esc(inline.value ?? value)}" placeholder="${esc(hint)}">`;
-      const nameCell = (kind, x, extra = '') => isInline(kind, x.id, 'name')
-        ? inlineBox(x.name, 40, kind === 'house' ? `để trống = tên gốc "${x.defaultName}"` : 'tên bot')
-        : esc(x.name) + extra;
-      const descLine = (kind, x) => isInline(kind, x.id, 'desc')
-        ? inlineBox(x.desc || '', 300, kind === 'house' ? 'để trống = mô tả gốc' : 'mô tả người chơi sẽ thấy (có thể để trống)', 'desc')
-        : x.desc ? `<br><small class="muted">${esc(x.desc)}</small>` : '';
+      const editable = (kind, x, field, hint, cls = '') => isInline(kind, x.id, field)
+        ? ` class="${cls} inline-edit" id="inlineEdit" contenteditable="plaintext-only" spellcheck="false" data-hint="${esc(hint)}"`
+        : cls && ` class="${cls}"`;
+      const nameCell = (kind, x, extra = '') => `<span${editable(kind, x, 'name', kind === 'house' ? `tên gốc: ${x.defaultName}` : 'tên bot')}>${esc(isInline(kind, x.id, 'name') ? inline.value ?? x.name : x.name)}</span>${extra}`;
+      const descLine = (kind, x) => {
+        const on = isInline(kind, x.id, 'desc');
+        const text = on ? inline.value ?? (x.desc || '') : x.desc;
+        return text || on ? `<br><small${editable(kind, x, 'desc', kind === 'house' ? 'để trống = mô tả gốc' : 'mô tả người chơi sẽ thấy', 'muted')}>${esc(text)}</small>` : '';
+      };
       const rows = [
         ...data.builtIn.map((h, i) => h.removed ? `<tr class="muted">
           <td>${i + 1}</td><td><s>${esc(h.name)}</s>${h.desc ? `<br><small>${esc(h.desc)}</small>` : ''}</td><td>có sẵn</td><td>🗑 đã bỏ khỏi giải</td>
@@ -579,22 +582,20 @@ public class Bot {
           showBots(t, true);
         } catch (e) { toast(e.message, 'error'); }
       };
-      // renaming and describing: the name or the line below it becomes a text box; Enter or
+      // renaming and describing: the name or the line below it becomes editable; Enter or
       // clicking away saves, Esc puts it back. Another rename/describe button drops the open edit
       // (unsaved) and starts its own; the same button just keeps editing.
-      const startInline = (kind, id, field, button) => {
+      const startInline = (kind, id, field) => {
         if (isInline(kind, id, field)) return $('#inlineEdit').focus();
-        // the box takes exactly the name cell's current width, so the table does not reflow
-        const cell = button.closest('tr').children[1], cs = getComputedStyle(cell);
-        botsOpen.inline = { kind, id, field, width: Math.floor(cell.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)) };
+        botsOpen.inline = { kind, id, field };
         renderBots();
       };
       // pressing these must not blur (= save) the open text box first
       $$('[data-rename-house], [data-rename-bot], [data-desc-house], [data-desc-bot]', panel).forEach(b => b.onmousedown = e => { if (inline) e.preventDefault(); });
-      $$('[data-rename-house]', panel).forEach(b => b.onclick = () => startInline('house', b.dataset.renameHouse, 'name', b));
-      $$('[data-rename-bot]', panel).forEach(b => b.onclick = () => startInline('bot', b.dataset.renameBot, 'name', b));
-      $$('[data-desc-house]', panel).forEach(b => b.onclick = () => startInline('house', b.dataset.descHouse, 'desc', b));
-      $$('[data-desc-bot]', panel).forEach(b => b.onclick = () => startInline('bot', b.dataset.descBot, 'desc', b));
+      $$('[data-rename-house]', panel).forEach(b => b.onclick = () => startInline('house', b.dataset.renameHouse, 'name'));
+      $$('[data-rename-bot]', panel).forEach(b => b.onclick = () => startInline('bot', b.dataset.renameBot, 'name'));
+      $$('[data-desc-house]', panel).forEach(b => b.onclick = () => startInline('house', b.dataset.descHouse, 'desc'));
+      $$('[data-desc-bot]', panel).forEach(b => b.onclick = () => startInline('bot', b.dataset.descBot, 'desc'));
       const box = $('#inlineEdit');
       if (box) {
         const { kind, id, field } = inline;
@@ -603,7 +604,7 @@ public class Bot {
         const close = () => { done = true; botsOpen.inline = null; renderBots(); };
         const save = async () => {
           if (done || botsOpen.seq !== seq) return; // already saved, or this box was re-rendered away
-          const value = box.value.trim();
+          const value = box.textContent.replace(/\s+/g, ' ').trim(); // pasted line breaks too
           if (value === (x[field] || '') || (kind === 'bot' && field === 'name' && !value)) return close();
           done = true;
           try {
@@ -619,9 +620,15 @@ public class Bot {
             box.focus();
           }
         };
+        const max = field === 'name' ? 40 : 300;
+        const caretToEnd = () => { const sel = getSelection(); sel.selectAllChildren(box); sel.collapseToEnd(); };
         box.focus();
-        box.setSelectionRange(box.value.length, box.value.length);
-        box.oninput = () => { inline.value = box.value; box.classList.remove('bad'); };
+        caretToEnd();
+        box.oninput = () => {
+          if (box.textContent.length > max) { box.textContent = box.textContent.slice(0, max); caretToEnd(); }
+          inline.value = box.textContent;
+          box.classList.remove('bad');
+        };
         box.onkeydown = e => {
           if (e.key === 'Enter') { e.preventDefault(); save(); }
           else if (e.key === 'Escape') close();
