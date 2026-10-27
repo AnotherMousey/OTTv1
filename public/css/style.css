@@ -95,6 +95,9 @@ input, select, textarea {
   padding: 7px 12px; background: #fff; outline: none;
 }
 input:focus, select:focus, textarea:focus { box-shadow: 0 0 0 4px var(--yellow); }
+/* a bot's name or description edited in place (judge desk) */
+.inline-edit { display: block; width: 100%; min-width: 220px; margin: 2px 0; padding: 3px 10px; font-size: 16px; border-width: 2px; }
+.inline-edit.bad { border-color: var(--red); }
 label { display: block; margin-bottom: 10px; }
 label > span { display: block; font-size: 18px; color: #555; }
 

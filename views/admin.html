@@ -431,8 +431,9 @@
     }
 
     // ---------- sparring bots (built-in edits + campaign extras) ----------
-    // botsOpen = { t, data, editing: null | { kind: 'house' | 'bot' | 'new', id }, draft: { name, language, code } }
-    // The draft lives here, so the panel can re-render (e.g. a bot finished compiling) without losing typing.
+    // botsOpen = { t, data, editing: null | { kind: 'house' | 'bot' | 'new', id }, draft: { name, desc, language, code },
+    //   inline: null | { kind: 'house' | 'bot', id, field: 'name' | 'desc', value } (a name or description being edited in place) }
+    // The draft and the inline value live here, so the panel can re-render (e.g. a bot finished compiling) without losing typing.
     let botsOpen = null;
     const BOT_TEMPLATE = {
       python: `# A sparring bot: same interface as a player's bot.
@@ -492,25 +493,34 @@ public class Bot {
     }
 
     function renderBots() {
-      const { t, data, editing, draft } = botsOpen;
+      const { t, data, editing, draft, inline } = botsOpen;
+      const seq = botsOpen.seq = (botsOpen.seq || 0) + 1; // handlers of an older render do nothing
       const panel = $('#botsPanel');
       const open = t.status === 'open';
       const campaign = t.mode === 'campaign';
       const n = data.builtIn.length;
       const isEditing = (kind, id) => editing && editing.kind === kind && editing.id === id;
-      const descLine = d => d ? `<br><small class="muted">${esc(d)}</small>` : '';
+      // a bot's name and description, or a text box in place of one while the judge edits it
+      const isInline = (kind, id, field) => inline && inline.kind === kind && inline.id === id && inline.field === field;
+      const inlineBox = (value, max, hint) => `<input class="inline-edit" id="inlineEdit" maxlength="${max}" value="${esc(inline.value ?? value)}" placeholder="${esc(hint)}">`;
+      const nameCell = (kind, x, extra = '') => isInline(kind, x.id, 'name')
+        ? inlineBox(x.name, 40, kind === 'house' ? `để trống = tên gốc "${x.defaultName}"` : 'tên bot')
+        : esc(x.name) + extra;
+      const descLine = (kind, x) => isInline(kind, x.id, 'desc')
+        ? inlineBox(x.desc || '', 300, kind === 'house' ? 'để trống = mô tả gốc' : 'mô tả người chơi sẽ thấy (có thể để trống)')
+        : x.desc ? `<br><small class="muted">${esc(x.desc)}</small>` : '';
       const rows = [
         ...data.builtIn.map((h, i) => h.removed ? `<tr class="muted">
-          <td>${i + 1}</td><td><s>${esc(h.name)}</s>${descLine(h.desc)}</td><td>có sẵn</td><td>🗑 đã bỏ khỏi giải</td>
+          <td>${i + 1}</td><td><s>${esc(h.name)}</s>${h.desc ? `<br><small>${esc(h.desc)}</small>` : ''}</td><td>có sẵn</td><td>🗑 đã bỏ khỏi giải</td>
           <td>${open ? `<button class="btn small" data-restore="${h.id}" title="cho bot này đấu tập lại trong giải">↺ khôi phục</button>` : ''}</td></tr>` : `<tr class="${isEditing('house', h.id) ? 'editing' : ''}">
-          <td>${i + 1}</td><td>${esc(h.name)}${h.name !== h.defaultName ? ` <small class="muted">(gốc: ${esc(h.defaultName)})</small>` : ''}${descLine(h.desc)}</td><td class="muted">có sẵn</td><td>${versionText(h.edit, true)}</td>
+          <td>${i + 1}</td><td>${nameCell('house', h, h.name !== h.defaultName ? ` <small class="muted">(gốc: ${esc(h.defaultName)})</small>` : '')}${descLine('house', h)}</td><td class="muted">có sẵn</td><td>${versionText(h.edit, true)}</td>
           <td><div class="row" style="gap:6px">
             <button class="btn small" data-edit-house="${h.id}">${open ? 'sửa code' : 'xem code'}</button>
             ${open && h.edit ? `<button class="btn small" data-reset="${h.id}" title="dùng lại bot gốc">↺ mặc định</button>` : ''}
             ${open ? `<button class="btn small" data-rename-house="${h.id}" title="đổi tên bot trong giải này">✏️ đổi tên</button><button class="btn small" data-desc-house="${h.id}" title="viết mô tả người chơi sẽ thấy cạnh tên bot">📝 mô tả</button><button class="btn small" data-housedel="${h.id}" title="bỏ bot này khỏi giải">🗑</button>` : ''}
           </div></td></tr>`),
         ...data.bots.map((b, i) => `<tr class="${isEditing('bot', b.id) ? 'editing' : ''}">
-          <td>${n + i + 1}</td><td>${esc(b.name)}${descLine(b.desc)}</td><td class="muted">thêm · ${LANG_LABEL[b.language]}</td><td>${versionText(b, false)}</td>
+          <td>${n + i + 1}</td><td>${nameCell('bot', b)}${descLine('bot', b)}</td><td class="muted">thêm · ${LANG_LABEL[b.language]}</td><td>${versionText(b, false)}</td>
           <td><div class="row" style="gap:6px">
             <button class="btn small" data-edit-bot="${b.id}">${open ? 'sửa code' : 'xem code'}</button>
             ${open ? `<button class="btn small" data-rename-bot="${b.id}" title="đổi tên bot">✏️ đổi tên</button><button class="btn small" data-desc-bot="${b.id}" title="viết mô tả người chơi sẽ thấy cạnh tên bot">📝 mô tả</button><button class="btn small" data-botdel="${b.id}" title="xóa bot">🗑</button>` : ''}
@@ -561,7 +571,7 @@ public class Bot {
           showBots(t, true);
         } catch (e) { toast(e.message, 'error'); }
       });
-      // renaming and removing: straight away, without opening the code
+      // removing: straight away, without opening the code
       const botAction = async (url, method, body, done) => {
         try {
           await api(url, { method, body });
@@ -569,34 +579,49 @@ public class Bot {
           showBots(t, true);
         } catch (e) { toast(e.message, 'error'); }
       };
-      $$('[data-rename-house]', panel).forEach(b => b.onclick = () => {
-        const h = data.builtIn.find(x => x.id === b.dataset.renameHouse);
-        const name = prompt(`Tên mới cho ${h.name} trong giải này (để trống = tên gốc "${h.defaultName}"):`, h.name);
-        if (name === null || name.trim() === h.name) return;
-        if (isEditing('house', h.id)) botsOpen.draft.name = name.trim() || h.defaultName;
-        botAction(`${botsUrl(t)}/house/${encodeURIComponent(h.id)}`, 'PATCH', { name: name.trim() }, 'Đã đổi tên bot ✏️');
-      });
-      $$('[data-rename-bot]', panel).forEach(b => b.onclick = () => {
-        const x = data.bots.find(y => y.id === b.dataset.renameBot);
-        const name = prompt('Tên mới cho bot:', x.name);
-        if (name === null || !name.trim() || name.trim() === x.name) return;
-        if (isEditing('bot', x.id)) botsOpen.draft.name = name.trim();
-        botAction(`${botsUrl(t)}/bots/${encodeURIComponent(x.id)}`, 'PATCH', { name: name.trim() }, 'Đã đổi tên bot ✏️');
-      });
-      // descriptions: what players read about the bot ('' = none; a built-in bot: its own again)
-      $$('[data-desc-house]', panel).forEach(b => b.onclick = () => {
-        const h = data.builtIn.find(x => x.id === b.dataset.descHouse);
-        const desc = prompt(`Mô tả ${h.name} cho người chơi (tối đa 300 ký tự, để trống = mô tả gốc):`, h.desc);
-        if (desc === null || desc.trim() === h.desc) return;
-        botAction(`${botsUrl(t)}/house/${encodeURIComponent(h.id)}`, 'PATCH', { desc: desc.trim() }, 'Đã lưu mô tả 📝');
-      });
-      $$('[data-desc-bot]', panel).forEach(b => b.onclick = () => {
-        const x = data.bots.find(y => y.id === b.dataset.descBot);
-        const desc = prompt(`Mô tả ${x.name} cho người chơi (tối đa 300 ký tự, để trống = không có):`, x.desc);
-        if (desc === null || desc.trim() === x.desc) return;
-        if (isEditing('bot', x.id)) botsOpen.draft.desc = desc.trim();
-        botAction(`${botsUrl(t)}/bots/${encodeURIComponent(x.id)}`, 'PATCH', { desc: desc.trim() }, 'Đã lưu mô tả 📝');
-      });
+      // renaming and describing: the name or the line below it becomes a text box; Enter or
+      // clicking away saves, Esc puts it back
+      const startInline = (kind, id, field) => {
+        botsOpen.inline = isInline(kind, id, field) ? null : { kind, id, field };
+        renderBots();
+      };
+      $$('[data-rename-house]', panel).forEach(b => b.onclick = () => startInline('house', b.dataset.renameHouse, 'name'));
+      $$('[data-rename-bot]', panel).forEach(b => b.onclick = () => startInline('bot', b.dataset.renameBot, 'name'));
+      $$('[data-desc-house]', panel).forEach(b => b.onclick = () => startInline('house', b.dataset.descHouse, 'desc'));
+      $$('[data-desc-bot]', panel).forEach(b => b.onclick = () => startInline('bot', b.dataset.descBot, 'desc'));
+      const box = $('#inlineEdit');
+      if (box) {
+        const { kind, id, field } = inline;
+        const x = kind === 'house' ? data.builtIn.find(h => h.id === id) : data.bots.find(y => y.id === id);
+        let done = false;
+        const close = () => { done = true; botsOpen.inline = null; renderBots(); };
+        const save = async () => {
+          if (done || botsOpen.seq !== seq) return; // already saved, or this box was re-rendered away
+          const value = box.value.trim();
+          if (value === (x[field] || '') || (kind === 'bot' && field === 'name' && !value)) return close();
+          done = true;
+          try {
+            await api(`${botsUrl(t)}/${kind === 'house' ? 'house' : 'bots'}/${encodeURIComponent(id)}`, { method: 'PATCH', body: { [field]: value } });
+            if (field === 'name' && isEditing(kind, id)) botsOpen.draft.name = value || x.defaultName;
+            if (field === 'desc' && isEditing(kind, id)) botsOpen.draft.desc = value;
+            botsOpen.inline = null;
+            showBots(t, true);
+          } catch (e) {
+            done = false;
+            box.classList.add('bad');
+            toast(e.message, 'error');
+            box.focus();
+          }
+        };
+        box.focus();
+        box.setSelectionRange(box.value.length, box.value.length);
+        box.oninput = () => { inline.value = box.value; box.classList.remove('bad'); };
+        box.onkeydown = e => {
+          if (e.key === 'Enter') { e.preventDefault(); save(); }
+          else if (e.key === 'Escape') close();
+        };
+        box.onblur = () => { if (!box.classList.contains('bad')) save(); };
+      }
       $$('[data-housedel]', panel).forEach(b => b.onclick = () => {
         const h = data.builtIn.find(x => x.id === b.dataset.housedel);
         if (!confirm(`Bỏ ${h.name} khỏi giải này? ${campaign ? 'Người chơi không cần hạ nó nữa để về đích.' : 'Kết quả đấu tập với nó bị bỏ khỏi điểm đánh giá của mọi đội.'} Có thể khôi phục lại sau.`)) return;
