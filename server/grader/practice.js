@@ -47,20 +47,21 @@ function liveOf(b) {
 const runnable = (live, game) => ({ id: live.buildId, language: live.language || 'python', code: live.code, trusted: true, game });
 
 // The sparring bots of a tournament: the built-in ones of its game (or the judge's edited Python
-// copy of one, once it works; under the name the judge gave it, t.houseNames; minus the ones the
-// judge removed, t.houseRemoved), plus the working bots the judge added. Every bot
+// copy of one, once it works; under the name and description the judge gave it, t.houseNames and
+// t.houseDescs; minus the ones the judge removed, t.houseRemoved), plus the working bots the judge added. Every bot
 // carries `custom`: something shaped like a submission, compiled and run as a process by the grader.
 function botsFor(t) {
   const game = gameOf(t);
   const edits = (t && t.houseEdits) || {};
   const names = (t && t.houseNames) || {};
+  const descs = (t && t.houseDescs) || {};
   const removed = new Set((t && t.houseRemoved) || []);
   const house = houseBots(game).filter(h => !removed.has(h.id)).map(h => {
     const live = edits[h.id] && edits[h.id].live;
-    return { id: h.id, name: names[h.id] || h.name, desc: h.desc, custom: live ? runnable(live, game) : defaultRunnable(h.id) };
+    return { id: h.id, name: names[h.id] || h.name, desc: descs[h.id] || h.desc, custom: live ? runnable(live, game) : defaultRunnable(h.id) };
   });
   const extra = t ? (t.bots || []).filter(liveOf) : [];
-  return [...house, ...extra.map(b => ({ id: b.id, name: b.name, custom: runnable(liveOf(b), game) }))];
+  return [...house, ...extra.map(b => ({ id: b.id, name: b.name, desc: b.desc || '', custom: runnable(liveOf(b), game) }))];
 }
 
 // Brawl: practice only matters while submissions are open.

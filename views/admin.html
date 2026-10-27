@@ -483,8 +483,8 @@ public class Bot {
       const b = botsOpen.data;
       let draft;
       if (kind === 'house') { const h = b.builtIn.find(x => x.id === id); draft = { name: h.name, language: 'python', code: h.edit ? h.edit.code : h.defaultCode }; }
-      else if (kind === 'bot') { const x = b.bots.find(y => y.id === id); draft = { name: x.name, language: x.language, code: x.code }; }
-      else draft = { name: '', language: 'python', code: botTemplates().python };
+      else if (kind === 'bot') { const x = b.bots.find(y => y.id === id); draft = { name: x.name, desc: x.desc, language: x.language, code: x.code }; }
+      else draft = { name: '', desc: '', language: 'python', code: botTemplates().python };
       botsOpen.editing = { kind, id };
       botsOpen.draft = draft;
       renderBots();
@@ -498,21 +498,22 @@ public class Bot {
       const campaign = t.mode === 'campaign';
       const n = data.builtIn.length;
       const isEditing = (kind, id) => editing && editing.kind === kind && editing.id === id;
+      const descLine = d => d ? `<br><small class="muted">${esc(d)}</small>` : '';
       const rows = [
         ...data.builtIn.map((h, i) => h.removed ? `<tr class="muted">
-          <td>${i + 1}</td><td title="${esc(h.desc)}"><s>${esc(h.name)}</s></td><td>có sẵn</td><td>🗑 đã bỏ khỏi giải</td>
+          <td>${i + 1}</td><td><s>${esc(h.name)}</s>${descLine(h.desc)}</td><td>có sẵn</td><td>🗑 đã bỏ khỏi giải</td>
           <td>${open ? `<button class="btn small" data-restore="${h.id}" title="cho bot này đấu tập lại trong giải">↺ khôi phục</button>` : ''}</td></tr>` : `<tr class="${isEditing('house', h.id) ? 'editing' : ''}">
-          <td>${i + 1}</td><td title="${esc(h.desc)}">${esc(h.name)}${h.name !== h.defaultName ? ` <small class="muted">(gốc: ${esc(h.defaultName)})</small>` : ''}</td><td class="muted">có sẵn</td><td>${versionText(h.edit, true)}</td>
+          <td>${i + 1}</td><td>${esc(h.name)}${h.name !== h.defaultName ? ` <small class="muted">(gốc: ${esc(h.defaultName)})</small>` : ''}${descLine(h.desc)}</td><td class="muted">có sẵn</td><td>${versionText(h.edit, true)}</td>
           <td><div class="row" style="gap:6px">
             <button class="btn small" data-edit-house="${h.id}">${open ? 'sửa code' : 'xem code'}</button>
             ${open && h.edit ? `<button class="btn small" data-reset="${h.id}" title="dùng lại bot gốc">↺ mặc định</button>` : ''}
-            ${open ? `<button class="btn small" data-rename-house="${h.id}" title="đổi tên bot trong giải này">✏️ đổi tên</button><button class="btn small" data-housedel="${h.id}" title="bỏ bot này khỏi giải">🗑</button>` : ''}
+            ${open ? `<button class="btn small" data-rename-house="${h.id}" title="đổi tên bot trong giải này">✏️ đổi tên</button><button class="btn small" data-desc-house="${h.id}" title="viết mô tả người chơi sẽ thấy cạnh tên bot">📝 mô tả</button><button class="btn small" data-housedel="${h.id}" title="bỏ bot này khỏi giải">🗑</button>` : ''}
           </div></td></tr>`),
         ...data.bots.map((b, i) => `<tr class="${isEditing('bot', b.id) ? 'editing' : ''}">
-          <td>${n + i + 1}</td><td>${esc(b.name)}</td><td class="muted">thêm · ${LANG_LABEL[b.language]}</td><td>${versionText(b, false)}</td>
+          <td>${n + i + 1}</td><td>${esc(b.name)}${descLine(b.desc)}</td><td class="muted">thêm · ${LANG_LABEL[b.language]}</td><td>${versionText(b, false)}</td>
           <td><div class="row" style="gap:6px">
             <button class="btn small" data-edit-bot="${b.id}">${open ? 'sửa code' : 'xem code'}</button>
-            ${open ? `<button class="btn small" data-rename-bot="${b.id}" title="đổi tên bot">✏️ đổi tên</button><button class="btn small" data-botdel="${b.id}" title="xóa bot">🗑</button>` : ''}
+            ${open ? `<button class="btn small" data-rename-bot="${b.id}" title="đổi tên bot">✏️ đổi tên</button><button class="btn small" data-desc-bot="${b.id}" title="viết mô tả người chơi sẽ thấy cạnh tên bot">📝 mô tả</button><button class="btn small" data-botdel="${b.id}" title="xóa bot">🗑</button>` : ''}
           </div></td></tr>`),
       ];
 
@@ -527,7 +528,8 @@ public class Bot {
           ${isHouse ? `<p class="muted" style="font-size:17px;margin:4px 0 8px">Bản Python của bot có sẵn, chơi y như bản gốc. Sửa xong bấm lưu: code được biên dịch và chơi thử 5 ${t.game === 'board' ? 'nước' : 'lượt'}; qua được thì giải này dùng code của bạn thay cho bot gốc${campaign ? '' : ' (trong giải hỗn chiến, chỉ ảnh hưởng các trận luyện tập)'}.</p>` : `<div class="form-row">
             <label><span>tên bot</span><input id="beName" maxlength="40" value="${esc(draft.name)}" style="width:100%" ${open ? '' : 'disabled'}></label>
             <label><span>ngôn ngữ</span><select id="beLang" style="width:100%" ${open ? '' : 'disabled'}>${Object.keys(botTemplates()).map(l => `<option value="${l}" ${draft.language === l ? 'selected' : ''}>${LANG_LABEL[l]}</option>`).join('')}</select></label>
-          </div>`}
+          </div>
+          <label style="display:block;margin-bottom:8px"><span>mô tả <small class="muted">(người chơi thấy cạnh tên bot, có thể để trống)</small></span><input id="beDesc" maxlength="300" value="${esc(draft.desc || '')}" style="width:100%" ${open ? '' : 'disabled'}></label>`}
           <textarea class="code" id="beCode" spellcheck="false" style="min-height:${isHouse ? 420 : 260}px" ${open ? '' : 'readonly'}></textarea>
           ${last && last.status === 'error' && last.message ? `<pre class="msg" style="color:var(--red)">${esc(last.message)}</pre>` : ''}
           ${open ? `<div class="row" style="margin-top:10px">
@@ -581,6 +583,20 @@ public class Bot {
         if (isEditing('bot', x.id)) botsOpen.draft.name = name.trim();
         botAction(`${botsUrl(t)}/bots/${encodeURIComponent(x.id)}`, 'PATCH', { name: name.trim() }, 'Đã đổi tên bot ✏️');
       });
+      // descriptions: what players read about the bot ('' = none; a built-in bot: its own again)
+      $$('[data-desc-house]', panel).forEach(b => b.onclick = () => {
+        const h = data.builtIn.find(x => x.id === b.dataset.descHouse);
+        const desc = prompt(`Mô tả ${h.name} cho người chơi (tối đa 300 ký tự, để trống = mô tả gốc):`, h.desc);
+        if (desc === null || desc.trim() === h.desc) return;
+        botAction(`${botsUrl(t)}/house/${encodeURIComponent(h.id)}`, 'PATCH', { desc: desc.trim() }, 'Đã lưu mô tả 📝');
+      });
+      $$('[data-desc-bot]', panel).forEach(b => b.onclick = () => {
+        const x = data.bots.find(y => y.id === b.dataset.descBot);
+        const desc = prompt(`Mô tả ${x.name} cho người chơi (tối đa 300 ký tự, để trống = không có):`, x.desc);
+        if (desc === null || desc.trim() === x.desc) return;
+        if (isEditing('bot', x.id)) botsOpen.draft.desc = desc.trim();
+        botAction(`${botsUrl(t)}/bots/${encodeURIComponent(x.id)}`, 'PATCH', { desc: desc.trim() }, 'Đã lưu mô tả 📝');
+      });
       $$('[data-housedel]', panel).forEach(b => b.onclick = () => {
         const h = data.builtIn.find(x => x.id === b.dataset.housedel);
         if (!confirm(`Bỏ ${h.name} khỏi giải này? ${campaign ? 'Người chơi không cần hạ nó nữa để về đích.' : 'Kết quả đấu tập với nó bị bỏ khỏi điểm đánh giá của mọi đội.'} Có thể khôi phục lại sau.`)) return;
@@ -609,6 +625,7 @@ public class Bot {
         draft.code = code.value;
       });
       if ($('#beName')) $('#beName').oninput = e => { draft.name = e.target.value; };
+      if ($('#beDesc')) $('#beDesc').oninput = e => { draft.desc = e.target.value; };
       if ($('#beLang')) $('#beLang').onchange = e => {
         // swap in the new language's template unless the judge already wrote something
         if (!draft.code.trim() || Object.values(botTemplates()).includes(draft.code)) draft.code = code.value = botTemplates()[e.target.value];

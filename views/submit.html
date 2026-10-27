@@ -45,6 +45,7 @@
         <div id="picker" class="hidden" style="margin-bottom:16px">
           <h3 style="margin:0 0 8px">Chọn đối thủ 🎯</h3>
           <div class="picker" id="pickerBots"></div>
+          <p class="muted hidden" id="pickerDesc" style="margin:8px 0 0;font-size:17px"></p>
         </div>
         <div class="row" style="justify-content:space-between">
           <div class="lang-tabs" id="langs"></div>
@@ -158,7 +159,7 @@ public class Bot {
     const tid = tournamentIdFromPath();
     let lang = localStorage.getItem('rr-lang') || 'python';
     let tournament = null;
-    let bots = [];        // sparring bots [{ id, name }]
+    let bots = [];        // sparring bots [{ id, name, desc }]
     let target = null;    // campaign: which sparring bot the next submission fights
     let cooldownUntil = 0; // no new submission before this time (ms)
     const botName = id => (bots.find(b => b.id === id) || {}).name || id;
@@ -259,10 +260,14 @@ public class Bot {
       $('#pickerBots').innerHTML = bots.map((b, i) => {
         const s = st(b.id);
         const note = s.beaten ? '✓ đã hạ' : s.inProgress ? '🥊 đang đấu…' : s.best && s.best.games ? `tốt nhất: thắng ${s.best.wins}/${GAMES}` : 'chưa đấu';
-        return `<button class="pick ${b.id === target ? 'on' : ''} ${s.beaten ? 'beaten' : ''}" data-id="${b.id}">
+        return `<button class="pick ${b.id === target ? 'on' : ''} ${s.beaten ? 'beaten' : ''}" data-id="${b.id}" title="${esc(b.desc || '')}">
           <span class="pnum">${i + 1}</span><span class="pname">${esc(b.name)}</span><span class="pnote">${note}</span></button>`;
       }).join('');
       $$('#pickerBots .pick').forEach(el => el.onclick = () => { target = el.dataset.id; renderPicker(); });
+      // the judge's description of the chosen opponent
+      const desc = (bots.find(b => b.id === target) || {}).desc;
+      $('#pickerDesc').innerHTML = desc ? `<b>${esc(botName(target))}:</b> ${esc(desc)}` : '';
+      $('#pickerDesc').classList.toggle('hidden', !desc);
       tick();
     }
 

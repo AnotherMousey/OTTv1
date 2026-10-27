@@ -147,6 +147,7 @@ function details(t, userId) {
     bots: botsFor(t).map(h => ({
       bot: h.id,
       name: h.name,
+      desc: h.desc,
       beaten: !!p.beaten[h.id],
       beatenBy: p.beaten[h.id] ? p.beaten[h.id].number : null,
       beatenAt: p.beaten[h.id] ? p.beaten[h.id].at : null,

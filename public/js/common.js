@@ -134,11 +134,11 @@ function practiceDetailHtml(det, maxScore, tid) {
   const cards = det.results.map(r => {
     if (r.status !== 'done') {
       const label = { queued: '⏳ đang chờ', playing: '🥊 đang đấu…', skipped: 'bỏ qua' }[r.status] || r.status;
-      return `<div class="house pending"><div class="hn">${esc(r.name)}</div><div class="hs muted">${label}</div></div>`;
+      return `<div class="house pending"><div class="hn" title="${esc(r.desc || '')}">${esc(r.name)}</div><div class="hs muted">${label}</div></div>`;
     }
     const res = r.winner === 'A' ? ['win', 'thắng 🎉'] : r.winner === 'B' ? ['loss', 'thua 😵'] : ['draw', 'hòa 🤝'];
     return `<div class="house ${res[0]}">
-      <div class="hn">${esc(r.name)}</div>
+      <div class="hn" title="${esc(r.desc || '')}">${esc(r.name)}</div>
       <div class="hs"><b>${r.score}</b> <span class="muted">:</span> ${r.botScore} <span class="tag">${res[1]}</span></div>
       <div class="hbar"><div class="a" style="width:${(r.score / maxScore) * 100}%"></div></div>
       ${r.issue ? `<div class="hi">⚠️ ${esc(r.issue)}</div>` : ''}

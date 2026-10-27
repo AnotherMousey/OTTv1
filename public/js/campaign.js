@@ -28,7 +28,7 @@ function campaignDetail(det) {
   const need = det.gamesNeeded || 5;
   const cards = det.bots.map(b => {
     if (b.beaten) {
-      return `<div class="house win"><div class="hn">${esc(b.name)}</div>
+      return `<div class="house win"><div class="hn" title="${esc(b.desc || '')}">${esc(b.name)}</div>
         <div class="hs">✓ đã hạ</div>
         <div>${seriesPips(Array(need).fill('A'), need)}</div>
         <div class="hw">thắng cả ${need} ván · bài nộp #${b.beatenBy} · ${esc(fmtClock(b.beatenAt))}</div></div>`;
@@ -44,7 +44,7 @@ function campaignDetail(det) {
       best = `<div class="hs"><b>${b.best.score}</b> <span class="muted">:</span> ${b.best.botScore}</div><div class="hw">tốt nhất (bài nộp #${b.best.number})</div>`;
     }
     const live = b.inProgress ? `<div class="hw muted">🥊 ${b.liveGame ? `đang đấu ván ${b.liveGame}/${need}…` : 'đang chờ đấu…'}</div>` : '';
-    return `<div class="house ${b.inProgress ? 'pending' : b.best ? 'loss' : ''}"><div class="hn">${esc(b.name)}</div>${best}${live}</div>`;
+    return `<div class="house ${b.inProgress ? 'pending' : b.best ? 'loss' : ''}"><div class="hn" title="${esc(b.desc || '')}">${esc(b.name)}</div>${best}${live}</div>`;
   }).join('');
   const head = det.finishedAt
     ? `🏁 Hoàn thành chiến dịch! Về đích lúc ${esc(fmtClock(det.finishedAt))} sau ${det.submissions} bài nộp.`
