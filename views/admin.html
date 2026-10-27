@@ -502,12 +502,12 @@ public class Bot {
       const isEditing = (kind, id) => editing && editing.kind === kind && editing.id === id;
       // a bot's name and description, or a text box in place of one while the judge edits it
       const isInline = (kind, id, field) => inline && inline.kind === kind && inline.id === id && inline.field === field;
-      const inlineBox = (value, max, hint) => `<input class="inline-edit" id="inlineEdit" maxlength="${max}" value="${esc(inline.value ?? value)}" placeholder="${esc(hint)}">`;
+      const inlineBox = (value, max, hint, cls = '') => `<input class="inline-edit ${cls}" id="inlineEdit" maxlength="${max}" value="${esc(inline.value ?? value)}" placeholder="${esc(hint)}">`;
       const nameCell = (kind, x, extra = '') => isInline(kind, x.id, 'name')
         ? inlineBox(x.name, 40, kind === 'house' ? `để trống = tên gốc "${x.defaultName}"` : 'tên bot')
         : esc(x.name) + extra;
       const descLine = (kind, x) => isInline(kind, x.id, 'desc')
-        ? inlineBox(x.desc || '', 300, kind === 'house' ? 'để trống = mô tả gốc' : 'mô tả người chơi sẽ thấy (có thể để trống)')
+        ? inlineBox(x.desc || '', 300, kind === 'house' ? 'để trống = mô tả gốc' : 'mô tả người chơi sẽ thấy (có thể để trống)', 'desc')
         : x.desc ? `<br><small class="muted">${esc(x.desc)}</small>` : '';
       const rows = [
         ...data.builtIn.map((h, i) => h.removed ? `<tr class="muted">
@@ -580,11 +580,15 @@ public class Bot {
         } catch (e) { toast(e.message, 'error'); }
       };
       // renaming and describing: the name or the line below it becomes a text box; Enter or
-      // clicking away saves, Esc puts it back
+      // clicking away saves, Esc puts it back. Another rename/describe button drops the open edit
+      // (unsaved) and starts its own; the same button just keeps editing.
       const startInline = (kind, id, field) => {
-        botsOpen.inline = isInline(kind, id, field) ? null : { kind, id, field };
+        if (isInline(kind, id, field)) return $('#inlineEdit').focus();
+        botsOpen.inline = { kind, id, field };
         renderBots();
       };
+      // pressing these must not blur (= save) the open text box first
+      $$('[data-rename-house], [data-rename-bot], [data-desc-house], [data-desc-bot]', panel).forEach(b => b.onmousedown = e => { if (inline) e.preventDefault(); });
       $$('[data-rename-house]', panel).forEach(b => b.onclick = () => startInline('house', b.dataset.renameHouse, 'name'));
       $$('[data-rename-bot]', panel).forEach(b => b.onclick = () => startInline('bot', b.dataset.renameBot, 'name'));
       $$('[data-desc-house]', panel).forEach(b => b.onclick = () => startInline('house', b.dataset.descHouse, 'desc'));
