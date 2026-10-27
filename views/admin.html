@@ -18,7 +18,7 @@
       <section class="box">
         <h2 style="margin-top:0">Tạo giải đấu mới</h2>
         <form id="tform">
-          <label><span>tên giải</span><input name="name" required style="width:100%" placeholder="Đại chiến OTTv1"></label>
+          <label><span>tên giải</span><textarea name="name" class="oneline" rows="1" maxlength="80" required style="width:100%" placeholder="Đại chiến OTTv1" title="Shift+Enter: xuống dòng"></textarea></label>
           <label><span>trò chơi</span><select name="game" style="width:100%">
             <option value="rps">✊ Oẳn tù tì: mỗi lượt hai bot cùng ra búa, bao hoặc kéo</option>
             <option value="board">♟️ Cờ OTT: bàn cờ 9×9, quân búa/bao/kéo đi từng ô, chạm góc đích hoặc ăn hết quân địch là thắng</option>
@@ -36,7 +36,7 @@
             <option value="swiss">🔀 Thụy Sĩ: mỗi vòng có log₂(số đội) đợt, mỗi đợt đấu đội có điểm gần mình, không gặp lại trong vòng</option>
           </select></label>
           <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" name="hidden"><span>🙈 Ẩn giải với người chơi (chỉ trọng tài thấy, có thể hiện sau)</span></label>
-          <label><span>mô tả (không bắt buộc)</span><input name="description" style="width:100%" placeholder="Mang theo những bot xịn nhất"></label>
+          <label><span>mô tả (không bắt buộc)</span><textarea name="description" class="oneline" rows="1" maxlength="500" style="width:100%" placeholder="Mang theo những bot xịn nhất" title="Shift+Enter: xuống dòng"></textarea></label>
           <div class="form-row">
             <label><span>bắt đầu nhận bài <small class="muted">(bỏ trống = mở ngay)</small></span><input name="startsAt" type="datetime-local" style="width:100%"></label>
             <label><span id="dlLabel">ngày kết thúc (hạn chót nộp bài)</span><input name="deadline" type="datetime-local" required style="width:100%"></label>
@@ -230,7 +230,8 @@
           ? `<div class="row" style="gap:4px;flex-wrap:nowrap"><input type="datetime-local" data-start="${t.id}" value="${t.startsAt ? toLocalInput(new Date(t.startsAt)) : ''}" style="font-size:16px;padding:2px 6px" title="bỏ trống = nhận bài ngay">${waiting ? `<button class="btn small" data-nostart="${t.id}" title="bỏ giờ bắt đầu">✕</button>` : ''}</div>`
           : t.startsAt ? esc(fmtDate(t.startsAt)) : '<span class="muted">–</span>';
         return `<tr>
-          <td>${focusId ? `<input data-name="${t.id}" maxlength="80" value="${esc(t.name)}" title="đổi tên giải" style="font-size:16px;padding:2px 6px;width:100%;min-width:160px">` : esc(t.name)}</td>
+          <td>${focusId ? `<textarea data-name="${t.id}" class="oneline" rows="${t.name.split('\n').length}" maxlength="80" title="đổi tên giải · Shift+Enter: xuống dòng" style="font-size:16px;padding:2px 6px;width:100%;min-width:160px">${esc(t.name)}</textarea>
+            <textarea data-desc="${t.id}" class="oneline" rows="${Math.max(1, t.description.split('\n').length)}" maxlength="500" placeholder="mô tả (không bắt buộc)" title="mô tả giải · Shift+Enter: xuống dòng" style="font-size:15px;padding:2px 6px;width:100%;min-width:160px;margin-top:4px">${esc(t.description)}</textarea>` : `<span class="lines">${esc(t.name)}</span>`}</td>
           <td>${t.game === 'board' ? '♟️ cờ OTT' : '✊ oẳn tù tì'} · ${t.mode === 'campaign' ? '🗺️ chiến dịch' : '⚔️ hỗn chiến'}${t.daily ? `<br><span class="muted" style="font-size:16px">📅 hằng ngày lúc ${edit ? `<input type="time" data-daily="${t.id}" value="${t.daily.time}" style="font-size:15px;padding:0 4px">` : t.daily.time} · ${edit ? `<select data-pairing="${t.id}" style="font-size:15px;padding:0 4px"><option value="rr" ${t.daily.pairing === 'rr' ? 'selected' : ''}>vòng tròn</option><option value="swiss" ${t.daily.pairing === 'swiss' ? 'selected' : ''}>Thụy Sĩ</option></select>` : t.daily.pairing === 'swiss' ? 'Thụy Sĩ' : 'vòng tròn'} · đã qua ${t.daily.days} vòng</span>` : ''}${t.mode === 'campaign' ? `<br><span class="muted" style="font-size:16px">✍️ ${edit ? `tối đa <input type="number" data-maxsubs="${t.id}" min="1" max="999" step="1" value="${t.maxSubs || ''}" placeholder="∞" title="bỏ trống = không giới hạn" style="font-size:15px;padding:0 4px;width:70px">` : t.maxSubs ? `tối đa ${t.maxSubs}` : 'không giới hạn'} lượt nộp mỗi bot</span>` : ''}${t.access === 'invite' ? `<br><span class="muted" style="font-size:16px">🔒 ${t.members} đội</span>` : ''}${t.hidden ? '<br><span class="muted" style="font-size:16px">🙈 đang ẩn với người chơi</span>' : ''}</td>
           <td><span class="tag ${waiting ? 'pending' : t.status}">${waiting ? 'chưa mở' : STATUS_VI[t.status] || t.status}</span></td>
           <td>${startCell}</td>
@@ -273,12 +274,16 @@
       const onDone = (inp, save) => {
         let saved = inp.value;
         inp.addEventListener('blur', () => { if (inp.value !== saved) { saved = inp.value; save(); } });
-        inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); });
+        // Enter saves; in a name box Shift+Enter starts a new line instead
+        inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); inp.blur(); } });
       };
       $$('[data-name]').forEach(inp => onDone(inp, () => {
         const old = tournaments.find(t => t.id === inp.dataset.name).name;
         if (!inp.value.trim()) { inp.value = old; return toast('Hãy đặt tên cho giải đấu', 'error'); }
-        if (inp.value.trim() !== old) patch(inp.dataset.name, { name: inp.value }, 'Đã đổi tên giải ✏️');
+        if (lineText(inp.value) !== old) patch(inp.dataset.name, { name: inp.value }, 'Đã đổi tên giải ✏️');
+      }));
+      $$('[data-desc]').forEach(inp => onDone(inp, () => {
+        if (lineText(inp.value) !== tournaments.find(t => t.id === inp.dataset.desc).description) patch(inp.dataset.desc, { description: inp.value }, inp.value.trim() ? 'Đã đổi mô tả giải ✏️' : 'Đã xóa mô tả giải ✏️');
       }));
       $$('[data-dl]').forEach(inp => onDone(inp, () => {
         if (inp.value) patch(inp.dataset.dl, { deadline: new Date(inp.value).toISOString() }, 'Đã đổi hạn chót ⏰');
@@ -396,7 +401,7 @@
       const invite = m.access === 'invite';
       panel.classList.remove('hidden');
       panel.innerHTML = `<div class="box">
-        <div class="row" style="justify-content:space-between"><h3 style="margin:0">Ai được tham gia ${esc(m.t.name)}?</h3><button class="btn small" id="closeMembers">đóng</button></div>
+        <div class="row" style="justify-content:space-between"><h3 class="lines" style="margin:0">Ai được tham gia ${esc(m.t.name)}?</h3><button class="btn small" id="closeMembers">đóng</button></div>
         <div class="row" style="margin:8px 0">
           <label class="row" style="gap:6px;margin:0;cursor:pointer"><input type="radio" name="acc" value="open" ${invite ? '' : 'checked'} ${editable ? '' : 'disabled'}> 🌍 mọi người chơi</label>
           <label class="row" style="gap:6px;margin:0;cursor:pointer"><input type="radio" name="acc" value="invite" ${invite ? 'checked' : ''} ${editable ? '' : 'disabled'}> 🔒 chỉ những đội được chọn</label>
@@ -472,8 +477,8 @@ public class Bot {
     // board-game tournaments get the board starter code
     const botTemplates = () => (botsOpen && botsOpen.t.game === 'board' ? BOARD_TEMPLATES : BOT_TEMPLATE);
     const botsUrl = t => `/api/admin/tournaments/${encodeURIComponent(t.id)}`;
-    // a bot's name or description as the server keeps it: its lines, each with spaces collapsed
-    const botText = v => v.replace(/\r\n?/g, '\n').split('\n').map(l => l.replace(/\s+/g, ' ').trim()).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    // a tournament's or bot's name or description, as the server keeps it: its lines, each with spaces collapsed
+    const lineText = v => v.replace(/\r\n?/g, '\n').split('\n').map(l => l.replace(/\s+/g, ' ').trim()).join('\n').replace(/\n{3,}/g, '\n\n').trim();
 
     async function showBots(t, refresh = false) {
       let data;
@@ -567,7 +572,7 @@ public class Bot {
 
       panel.classList.remove('hidden');
       panel.innerHTML = `<div class="box alt">
-        <div class="row" style="justify-content:space-between"><h3 style="margin:0">Bot đấu tập của ${esc(t.name)}</h3><button class="btn small" id="closeBots">đóng</button></div>
+        <div class="row" style="justify-content:space-between"><h3 class="lines" style="margin:0">Bot đấu tập của ${esc(t.name)}</h3><button class="btn small" id="closeBots">đóng</button></div>
         <p class="muted" style="font-size:17px;margin:4px 0 8px">Sửa code của từng bot riêng cho giải này (giải khác không bị ảnh hưởng). Bản sửa chỉ được dùng khi đã qua bước kiểm tra; trong lúc kiểm tra hoặc nếu bị lỗi, bản đang chạy vẫn được giữ.${campaign ? ` Bot bạn thêm đứng sau ${n} bot có sẵn, và người chơi phải hạ cả chúng mới về đích.` : ' Bot bạn thêm cũng đấu tập với mọi đội và được cộng vào điểm đánh giá; khi thêm hoặc xóa bot, bot mới nhất của mỗi đội sẽ đấu tập lại.'}${open ? '' : ' Giải đã đóng, chỉ xem được code.'}</p>
         <table class="plain"><thead><tr><th>#</th><th>tên</th><th>loại</th><th>phiên bản đang chạy</th><th></th></tr></thead><tbody>${rows.join('')}</tbody></table>
         ${open && !(editing && editing.kind === 'new') ? '<button class="btn small" id="addBot" style="margin-top:10px">➕ Thêm bot đấu tập</button>' : ''}
@@ -617,7 +622,7 @@ public class Bot {
         const close = () => { done = true; botsOpen.inline = null; renderBots(); };
         const save = async () => {
           if (done || botsOpen.seq !== seq) return; // already saved, or this box was re-rendered away
-          const value = botText(box.textContent);
+          const value = lineText(box.textContent);
           if (value === (x[field] || '') || (kind === 'bot' && field === 'name' && !value)) return close();
           done = true;
           try {
@@ -907,6 +912,8 @@ public class Bot {
       }
     };
 
+    // tournament name and description: Enter creates the tournament (as in a one-line box), Shift+Enter starts a new line
+    [$('#tform').name, $('#tform').description].forEach(el => el.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#tform').requestSubmit(); } }));
     $('#tform').addEventListener('submit', async e => {
       e.preventDefault();
       const f = new FormData(e.target);

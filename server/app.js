@@ -524,7 +524,7 @@ app.post('/api/admin/tournaments', apiAuth, apiJudge, (req, res) => {
     schedule = { format: 'daily', pairing, dailyTime, tzOffset, dailySince: now, days: [] };
     if (!daily.nextSlot({ ...schedule, startsAt: start, createdAt: now, deadline: dl }, Date.now())) return fail(res, 400, `Không có vòng đấu nào: giờ ${dailyTime} không rơi vào khoảng từ lúc bắt đầu đến hạn chót`);
   }
-  const t = { id: db.id(), name: String(name).trim().slice(0, 80), mode, game, ...schedule, access, ...(access === 'invite' ? { members: [] } : {}), ...(start ? { startsAt: start } : {}), ...(hidden === true ? { hidden: true } : {}), ...(limit ? { maxSubs: limit } : {}), description: String(description || '').slice(0, 500), deadline: dl, status: 'open', createdAt: new Date().toISOString() };
+  const t = { id: db.id(), name: lineText(name, 80), mode, game, ...schedule, access, ...(access === 'invite' ? { members: [] } : {}), ...(start ? { startsAt: start } : {}), ...(hidden === true ? { hidden: true } : {}), ...(limit ? { maxSubs: limit } : {}), description: lineText(description, 500), deadline: dl, status: 'open', createdAt: new Date().toISOString() };
   db.data.tournaments.push(t);
   db.save();
   io.to('users').emit('tournaments:changed');
@@ -534,8 +534,8 @@ app.patch('/api/admin/tournaments/:id', apiAuth, apiJudge, (req, res) => {
   const t = findTournament(req.params.id);
   if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
   const { name, deadline, startsAt, description, access, hidden, dailyTime, tzOffset, pairing, maxSubs } = req.body || {};
-  // hiding / showing and renaming work at any time; everything else only before the tournament starts
-  const anyTime = Object.keys(req.body || {}).every(k => k === 'hidden' || k === 'name');
+  // hiding / showing, the name and the description can change at any time; everything else only before the tournament starts
+  const anyTime = Object.keys(req.body || {}).every(k => ['hidden', 'name', 'description'].includes(k));
   if (t.status !== 'open' && !anyTime) return fail(res, 400, 'Chỉ sửa được giải đấu chưa bắt đầu');
   if (name !== undefined && !String(name).trim()) return fail(res, 400, 'Hãy đặt tên cho giải đấu');
   if (hidden !== undefined && typeof hidden !== 'boolean') return fail(res, 400, 'hidden phải là true hoặc false');
@@ -567,8 +567,8 @@ app.patch('/api/admin/tournaments/:id', apiAuth, apiJudge, (req, res) => {
   } catch (e) {
     return fail(res, 400, e.message);
   }
-  if (name !== undefined && String(name).trim()) t.name = String(name).trim().slice(0, 80);
-  if (description !== undefined) t.description = String(description).slice(0, 500);
+  if (name !== undefined) t.name = lineText(name, 80);
+  if (description !== undefined) t.description = lineText(description, 500);
   if (access !== undefined) {
     t.access = access;
     if (access === 'invite' && !t.members) t.members = [];
@@ -774,7 +774,7 @@ app.patch('/api/admin/tournaments/:id/house/:houseId', apiAuth, apiJudge, (req, 
     if (!Object.keys(descs).length) delete t.houseDescs;
   }
   if (name !== undefined) {
-    const n = botText(name, 40);
+    const n = lineText(name, 40);
     const bad = n && checkBotName(t, n, h.id);
     if (bad) return fail(res, 400, bad);
     const names = (t.houseNames = t.houseNames || {});
@@ -813,12 +813,12 @@ function checkBotName(t, name, except = null) {
   return null;
 }
 const houseName = t => h => (t.houseNames || {})[h.id] || h.name;
-// A bot's name or description: the judge may break it into lines (Shift+Enter); spaces inside
-// a line collapse, and at most one blank line in a row is kept.
-const botText = (v, max) => String(v ?? '').replace(/\r\n?/g, '\n').split('\n').map(l => l.replace(/\s+/g, ' ').trim())
+// A tournament's name or description, a bot's name or description: the judge may break it into lines
+// (Shift+Enter); spaces inside a line collapse, and at most one blank line in a row is kept.
+const lineText = (v, max) => String(v ?? '').replace(/\r\n?/g, '\n').split('\n').map(l => l.replace(/\s+/g, ' ').trim())
   .join('\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, max);
 // What players read about a bot (shown next to its name), a few sentences at most.
-const botDesc = d => botText(d, MAX_BOT_DESC);
+const botDesc = d => lineText(d, MAX_BOT_DESC);
 const MAX_BOT_DESC = 300;
 // A tournament must keep at least one sparring bot.
 const botCount = t => grader.practice.houseBots(gameOf(t)).length - (t.houseRemoved || []).length + (t.bots || []).length;
@@ -827,7 +827,7 @@ app.post('/api/admin/tournaments/:id/bots', apiAuth, apiJudge, (req, res) => {
   const t = editableTournament(req, res);
   if (!t) return;
   const { language, code } = req.body || {};
-  const name = botText((req.body || {}).name, 40);
+  const name = lineText((req.body || {}).name, 40);
   const bad = checkBotName(t, name) || (!grader.LANGS[language] && 'Hãy chọn ngôn ngữ: cpp, java hoặc python') || badCode(code);
   if (bad) return fail(res, 400, bad);
   const bot = { id: 'bot-' + db.id(), name, desc: botDesc((req.body || {}).desc), createdAt: new Date().toISOString() };
@@ -842,7 +842,7 @@ app.put('/api/admin/tournaments/:id/bots/:botId', apiAuth, apiJudge, (req, res) 
   const bot = (t.bots || []).find(b => b.id === req.params.botId);
   if (!bot) return fail(res, 404, 'Không tìm thấy bot');
   const { language, code } = req.body || {};
-  const name = botText((req.body || {}).name ?? bot.name, 40);
+  const name = lineText((req.body || {}).name ?? bot.name, 40);
   const bad = checkBotName(t, name, bot) || (!grader.LANGS[language] && 'Hãy chọn ngôn ngữ: cpp, java hoặc python') || badCode(code);
   if (bad) return fail(res, 400, bad);
   bot.name = name;
@@ -859,7 +859,7 @@ app.patch('/api/admin/tournaments/:id/bots/:botId', apiAuth, apiJudge, (req, res
   if (!bot) return fail(res, 404, 'Không tìm thấy bot');
   const { name, desc } = req.body || {};
   if (name !== undefined) {
-    const n = botText(name, 40);
+    const n = lineText(name, 40);
     const bad = checkBotName(t, n, bot);
     if (bad) return fail(res, 400, bad);
     bot.name = n;
