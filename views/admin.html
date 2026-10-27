@@ -66,6 +66,7 @@
       <div class="row" style="gap:10px;margin-top:8px"><button class="btn red" id="annPost">Đăng thông báo 📢</button><span class="muted" id="annCount" style="font-size:17px"></span></div>
       <div id="annList" style="margin-top:12px"></div>
     </section>
+    <div id="renamePanel" class="hidden" style="margin-top:20px"></div>
     <div id="membersPanel" class="hidden" style="margin-top:20px"></div>
     <div id="botsPanel" class="hidden" style="margin-top:20px"></div>
     <div id="subsPanel" class="hidden" style="margin-top:20px"></div>
@@ -230,20 +231,22 @@
           ? `<div class="row" style="gap:4px;flex-wrap:nowrap"><input type="datetime-local" data-start="${t.id}" value="${t.startsAt ? toLocalInput(new Date(t.startsAt)) : ''}" style="font-size:16px;padding:2px 6px" title="bỏ trống = nhận bài ngay">${waiting ? `<button class="btn small" data-nostart="${t.id}" title="bỏ giờ bắt đầu">✕</button>` : ''}</div>`
           : t.startsAt ? esc(fmtDate(t.startsAt)) : '<span class="muted">–</span>';
         return `<tr>
-          <td>${focusId ? `<textarea data-name="${t.id}" class="oneline" rows="${t.name.split('\n').length}" maxlength="80" title="đổi tên giải · Shift+Enter: xuống dòng" style="font-size:16px;padding:2px 6px;width:100%;min-width:160px">${esc(t.name)}</textarea>
-            <textarea data-desc="${t.id}" class="oneline" rows="${Math.max(1, t.description.split('\n').length)}" maxlength="500" placeholder="mô tả (không bắt buộc)" title="mô tả giải · Shift+Enter: xuống dòng" style="font-size:15px;padding:2px 6px;width:100%;min-width:160px;margin-top:4px">${esc(t.description)}</textarea>` : `<span class="lines">${esc(t.name)}</span>`}</td>
+          <td><span class="lines">${esc(t.name)}</span>${focusId && t.description ? `<br><small class="muted lines">${esc(t.description)}</small>` : ''}</td>
           <td>${t.game === 'board' ? '♟️ cờ OTT' : '✊ oẳn tù tì'} · ${t.mode === 'campaign' ? '🗺️ chiến dịch' : '⚔️ hỗn chiến'}${t.daily ? `<br><span class="muted" style="font-size:16px">📅 hằng ngày lúc ${edit ? `<input type="time" data-daily="${t.id}" value="${t.daily.time}" style="font-size:15px;padding:0 4px">` : t.daily.time} · ${edit ? `<select data-pairing="${t.id}" style="font-size:15px;padding:0 4px"><option value="rr" ${t.daily.pairing === 'rr' ? 'selected' : ''}>vòng tròn</option><option value="swiss" ${t.daily.pairing === 'swiss' ? 'selected' : ''}>Thụy Sĩ</option></select>` : t.daily.pairing === 'swiss' ? 'Thụy Sĩ' : 'vòng tròn'} · đã qua ${t.daily.days} vòng</span>` : ''}${t.mode === 'campaign' ? `<br><span class="muted" style="font-size:16px">✍️ ${edit ? `tối đa <input type="number" data-maxsubs="${t.id}" min="1" max="999" step="1" value="${t.maxSubs || ''}" placeholder="∞" title="bỏ trống = không giới hạn" style="font-size:15px;padding:0 4px;width:70px">` : t.maxSubs ? `tối đa ${t.maxSubs}` : 'không giới hạn'} lượt nộp mỗi bot</span>` : ''}${t.access === 'invite' ? `<br><span class="muted" style="font-size:16px">🔒 ${t.members} đội</span>` : ''}${t.hidden ? '<br><span class="muted" style="font-size:16px">🙈 đang ẩn với người chơi</span>' : ''}</td>
           <td><span class="tag ${waiting ? 'pending' : t.status}">${waiting ? 'chưa mở' : STATUS_VI[t.status] || t.status}</span></td>
           <td>${startCell}</td>
           <td>${edit ? `<input type="datetime-local" data-dl="${t.id}" value="${toLocalInput(new Date(t.deadline))}" style="font-size:16px;padding:2px 6px">` : esc(fmtDate(t.deadline))}</td>
           <td>${t.teamsReady}</td>
-          <td>${!focusId ? `<div class="row" style="gap:6px;flex-wrap:nowrap">
-            <a class="btn small yellow" href="/admin?t=${id}">⚙️ quản lý</a>
-            <a class="btn small" href="/tournament/${id}/live">bảng xếp hạng</a>
+          <td>${!focusId ? `<div class="tlinks">
             ${t.status !== 'running' ? `<button class="btn small" data-del="${t.id}" title="xóa giải">🗑</button>` : ''}
+            <div class="tstack">
+              <a class="btn small yellow" href="/admin?t=${id}">⚙️ quản lý</a>
+              <a class="btn small" href="/tournament/${id}/live">bảng xếp hạng</a>
+            </div>
           </div>` : `<div class="tactions">
             <button class="btn small" data-hide="${t.id}" title="${t.hidden ? 'cho người chơi thấy giải này' : 'chỉ trọng tài thấy giải này'}">${t.hidden ? '👁 hiện' : '🙈 ẩn'}</button>
             <button class="btn small" data-members="${t.id}">${t.access === 'invite' ? '🔒 ' : ''}người chơi</button>
+            <button class="btn small" data-rename="${t.id}" title="đổi tên và mô tả giải">✏️ đổi tên</button>
             <button class="btn small" data-bots="${t.id}">bot đấu tập</button>
             <button class="btn small" data-subs="${t.id}">bài nộp</button>
             <a class="btn small" href="/tournament/${id}/live">bảng xếp hạng</a>
@@ -274,17 +277,8 @@
       const onDone = (inp, save) => {
         let saved = inp.value;
         inp.addEventListener('blur', () => { if (inp.value !== saved) { saved = inp.value; save(); } });
-        // Enter saves; in a name box Shift+Enter starts a new line instead
-        inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); inp.blur(); } });
+        inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); });
       };
-      $$('[data-name]').forEach(inp => onDone(inp, () => {
-        const old = tournaments.find(t => t.id === inp.dataset.name).name;
-        if (!inp.value.trim()) { inp.value = old; return toast('Hãy đặt tên cho giải đấu', 'error'); }
-        if (lineText(inp.value) !== old) patch(inp.dataset.name, { name: inp.value }, 'Đã đổi tên giải ✏️');
-      }));
-      $$('[data-desc]').forEach(inp => onDone(inp, () => {
-        if (lineText(inp.value) !== tournaments.find(t => t.id === inp.dataset.desc).description) patch(inp.dataset.desc, { description: inp.value }, inp.value.trim() ? 'Đã đổi mô tả giải ✏️' : 'Đã xóa mô tả giải ✏️');
-      }));
       $$('[data-dl]').forEach(inp => onDone(inp, () => {
         if (inp.value) patch(inp.dataset.dl, { deadline: new Date(inp.value).toISOString() }, 'Đã đổi hạn chót ⏰');
       }));
@@ -369,16 +363,74 @@
         showMembers(tournaments.find(t => t.id === b.dataset.members));
       });
       if (membersOpen && !tournaments.some(x => x.id === membersOpen.t.id)) { membersOpen = null; $('#membersPanel').classList.add('hidden'); }
+      $$('[data-rename]').forEach(b => b.onclick = () => {
+        if (panelShown('rename', b.dataset.rename)) return $('#renameName').focus();
+        closePanels();
+        showRename(tournaments.find(t => t.id === b.dataset.rename));
+      });
     }
 
     // ---------- the panels under the list (players, sparring bots, submissions) ----------
     function panelShown(kind, id) {
-      const open = { members: membersOpen && membersOpen.t.id, bots: botsOpen && botsOpen.t.id, subs: subsOpen && subsOpen.id }[kind];
+      const open = { members: membersOpen && membersOpen.t.id, bots: botsOpen && botsOpen.t.id, subs: subsOpen && subsOpen.id, rename: renameOpen }[kind];
       return open === id && !$(`#${kind}Panel`).classList.contains('hidden');
     }
     function closePanels() {
-      membersOpen = botsOpen = subsOpen = null;
-      ['#membersPanel', '#botsPanel', '#subsPanel'].forEach(p => $(p).classList.add('hidden'));
+      membersOpen = botsOpen = subsOpen = renameOpen = null;
+      ['#membersPanel', '#botsPanel', '#subsPanel', '#renamePanel'].forEach(p => $(p).classList.add('hidden'));
+    }
+
+    // ---------- name and description ----------
+    // Shown as on the main page: the name big, the description smaller under it, both edited in
+    // place. Shift+Enter starts a new line, Enter (or "Lưu") saves both, Esc closes.
+    let renameOpen = null; // id of the tournament being renamed
+    function showRename(t) {
+      renameOpen = t.id;
+      const panel = $('#renamePanel');
+      panel.innerHTML = `<section class="box">
+        <div class="row" style="justify-content:space-between"><h3 style="margin:0">Đổi tên giải</h3><button class="btn small" id="closeRename">đóng</button></div>
+        <p class="muted" style="font-size:17px;margin:4px 0 10px">Người chơi thấy giải như thế này trên trang chủ. Bấm vào tên hoặc mô tả để sửa: <b>Shift+Enter</b> để xuống dòng, <b>Enter</b> để lưu.</p>
+        <div class="box tcard rename-preview"><div>
+          <h2 class="lines inline-edit" id="renameName" contenteditable="plaintext-only" spellcheck="false" data-hint="tên giải"></h2>
+          <div class="desc lines inline-edit" id="renameDesc" contenteditable="plaintext-only" spellcheck="false" data-hint="mô tả (không bắt buộc)"></div>
+        </div></div>
+        <div class="row" style="margin-top:10px"><button class="btn red" id="renameSave">Lưu 💾</button></div>
+      </section>`;
+      panel.classList.remove('hidden');
+      const boxes = [[$('#renameName'), t.name, 80], [$('#renameDesc'), t.description || '', 500]];
+      const close = () => { renameOpen = null; panel.classList.add('hidden'); };
+      const save = async () => {
+        const name = lineText($('#renameName').textContent), description = lineText($('#renameDesc').textContent);
+        if (!name) { $('#renameName').classList.add('bad'); $('#renameName').focus(); return toast('Hãy đặt tên cho giải đấu', 'error'); }
+        if (name === t.name && description === (t.description || '')) return close();
+        try {
+          await api(`/api/admin/tournaments/${encodeURIComponent(t.id)}`, { method: 'PATCH', body: { name, description } });
+          toast('Đã đổi tên giải ✏️');
+          close();
+          loadTournaments();
+        } catch (e) { toast(e.message, 'error'); }
+      };
+      for (const [box, text, max] of boxes) {
+        box.textContent = text;
+        box.oninput = () => {
+          if (box.textContent.length > max) {
+            box.textContent = box.textContent.slice(0, max);
+            const sel = getSelection(); sel.selectAllChildren(box); sel.collapseToEnd();
+          }
+          box.classList.remove('bad');
+        };
+        box.onkeydown = e => {
+          if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); document.execCommand('insertText', false, '\n'); } // a new line
+          else if (e.key === 'Enter') { e.preventDefault(); save(); }
+          else if (e.key === 'Escape') close();
+        };
+      }
+      $('#renameSave').onclick = save;
+      $('#closeRename').onclick = close;
+      const name = $('#renameName');
+      name.focus();
+      const sel = getSelection(); sel.selectAllChildren(name); sel.collapseToEnd();
+      panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
     // ---------- who may play (invite-only tournaments) ----------
@@ -682,7 +734,10 @@ public class Bot {
         draft.code = code.value;
       });
       // name / description: Enter does nothing (as in a one-line box), Shift+Enter starts a new line
-      $$('#beName, #beDesc', panel).forEach(el => el.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) e.preventDefault(); }));
+      $$('#beName, #beDesc', panel).forEach(el => {
+        growBox(el); // a name / description that already has several lines
+        el.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) e.preventDefault(); });
+      });
       if ($('#beName')) $('#beName').oninput = e => { draft.name = e.target.value; };
       if ($('#beDesc')) $('#beDesc').oninput = e => { draft.desc = e.target.value; };
       if ($('#beLang')) $('#beLang').onchange = e => {
@@ -912,6 +967,9 @@ public class Bot {
       }
     };
 
+    // a one-line name / description box grows with its lines instead of scrolling inside one row
+    const growBox = el => { el.style.height = 'auto'; if (el.scrollHeight) el.style.height = `${el.scrollHeight + el.offsetHeight - el.clientHeight}px`; };
+    document.addEventListener('input', e => { if (e.target.matches('textarea.oneline')) growBox(e.target); });
     // tournament name and description: Enter creates the tournament (as in a one-line box), Shift+Enter starts a new line
     [$('#tform').name, $('#tform').description].forEach(el => el.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#tform').requestSubmit(); } }));
     $('#tform').addEventListener('submit', async e => {
@@ -920,6 +978,7 @@ public class Bot {
       try {
         const { tournament } = await api('/api/admin/tournaments', { method: 'POST', body: { name: f.get('name'), game: f.get('game'), mode: f.get('mode'), dailyTime: f.get('mode') === 'brawl' ? f.get('dailyTime') : undefined, pairing: f.get('mode') === 'brawl' ? f.get('pairing') : undefined, maxSubs: f.get('mode') === 'campaign' ? f.get('maxSubs') : undefined, tzOffset: new Date().getTimezoneOffset(), access: f.get('access'), hidden: f.get('hidden') === 'on', description: f.get('description'), startsAt: f.get('startsAt') ? new Date(f.get('startsAt')).toISOString() : '', deadline: new Date(f.get('deadline')).toISOString() } });
         e.target.reset();
+        $$('textarea.oneline', e.target).forEach(growBox);
         syncModeFields();
         // invite-only: go straight to picking the players
         if (tournament.access === 'invite') showMembers(tournament);

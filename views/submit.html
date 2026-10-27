@@ -142,7 +142,7 @@ public class Bot {
         <li>${tournament.maxSubs ? `Với mỗi bot đấu tập, bạn được nộp <b>tối đa ${tournament.maxSubs} bài</b> (bài bị lỗi biên dịch hoặc chơi thử không tính lượt).` : 'Nộp bao nhiêu bài cũng được,'} Mỗi bài cho một đối thủ, theo thứ tự tùy ý. Hạ đủ cả ${bots.length} bot đấu tập là hoàn thành chiến dịch.</li>
         <li>Thời điểm về đích là lúc bạn <b>nộp</b> bot hạ được bot đấu tập cuối cùng còn lại. Ai về đích sớm nhất xếp đầu; các đội chưa về đích xếp theo số bot đã hạ.</li>
         <li><b>Điểm phạt (PEN):</b> mỗi bài nộp trước khi về đích tính <b>20</b> điểm phạt (kể cả bài bị lỗi). Khi về đích, PEN được cộng thêm <b>số phút</b> từ lúc giải mở đến lúc bạn nộp bài về đích. Bài về đích và các bài nộp sau đó không bị phạt.</li>
-        <li>Trên bảng chiến dịch, ô thứ <i>i</i> sáng lên khi bot đấu tập thứ <i>i</i> bị hạ, nên mọi người đều thấy bạn đã hạ những bot nào. Code và kết quả từng ván của bạn thì chỉ mình bạn xem được.</li>
+        <li>Trên bảng xếp hạng, ô thứ <i>i</i> sáng lên khi bot đấu tập thứ <i>i</i> bị hạ, nên mọi người đều thấy bạn đã hạ những bot nào. Code và kết quả từng ván của bạn thì chỉ mình bạn xem được.</li>
       </ul>`;
       }
       return `<ul>${commonRules()}
@@ -234,7 +234,7 @@ public class Bot {
         $('.board.practice').classList.add('hidden');
         return;
       }
-      $('#ptitle').textContent = 'Bảng chiến dịch 🗺️';
+      $('#ptitle').textContent = 'Bảng xếp hạng 🗺️';
       $('#phint').classList.add('hidden');
       $('#phead').innerHTML = CAMPAIGN_HEAD;
       $('#yoursubsHint').textContent = 'Trong chiến dịch, mọi bài nộp ✅ đều được tính.';
