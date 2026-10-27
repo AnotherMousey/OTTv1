@@ -97,11 +97,11 @@ input, select, textarea {
 input:focus, select:focus, textarea:focus { box-shadow: 0 0 0 4px var(--yellow); }
 /* a bot's name or description edited in place (judge desk) */
 .inline-edit {
-  display: block; width: 100%; min-width: 180px; margin: 0; padding: 0 2px;
+  display: block; min-width: 0; max-width: 100%; box-sizing: border-box; margin: 0; padding: 0 2px;
   font-size: inherit; line-height: inherit; background: transparent;
   border: 0; border-bottom: 2px dashed var(--ink); border-radius: 0;
 }
-.inline-edit:focus { box-shadow: none; border-bottom-style: solid; background: #fffbe6; }
+.inline-edit:focus, .inline-edit:focus-visible { outline: none; box-shadow: none; border-bottom-style: solid; background: #fffbe6; }
 .inline-edit.desc { font-size: 80%; color: #555; margin-top: 2px; }
 .inline-edit.bad { border-bottom-color: var(--red); }
 label { display: block; margin-bottom: 10px; }
