@@ -10,6 +10,13 @@ const { avatarOf } = require('./auth');
 const { canPlay } = require('./access');
 
 const PEN_PER_SUBMISSION = 20;
+const MAX_SUBS_LIMIT = 999;
+
+// The judge may cap how many submissions each team aims at one sparring bot (t.maxSubs;
+// absent = no limit). Submissions that failed the check don't use up an attempt.
+const maxSubsOf = t => (t.mode === 'campaign' && Number.isInteger(t.maxSubs) ? t.maxSubs : null);
+const attemptsUsed = (t, userId, botId) =>
+  db.data.submissions.filter(s => s.tournamentId === t.id && s.userId === userId && s.target === botId && s.status !== 'error').length;
 
 // Penalty (PEN), ICPC-style: 20 for every submission made before the one that finished
 // the campaign, plus the minutes from the tournament's start (startsAt, else createdAt) to the finishing
@@ -142,6 +149,7 @@ function details(t, userId) {
     teamName: u.teamName,
     submissions: p.subs.length,
     gamesNeeded: CAMPAIGN_GAMES,
+    maxSubs: maxSubsOf(t),
     beatenCount: p.count,
     finishedAt: p.finishedAt,
     bots: botsFor(t).map(h => ({
@@ -149,6 +157,7 @@ function details(t, userId) {
       name: h.name,
       desc: h.desc,
       beaten: !!p.beaten[h.id],
+      used: p.subs.filter(s => s.target === h.id && s.status !== 'error').length,
       beatenBy: p.beaten[h.id] ? p.beaten[h.id].number : null,
       beatenAt: p.beaten[h.id] ? p.beaten[h.id].at : null,
       best: p.best[h.id] || null,
@@ -158,4 +167,4 @@ function details(t, userId) {
   };
 }
 
-module.exports = { board, details };
+module.exports = { board, details, maxSubsOf, attemptsUsed, MAX_SUBS_LIMIT };

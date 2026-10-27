@@ -110,6 +110,7 @@ function publicTournament(t, user) {
     description: t.description || '',
     deadline: t.deadline,
     startsAt: t.startsAt || null,
+    ...(t.mode === 'campaign' ? { maxSubs: campaign.maxSubsOf(t) } : {}),
     ...(daily.isDaily(t) ? { daily: { time: t.dailyTime, pairing: daily.pairingOf(t), nextAt: t.status === 'open' ? daily.nextSlot(t, Date.now()) : null, frozen: t.status === 'open' ? daily.frozen(t) : null, days: (t.days || []).filter(d => d.status === 'published').length, played: (t.days || []).length, publishDelayMs: daily.PUBLISH_DELAY_MS } } : {}),
     status: t.status,
     createdAt: t.createdAt || t.startsAt || t.deadline,
@@ -269,6 +270,8 @@ app.post('/api/tournaments/:id/submissions', apiAuth, wrap(async (req, res) => {
   // Campaign: each submission is aimed at one sparring bot.
   const isCampaign = t.mode === 'campaign';
   if (isCampaign && !grader.practice.botsFor(t).some(h => h.id === target)) return fail(res, 400, 'Hãy chọn bot đấu tập mà bài nộp này sẽ đấu');
+  const maxSubs = campaign.maxSubsOf(t);
+  if (isCampaign && maxSubs !== null && campaign.attemptsUsed(t, req.user.id, target) >= maxSubs) return fail(res, 400, `Bạn đã dùng hết ${maxSubs} lượt nộp cho bot đấu tập này`);
   if (typeof code !== 'string' || !code.trim()) return fail(res, 400, 'Code của bạn đang trống');
   if (code.length > MAX_CODE_LENGTH) return fail(res, 400, `Code quá dài (tối đa ${MAX_CODE_LENGTH} ký tự)`);
   const busy = db.data.submissions.some(s => s.tournamentId === t.id && s.userId === req.user.id && s.status === 'pending');
@@ -492,16 +495,24 @@ function parseStart(v, deadline) {
   if (ms >= Date.parse(deadline)) throw new Error('Giờ bắt đầu phải trước hạn chót');
   return new Date(ms).toISOString();
 }
+// Campaign: submissions each team may aim at one sparring bot ('' / null / 0 = no limit).
+function parseMaxSubs(v) {
+  if (v === undefined || v === null || v === '' || +v === 0) return null;
+  const n = +v;
+  if (!Number.isInteger(n) || n < 1 || n > campaign.MAX_SUBS_LIMIT) throw new Error(`Số lượt nộp mỗi bot phải là số nguyên từ 1 đến ${campaign.MAX_SUBS_LIMIT} (bỏ trống = không giới hạn)`);
+  return n;
+}
 app.post('/api/admin/tournaments', apiAuth, apiJudge, (req, res) => {
-  const { name, deadline, startsAt, description, mode = 'brawl', game = 'rps', access = 'open', hidden = false, dailyTime, tzOffset = 0, pairing = 'rr' } = req.body || {};
+  const { name, deadline, startsAt, description, mode = 'brawl', game = 'rps', access = 'open', hidden = false, dailyTime, tzOffset = 0, pairing = 'rr', maxSubs } = req.body || {};
   if (!String(name || '').trim()) return fail(res, 400, 'Hãy đặt tên cho giải đấu');
   if (!['rps', 'board'].includes(game)) return fail(res, 400, 'Trò chơi phải là rps (oẳn tù tì) hoặc board (cờ OTT)');
   if (!['brawl', 'campaign'].includes(mode)) return fail(res, 400, 'Chế độ phải là brawl (hỗn chiến) hoặc campaign (chiến dịch)');
   if (!['open', 'invite'].includes(access)) return fail(res, 400, 'Quyền tham gia phải là open hoặc invite');
-  let dl, start = null;
+  let dl, start = null, limit = null;
   try {
     dl = parseDeadline(deadline);
     if (startsAt) start = parseStart(startsAt, dl);
+    if (mode === 'campaign') limit = parseMaxSubs(maxSubs);
   } catch (e) { return fail(res, 400, e.message); }
   // brawl = daily league: needs the time of day the matches start
   let schedule = {};
@@ -513,7 +524,7 @@ app.post('/api/admin/tournaments', apiAuth, apiJudge, (req, res) => {
     schedule = { format: 'daily', pairing, dailyTime, tzOffset, dailySince: now, days: [] };
     if (!daily.nextSlot({ ...schedule, startsAt: start, createdAt: now, deadline: dl }, Date.now())) return fail(res, 400, `Không có vòng đấu nào: giờ ${dailyTime} không rơi vào khoảng từ lúc bắt đầu đến hạn chót`);
   }
-  const t = { id: db.id(), name: String(name).trim().slice(0, 80), mode, game, ...schedule, access, ...(access === 'invite' ? { members: [] } : {}), ...(start ? { startsAt: start } : {}), ...(hidden === true ? { hidden: true } : {}), description: String(description || '').slice(0, 500), deadline: dl, status: 'open', createdAt: new Date().toISOString() };
+  const t = { id: db.id(), name: String(name).trim().slice(0, 80), mode, game, ...schedule, access, ...(access === 'invite' ? { members: [] } : {}), ...(start ? { startsAt: start } : {}), ...(hidden === true ? { hidden: true } : {}), ...(limit ? { maxSubs: limit } : {}), description: String(description || '').slice(0, 500), deadline: dl, status: 'open', createdAt: new Date().toISOString() };
   db.data.tournaments.push(t);
   db.save();
   io.to('users').emit('tournaments:changed');
@@ -522,7 +533,7 @@ app.post('/api/admin/tournaments', apiAuth, apiJudge, (req, res) => {
 app.patch('/api/admin/tournaments/:id', apiAuth, apiJudge, (req, res) => {
   const t = findTournament(req.params.id);
   if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
-  const { name, deadline, startsAt, description, access, hidden, dailyTime, tzOffset, pairing } = req.body || {};
+  const { name, deadline, startsAt, description, access, hidden, dailyTime, tzOffset, pairing, maxSubs } = req.body || {};
   // hiding / showing works at any time; everything else only before the tournament starts
   const onlyHidden = Object.keys(req.body || {}).every(k => k === 'hidden');
   if (t.status !== 'open' && !onlyHidden) return fail(res, 400, 'Chỉ sửa được giải đấu chưa bắt đầu');
@@ -531,6 +542,12 @@ app.patch('/api/admin/tournaments/:id', apiAuth, apiJudge, (req, res) => {
   if (pairing !== undefined) {
     if (!daily.isDaily(t) || !['rr', 'swiss'].includes(pairing)) return fail(res, 400, 'Thể thức phải là vòng tròn (rr) hoặc Thụy Sĩ (swiss)');
     t.pairing = pairing; // from the next day on
+  }
+  if (maxSubs !== undefined) {
+    if (t.mode !== 'campaign') return fail(res, 400, 'Chỉ giải chiến dịch mới giới hạn số lượt nộp mỗi bot');
+    let limit;
+    try { limit = parseMaxSubs(maxSubs); } catch (e) { return fail(res, 400, e.message); }
+    if (limit) t.maxSubs = limit; else delete t.maxSubs;
   }
   if (dailyTime !== undefined) {
     if (!daily.isDaily(t)) return fail(res, 400, 'Chỉ giải hỗn chiến mới có giờ thi đấu hằng ngày');
@@ -756,7 +773,7 @@ app.patch('/api/admin/tournaments/:id/house/:houseId', apiAuth, apiJudge, (req, 
     if (!Object.keys(descs).length) delete t.houseDescs;
   }
   if (name !== undefined) {
-    const n = String(name).trim().slice(0, 40);
+    const n = botText(name, 40);
     const bad = n && checkBotName(t, n, h.id);
     if (bad) return fail(res, 400, bad);
     const names = (t.houseNames = t.houseNames || {});
@@ -795,8 +812,12 @@ function checkBotName(t, name, except = null) {
   return null;
 }
 const houseName = t => h => (t.houseNames || {})[h.id] || h.name;
+// A bot's name or description: the judge may break it into lines (Shift+Enter); spaces inside
+// a line collapse, and at most one blank line in a row is kept.
+const botText = (v, max) => String(v ?? '').replace(/\r\n?/g, '\n').split('\n').map(l => l.replace(/\s+/g, ' ').trim())
+  .join('\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, max);
 // What players read about a bot (shown next to its name), a few sentences at most.
-const botDesc = d => String(d ?? '').trim().slice(0, MAX_BOT_DESC);
+const botDesc = d => botText(d, MAX_BOT_DESC);
 const MAX_BOT_DESC = 300;
 // A tournament must keep at least one sparring bot.
 const botCount = t => grader.practice.houseBots(gameOf(t)).length - (t.houseRemoved || []).length + (t.bots || []).length;
@@ -805,7 +826,7 @@ app.post('/api/admin/tournaments/:id/bots', apiAuth, apiJudge, (req, res) => {
   const t = editableTournament(req, res);
   if (!t) return;
   const { language, code } = req.body || {};
-  const name = String((req.body || {}).name || '').trim().slice(0, 40);
+  const name = botText((req.body || {}).name, 40);
   const bad = checkBotName(t, name) || (!grader.LANGS[language] && 'Hãy chọn ngôn ngữ: cpp, java hoặc python') || badCode(code);
   if (bad) return fail(res, 400, bad);
   const bot = { id: 'bot-' + db.id(), name, desc: botDesc((req.body || {}).desc), createdAt: new Date().toISOString() };
@@ -820,7 +841,7 @@ app.put('/api/admin/tournaments/:id/bots/:botId', apiAuth, apiJudge, (req, res) 
   const bot = (t.bots || []).find(b => b.id === req.params.botId);
   if (!bot) return fail(res, 404, 'Không tìm thấy bot');
   const { language, code } = req.body || {};
-  const name = String((req.body || {}).name ?? bot.name).trim().slice(0, 40);
+  const name = botText((req.body || {}).name ?? bot.name, 40);
   const bad = checkBotName(t, name, bot) || (!grader.LANGS[language] && 'Hãy chọn ngôn ngữ: cpp, java hoặc python') || badCode(code);
   if (bad) return fail(res, 400, bad);
   bot.name = name;
@@ -837,7 +858,7 @@ app.patch('/api/admin/tournaments/:id/bots/:botId', apiAuth, apiJudge, (req, res
   if (!bot) return fail(res, 404, 'Không tìm thấy bot');
   const { name, desc } = req.body || {};
   if (name !== undefined) {
-    const n = String(name).trim().slice(0, 40);
+    const n = botText(name, 40);
     const bad = checkBotName(t, n, bot);
     if (bad) return fail(res, 400, bad);
     bot.name = n;

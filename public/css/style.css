@@ -96,7 +96,9 @@ input, select, textarea {
 }
 input:focus, select:focus, textarea:focus { box-shadow: 0 0 0 4px var(--yellow); }
 /* a bot's name or description edited in place (judge desk): the text itself, nothing resized */
-.inline-edit { outline: none; background: #fffbe6; box-shadow: 0 2px 0 var(--ink); cursor: text; }
+.lines { white-space: pre-line; } /* a bot's name / description may hold line breaks */
+textarea.oneline { resize: vertical; min-height: 0; font-family: inherit; }
+.inline-edit { white-space: pre-wrap; outline: none; background: #fffbe6; box-shadow: 0 2px 0 var(--ink); cursor: text; }
 .inline-edit:focus-visible { outline: none; }
 .inline-edit:empty { display: inline-block; min-width: 8em; }
 .inline-edit:empty::before { content: attr(data-hint); color: #aaa; }
@@ -247,7 +249,7 @@ pre.msg { white-space: pre; background: #f4f2ea; border-radius: 8px; padding: 10
 .house-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 12px; margin-top: 10px; }
 .house { background: #fff; border: 2.5px solid var(--ink); border-radius: var(--wobble2); padding: 8px 12px; font-size: 17px; display: flex; flex-direction: column; gap: 3px; }
 .house:nth-child(odd) { border-radius: var(--wobble); }
-.house .hn { font-family: 'Patrick Hand', cursive; font-size: 21px; font-weight: 700; line-height: 1.1; white-space: nowrap; flex: 1; }
+.house .hn { font-family: 'Patrick Hand', cursive; font-size: 21px; font-weight: 700; line-height: 1.1; white-space: pre; flex: 1; }
 .house .hd { color: #777; font-size: 14px; line-height: 1.2; flex: 1; }
 .house .hs { font-family: 'Pangolin', cursive; font-size: 24px; }
 .house .hs .tag { font-family: 'Patrick Hand', cursive; font-size: 14px; vertical-align: middle; }
@@ -271,7 +273,7 @@ pre.msg { white-space: pre; background: #f4f2ea; border-radius: 8px; padding: 10
 .pick:nth-child(even) { border-radius: var(--wobble); }
 .pick:hover { background: #fffbe6; transform: rotate(-1.5deg); }
 .pick .pnum { font-family: 'Pangolin', cursive; font-size: 14px; color: var(--muted); line-height: 1; }
-.pick .pname { font-weight: 700; font-size: 17px; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.pick .pname { font-weight: 700; font-size: 17px; line-height: 1.15; white-space: pre; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .pick .pnote { font-size: 14px; color: #666; }
 .pick.beaten { background: #eefaf0; }
 .pick.beaten .pnote { color: var(--green); font-weight: 700; }
