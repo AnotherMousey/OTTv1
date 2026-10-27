@@ -12,9 +12,12 @@ const { canPlay } = require('./access');
 const PEN_PER_SUBMISSION = 20;
 const MAX_SUBS_LIMIT = 999;
 
-// The judge may cap how many submissions each team aims at one sparring bot (t.maxSubs;
-// absent = no limit). Submissions that failed the check don't use up an attempt.
-const maxSubsOf = t => (t.mode === 'campaign' && Number.isInteger(t.maxSubs) ? t.maxSubs : null);
+// The judge may cap how many submissions each team aims at each sparring bot
+// (t.botMaxSubs[botId]; absent = no limit). Submissions that failed the check don't use up an attempt.
+const maxSubsOf = (t, botId) => {
+  const n = t.mode === 'campaign' && t.botMaxSubs ? t.botMaxSubs[botId] : undefined;
+  return Number.isInteger(n) ? n : null;
+};
 const attemptsUsed = (t, userId, botId) =>
   db.data.submissions.filter(s => s.tournamentId === t.id && s.userId === userId && s.target === botId && s.status !== 'error').length;
 
@@ -149,7 +152,6 @@ function details(t, userId) {
     teamName: u.teamName,
     submissions: p.subs.length,
     gamesNeeded: CAMPAIGN_GAMES,
-    maxSubs: maxSubsOf(t),
     beatenCount: p.count,
     finishedAt: p.finishedAt,
     bots: botsFor(t).map(h => ({
@@ -158,6 +160,7 @@ function details(t, userId) {
       desc: h.desc,
       beaten: !!p.beaten[h.id],
       used: p.subs.filter(s => s.target === h.id && s.status !== 'error').length,
+      maxSubs: maxSubsOf(t, h.id),
       beatenBy: p.beaten[h.id] ? p.beaten[h.id].number : null,
       beatenAt: p.beaten[h.id] ? p.beaten[h.id].at : null,
       best: p.best[h.id] || null,

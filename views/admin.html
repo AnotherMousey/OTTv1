@@ -40,7 +40,6 @@
           <div class="form-row">
             <label><span>bắt đầu nhận bài <small class="muted">(bỏ trống = mở ngay)</small></span><input name="startsAt" type="datetime-local" style="width:100%"></label>
             <label><span id="dlLabel">ngày kết thúc (hạn chót nộp bài)</span><input name="deadline" type="datetime-local" required style="width:100%"></label>
-            <label id="maxSubsRow"><span>số lượt nộp tối đa cho mỗi bot đấu tập <small class="muted">(bỏ trống = không giới hạn)</small></span><input name="maxSubs" type="number" min="1" max="999" step="1" style="width:100%" placeholder="không giới hạn"></label>
             <label id="dailyRow"><span>giờ thi đấu hằng ngày</span><input name="dailyTime" type="time" value="21:00" style="width:100%"></label>
           </div>
           <p class="muted" style="font-size:16px;margin:-4px 0 10px" id="timeHint"></p>
@@ -135,7 +134,6 @@
       const brawl = $('#tform').mode.value === 'brawl';
       $('#dailyRow').classList.toggle('hidden', !brawl);
       $('#pairingRow').classList.toggle('hidden', !brawl);
-      $('#maxSubsRow').classList.toggle('hidden', brawl);
       $('#tform').dailyTime.required = brawl;
       $('#dlLabel').textContent = brawl ? 'ngày kết thúc (hạn chót nộp bài)' : 'hạn chót nộp bài';
       $('#timeHint').textContent = brawl
@@ -232,7 +230,7 @@
           : t.startsAt ? esc(fmtDate(t.startsAt)) : '<span class="muted">–</span>';
         return `<tr>
           <td><span class="lines">${esc(t.name)}</span>${focusId && t.description ? `<br><small class="muted lines">${esc(t.description)}</small>` : ''}</td>
-          <td>${t.game === 'board' ? '♟️ cờ OTT' : '✊ oẳn tù tì'} · ${t.mode === 'campaign' ? '🗺️ chiến dịch' : '⚔️ hỗn chiến'}${t.daily ? `<br><span class="muted" style="font-size:16px">📅 hằng ngày lúc ${edit ? `<input type="time" data-daily="${t.id}" value="${t.daily.time}" style="font-size:15px;padding:0 4px">` : t.daily.time} · ${edit ? `<select data-pairing="${t.id}" style="font-size:15px;padding:0 4px"><option value="rr" ${t.daily.pairing === 'rr' ? 'selected' : ''}>vòng tròn</option><option value="swiss" ${t.daily.pairing === 'swiss' ? 'selected' : ''}>Thụy Sĩ</option></select>` : t.daily.pairing === 'swiss' ? 'Thụy Sĩ' : 'vòng tròn'} · đã qua ${t.daily.days} vòng</span>` : ''}${t.mode === 'campaign' ? `<br><span class="muted" style="font-size:16px">✍️ ${edit ? `tối đa <input type="number" data-maxsubs="${t.id}" min="1" max="999" step="1" value="${t.maxSubs || ''}" placeholder="∞" title="bỏ trống = không giới hạn" style="font-size:15px;padding:0 4px;width:70px">` : t.maxSubs ? `tối đa ${t.maxSubs}` : 'không giới hạn'} lượt nộp mỗi bot</span>` : ''}${t.access === 'invite' ? `<br><span class="muted" style="font-size:16px">🔒 ${t.members} đội</span>` : ''}${t.hidden ? '<br><span class="muted" style="font-size:16px">🙈 đang ẩn với người chơi</span>' : ''}</td>
+          <td>${t.game === 'board' ? '♟️ cờ OTT' : '✊ oẳn tù tì'} · ${t.mode === 'campaign' ? '🗺️ chiến dịch' : '⚔️ hỗn chiến'}${t.daily ? `<br><span class="muted" style="font-size:16px">📅 hằng ngày lúc ${edit ? `<input type="time" data-daily="${t.id}" value="${t.daily.time}" style="font-size:15px;padding:0 4px">` : t.daily.time} · ${edit ? `<select data-pairing="${t.id}" style="font-size:15px;padding:0 4px"><option value="rr" ${t.daily.pairing === 'rr' ? 'selected' : ''}>vòng tròn</option><option value="swiss" ${t.daily.pairing === 'swiss' ? 'selected' : ''}>Thụy Sĩ</option></select>` : t.daily.pairing === 'swiss' ? 'Thụy Sĩ' : 'vòng tròn'} · đã qua ${t.daily.days} vòng</span>` : ''}${t.access === 'invite' ? `<br><span class="muted" style="font-size:16px">🔒 ${t.members} đội</span>` : ''}${t.hidden ? '<br><span class="muted" style="font-size:16px">🙈 đang ẩn với người chơi</span>' : ''}</td>
           <td><span class="tag ${waiting ? 'pending' : t.status}">${waiting ? 'chưa mở' : STATUS_VI[t.status] || t.status}</span></td>
           <td>${startCell}</td>
           <td>${edit ? `<input type="datetime-local" data-dl="${t.id}" value="${toLocalInput(new Date(t.deadline))}" style="font-size:16px;padding:2px 6px">` : esc(fmtDate(t.deadline))}</td>
@@ -288,10 +286,6 @@
       $$('[data-pairing]').forEach(sel => sel.onchange = () => {
         patch(sel.dataset.pairing, { pairing: sel.value }, `Từ vòng đấu tiếp theo: ${sel.value === 'swiss' ? 'thể thức Thụy Sĩ 🔀' : 'vòng tròn 🔁'}`);
       });
-      $$('[data-maxsubs]').forEach(inp => onDone(inp, () => {
-        const n = inp.value.trim();
-        patch(inp.dataset.maxsubs, { maxSubs: n }, n ? `Mỗi đội được nộp tối đa ${+n} bài cho mỗi bot đấu tập ✍️` : 'Đã bỏ giới hạn số lượt nộp ✍️');
-      }));
       $$('[data-daily]').forEach(inp => onDone(inp, () => {
         if (inp.value) patch(inp.dataset.daily, { dailyTime: inp.value, tzOffset: new Date().getTimezoneOffset() }, `Đã đổi giờ thi đấu hằng ngày sang ${inp.value} ⏰`);
       }));
@@ -582,18 +576,22 @@ public class Bot {
         const text = on ? inline.value ?? (x.desc || '') : x.desc;
         return text || on ? `<br><small${editable(kind, x, 'desc', kind === 'house' ? 'để trống = mô tả gốc' : 'mô tả người chơi sẽ thấy', 'muted lines')}>${esc(text)}</small>` : '';
       };
+      // campaign: how many submissions each team may aim at this bot (empty = no limit)
+      const limitCell = x => !campaign ? '' : open
+        ? `<td><input type="number" data-limit="${x.id}" min="1" max="999" step="1" value="${x.maxSubs || ''}" placeholder="∞" title="bỏ trống = không giới hạn" style="font-size:16px;padding:2px 6px;width:80px"></td>`
+        : `<td>${x.maxSubs || '∞'}</td>`;
       const rows = [
         ...data.builtIn.map((h, i) => h.removed ? `<tr class="muted">
-          <td>${i + 1}</td><td><s class="lines">${esc(h.name)}</s>${h.desc ? `<br><small class="lines">${esc(h.desc)}</small>` : ''}</td><td>có sẵn</td><td>🗑 đã bỏ khỏi giải</td>
+          <td>${i + 1}</td><td><s class="lines">${esc(h.name)}</s>${h.desc ? `<br><small class="lines">${esc(h.desc)}</small>` : ''}</td><td>có sẵn</td><td>🗑 đã bỏ khỏi giải</td>${campaign ? '<td></td>' : ''}
           <td>${open ? `<button class="btn small" data-restore="${h.id}" title="cho bot này đấu tập lại trong giải">↺ khôi phục</button>` : ''}</td></tr>` : `<tr class="${isEditing('house', h.id) ? 'editing' : ''}">
-          <td>${i + 1}</td><td>${nameCell('house', h, h.name !== h.defaultName ? ` <small class="muted">(gốc: ${esc(h.defaultName)})</small>` : '')}${descLine('house', h)}</td><td class="muted">có sẵn</td><td>${versionText(h.edit, true)}</td>
+          <td>${i + 1}</td><td>${nameCell('house', h, h.name !== h.defaultName ? ` <small class="muted">(gốc: ${esc(h.defaultName)})</small>` : '')}${descLine('house', h)}</td><td class="muted">có sẵn</td><td>${versionText(h.edit, true)}</td>${limitCell(h)}
           <td><div class="row" style="gap:6px">
             <button class="btn small" data-edit-house="${h.id}">${open ? 'sửa code' : 'xem code'}</button>
             ${open && h.edit ? `<button class="btn small" data-reset="${h.id}" title="dùng lại bot gốc">↺ mặc định</button>` : ''}
             ${open ? `<button class="btn small" data-rename-house="${h.id}" title="đổi tên bot trong giải này">✏️ đổi tên</button><button class="btn small" data-desc-house="${h.id}" title="viết mô tả người chơi sẽ thấy cạnh tên bot">📝 mô tả</button><button class="btn small" data-housedel="${h.id}" title="bỏ bot này khỏi giải">🗑</button>` : ''}
           </div></td></tr>`),
         ...data.bots.map((b, i) => `<tr class="${isEditing('bot', b.id) ? 'editing' : ''}">
-          <td>${n + i + 1}</td><td>${nameCell('bot', b)}${descLine('bot', b)}</td><td class="muted">thêm · ${LANG_LABEL[b.language]}</td><td>${versionText(b, false)}</td>
+          <td>${n + i + 1}</td><td>${nameCell('bot', b)}${descLine('bot', b)}</td><td class="muted">thêm · ${LANG_LABEL[b.language]}</td><td>${versionText(b, false)}</td>${limitCell(b)}
           <td><div class="row" style="gap:6px">
             <button class="btn small" data-edit-bot="${b.id}">${open ? 'sửa code' : 'xem code'}</button>
             ${open ? `<button class="btn small" data-rename-bot="${b.id}" title="đổi tên bot">✏️ đổi tên</button><button class="btn small" data-desc-bot="${b.id}" title="viết mô tả người chơi sẽ thấy cạnh tên bot">📝 mô tả</button><button class="btn small" data-botdel="${b.id}" title="xóa bot">🗑</button>` : ''}
@@ -626,12 +624,27 @@ public class Bot {
       panel.innerHTML = `<div class="box alt">
         <div class="row" style="justify-content:space-between"><h3 class="lines" style="margin:0">Bot đấu tập của ${esc(t.name)}</h3><button class="btn small" id="closeBots">đóng</button></div>
         <p class="muted" style="font-size:17px;margin:4px 0 8px">Sửa code của từng bot riêng cho giải này (giải khác không bị ảnh hưởng). Bản sửa chỉ được dùng khi đã qua bước kiểm tra; trong lúc kiểm tra hoặc nếu bị lỗi, bản đang chạy vẫn được giữ.${campaign ? ` Bot bạn thêm đứng sau ${n} bot có sẵn, và người chơi phải hạ cả chúng mới về đích.` : ' Bot bạn thêm cũng đấu tập với mọi đội và được cộng vào điểm đánh giá; khi thêm hoặc xóa bot, bot mới nhất của mỗi đội sẽ đấu tập lại.'}${open ? '' : ' Giải đã đóng, chỉ xem được code.'}</p>
-        <table class="plain"><thead><tr><th>#</th><th>tên</th><th>loại</th><th>phiên bản đang chạy</th><th></th></tr></thead><tbody>${rows.join('')}</tbody></table>
+        <table class="plain"><thead><tr><th>#</th><th>tên</th><th>loại</th><th>phiên bản đang chạy</th>${campaign ? '<th title="số bài mỗi đội được nộp để đấu với bot này">lượt nộp tối đa</th>' : ''}<th></th></tr></thead><tbody>${rows.join('')}</tbody></table>
         ${open && !(editing && editing.kind === 'new') ? '<button class="btn small" id="addBot" style="margin-top:10px">➕ Thêm bot đấu tập</button>' : ''}
         ${editor}
       </div>`;
 
       $('#closeBots').onclick = () => { botsOpen = null; panel.classList.add('hidden'); };
+      // a limit is saved once the judge leaves the box or presses Enter
+      $$('[data-limit]', panel).forEach(inp => {
+        const before = inp.value;
+        const save = async () => {
+          if (inp.value === before) return;
+          const n = inp.value.trim(), name = [...data.builtIn, ...data.bots].find(x => x.id === inp.dataset.limit).name;
+          try {
+            await api(`${botsUrl(t)}/limits/${encodeURIComponent(inp.dataset.limit)}`, { method: 'PUT', body: { maxSubs: n } });
+            toast(n ? `Mỗi đội được nộp tối đa ${+n} bài để đấu với ${name} ✍️` : `Không giới hạn số bài nộp để đấu với ${name} ✍️`);
+            showBots(t, true);
+          } catch (e) { toast(e.message, 'error'); inp.value = before; }
+        };
+        inp.addEventListener('blur', save);
+        inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); });
+      });
       $$('[data-edit-house]', panel).forEach(b => b.onclick = () => startEditing('house', b.dataset.editHouse));
       $$('[data-edit-bot]', panel).forEach(b => b.onclick = () => startEditing('bot', b.dataset.editBot));
       if ($('#addBot')) $('#addBot').onclick = () => startEditing('new');
@@ -976,7 +989,7 @@ public class Bot {
       e.preventDefault();
       const f = new FormData(e.target);
       try {
-        const { tournament } = await api('/api/admin/tournaments', { method: 'POST', body: { name: f.get('name'), game: f.get('game'), mode: f.get('mode'), dailyTime: f.get('mode') === 'brawl' ? f.get('dailyTime') : undefined, pairing: f.get('mode') === 'brawl' ? f.get('pairing') : undefined, maxSubs: f.get('mode') === 'campaign' ? f.get('maxSubs') : undefined, tzOffset: new Date().getTimezoneOffset(), access: f.get('access'), hidden: f.get('hidden') === 'on', description: f.get('description'), startsAt: f.get('startsAt') ? new Date(f.get('startsAt')).toISOString() : '', deadline: new Date(f.get('deadline')).toISOString() } });
+        const { tournament } = await api('/api/admin/tournaments', { method: 'POST', body: { name: f.get('name'), game: f.get('game'), mode: f.get('mode'), dailyTime: f.get('mode') === 'brawl' ? f.get('dailyTime') : undefined, pairing: f.get('mode') === 'brawl' ? f.get('pairing') : undefined, tzOffset: new Date().getTimezoneOffset(), access: f.get('access'), hidden: f.get('hidden') === 'on', description: f.get('description'), startsAt: f.get('startsAt') ? new Date(f.get('startsAt')).toISOString() : '', deadline: new Date(f.get('deadline')).toISOString() } });
         e.target.reset();
         $$('textarea.oneline', e.target).forEach(growBox);
         syncModeFields();

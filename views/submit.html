@@ -139,7 +139,7 @@ public class Bot {
         const win = isBoard() ? 'thắng ván đó' : 'nhiều điểm hơn nó trong mỗi ván';
         return `<ul>${commonRules()}
         <li><b>Chế độ chiến dịch:</b> mỗi bài nộp <b>chọn một</b> trong ${bots.length} bot đấu tập làm đối thủ và đấu với nó tối đa <b>${GAMES} ván</b> (${each}). Để <b>hạ</b> bot đó, bạn phải <b>thắng cả ${GAMES} ván</b> (${win}). Chỉ cần thua hoặc hòa một ván là bài nộp đó thất bại, và các ván còn lại bị bỏ qua.</li>
-        <li>${tournament.maxSubs ? `Với mỗi bot đấu tập, bạn được nộp <b>tối đa ${tournament.maxSubs} bài</b> (bài bị lỗi biên dịch hoặc chơi thử không tính lượt).` : 'Nộp bao nhiêu bài cũng được,'} Mỗi bài cho một đối thủ, theo thứ tự tùy ý. Hạ đủ cả ${bots.length} bot đấu tập là hoàn thành chiến dịch.</li>
+        <li>${bots.some(b => b.maxSubs) ? 'Trọng tài có thể giới hạn <b>số bài nộp</b> để đấu với từng bot đấu tập: số lượt còn lại hiện ngay dưới tên bot khi chọn đối thủ (bài bị lỗi biên dịch hoặc chơi thử không tính lượt).' : 'Nộp bao nhiêu bài cũng được.'} Mỗi bài cho một đối thủ, theo thứ tự tùy ý. Hạ đủ cả ${bots.length} bot đấu tập là hoàn thành chiến dịch.</li>
         <li>Thời điểm về đích là lúc bạn <b>nộp</b> bot hạ được bot đấu tập cuối cùng còn lại. Ai về đích sớm nhất xếp đầu; các đội chưa về đích xếp theo số bot đã hạ.</li>
         <li><b>Điểm phạt (PEN):</b> mỗi bài nộp trước khi về đích tính <b>20</b> điểm phạt (kể cả bài bị lỗi). Khi về đích, PEN được cộng thêm <b>số phút</b> từ lúc giải mở đến lúc bạn nộp bài về đích. Bài về đích và các bài nộp sau đó không bị phạt.</li>
         <li>Trên bảng xếp hạng, ô thứ <i>i</i> sáng lên khi bot đấu tập thứ <i>i</i> bị hạ, nên mọi người đều thấy bạn đã hạ những bot nào. Code và kết quả từng ván của bạn thì chỉ mình bạn xem được.</li>
@@ -257,10 +257,11 @@ public class Bot {
     }
     // Campaign: submissions still allowed against bot `id` (null = no limit).
     function attemptsLeft(id) {
-      if (!tournament || !tournament.maxSubs) return null;
+      const max = (bots.find(b => b.id === id) || {}).maxSubs;
+      if (!max) return null;
       const det = practiceData && practiceData.details && practiceData.details.userId === ME.id ? practiceData.details : null;
       const used = (det && (det.bots.find(b => b.bot === id) || {}).used) || 0;
-      return Math.max(0, tournament.maxSubs - used);
+      return Math.max(0, max - used);
     }
     // Campaign: pick the sparring bot your next submission will fight.
     function renderPicker() {
@@ -273,7 +274,7 @@ public class Bot {
         const s = st(b.id);
         const left = attemptsLeft(b.id);
         const note = (s.beaten ? '✓ đã hạ' : s.inProgress ? '🥊 đang đấu…' : s.best && s.best.games ? `tốt nhất: thắng ${s.best.wins}/${GAMES}` : 'chưa đấu')
-          + (left === null ? '' : left > 0 ? ` · còn ${left}/${tournament.maxSubs} lượt` : ' · hết lượt');
+          + (left === null ? '' : left > 0 ? ` · còn ${left}/${b.maxSubs} lượt` : ' · hết lượt');
         return `<button class="pick ${b.id === target ? 'on' : ''} ${s.beaten ? 'beaten' : ''}" data-id="${b.id}" title="${esc(b.desc || '')}">
           <span class="pnum">${i + 1}</span><span class="pname">${esc(b.name)}</span><span class="pnote">${note}</span></button>`;
       }).join('');
