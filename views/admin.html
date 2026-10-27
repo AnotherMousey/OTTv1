@@ -230,7 +230,7 @@
           ? `<div class="row" style="gap:4px;flex-wrap:nowrap"><input type="datetime-local" data-start="${t.id}" value="${t.startsAt ? toLocalInput(new Date(t.startsAt)) : ''}" style="font-size:16px;padding:2px 6px" title="bỏ trống = nhận bài ngay">${waiting ? `<button class="btn small" data-nostart="${t.id}" title="bỏ giờ bắt đầu">✕</button>` : ''}</div>`
           : t.startsAt ? esc(fmtDate(t.startsAt)) : '<span class="muted">–</span>';
         return `<tr>
-          <td>${esc(t.name)}</td>
+          <td>${focusId ? `<input data-name="${t.id}" maxlength="80" value="${esc(t.name)}" title="đổi tên giải" style="font-size:16px;padding:2px 6px;width:100%;min-width:160px">` : esc(t.name)}</td>
           <td>${t.game === 'board' ? '♟️ cờ OTT' : '✊ oẳn tù tì'} · ${t.mode === 'campaign' ? '🗺️ chiến dịch' : '⚔️ hỗn chiến'}${t.daily ? `<br><span class="muted" style="font-size:16px">📅 hằng ngày lúc ${edit ? `<input type="time" data-daily="${t.id}" value="${t.daily.time}" style="font-size:15px;padding:0 4px">` : t.daily.time} · ${edit ? `<select data-pairing="${t.id}" style="font-size:15px;padding:0 4px"><option value="rr" ${t.daily.pairing === 'rr' ? 'selected' : ''}>vòng tròn</option><option value="swiss" ${t.daily.pairing === 'swiss' ? 'selected' : ''}>Thụy Sĩ</option></select>` : t.daily.pairing === 'swiss' ? 'Thụy Sĩ' : 'vòng tròn'} · đã qua ${t.daily.days} vòng</span>` : ''}${t.mode === 'campaign' ? `<br><span class="muted" style="font-size:16px">✍️ ${edit ? `tối đa <input type="number" data-maxsubs="${t.id}" min="1" max="999" step="1" value="${t.maxSubs || ''}" placeholder="∞" title="bỏ trống = không giới hạn" style="font-size:15px;padding:0 4px;width:70px">` : t.maxSubs ? `tối đa ${t.maxSubs}` : 'không giới hạn'} lượt nộp mỗi bot</span>` : ''}${t.access === 'invite' ? `<br><span class="muted" style="font-size:16px">🔒 ${t.members} đội</span>` : ''}${t.hidden ? '<br><span class="muted" style="font-size:16px">🙈 đang ẩn với người chơi</span>' : ''}</td>
           <td><span class="tag ${waiting ? 'pending' : t.status}">${waiting ? 'chưa mở' : STATUS_VI[t.status] || t.status}</span></td>
           <td>${startCell}</td>
@@ -275,6 +275,11 @@
         inp.addEventListener('blur', () => { if (inp.value !== saved) { saved = inp.value; save(); } });
         inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); });
       };
+      $$('[data-name]').forEach(inp => onDone(inp, () => {
+        const old = tournaments.find(t => t.id === inp.dataset.name).name;
+        if (!inp.value.trim()) { inp.value = old; return toast('Hãy đặt tên cho giải đấu', 'error'); }
+        if (inp.value.trim() !== old) patch(inp.dataset.name, { name: inp.value }, 'Đã đổi tên giải ✏️');
+      }));
       $$('[data-dl]').forEach(inp => onDone(inp, () => {
         if (inp.value) patch(inp.dataset.dl, { deadline: new Date(inp.value).toISOString() }, 'Đã đổi hạn chót ⏰');
       }));

@@ -534,9 +534,10 @@ app.patch('/api/admin/tournaments/:id', apiAuth, apiJudge, (req, res) => {
   const t = findTournament(req.params.id);
   if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
   const { name, deadline, startsAt, description, access, hidden, dailyTime, tzOffset, pairing, maxSubs } = req.body || {};
-  // hiding / showing works at any time; everything else only before the tournament starts
-  const onlyHidden = Object.keys(req.body || {}).every(k => k === 'hidden');
-  if (t.status !== 'open' && !onlyHidden) return fail(res, 400, 'Chỉ sửa được giải đấu chưa bắt đầu');
+  // hiding / showing and renaming work at any time; everything else only before the tournament starts
+  const anyTime = Object.keys(req.body || {}).every(k => k === 'hidden' || k === 'name');
+  if (t.status !== 'open' && !anyTime) return fail(res, 400, 'Chỉ sửa được giải đấu chưa bắt đầu');
+  if (name !== undefined && !String(name).trim()) return fail(res, 400, 'Hãy đặt tên cho giải đấu');
   if (hidden !== undefined && typeof hidden !== 'boolean') return fail(res, 400, 'hidden phải là true hoặc false');
   if (access !== undefined && !['open', 'invite'].includes(access)) return fail(res, 400, 'Quyền tham gia phải là open hoặc invite');
   if (pairing !== undefined) {
