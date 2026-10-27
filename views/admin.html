@@ -246,7 +246,7 @@
           </div>` : `<div class="tactions">
             <button class="btn small" data-hide="${t.id}" title="${t.hidden ? 'cho người chơi thấy giải này' : 'chỉ trọng tài thấy giải này'}">${t.hidden ? '👁 hiện' : '🙈 ẩn'}</button>
             <button class="btn small" data-members="${t.id}">${t.access === 'invite' ? '🔒 ' : ''}người chơi</button>
-            <button class="btn small" data-rename="${t.id}" title="đổi tên và mô tả giải">✏️ đổi tên</button>
+            <button class="btn small" data-trename="${t.id}" title="đổi tên và mô tả giải">✏️ đổi tên</button>
             <button class="btn small" data-bots="${t.id}">bot đấu tập</button>
             <button class="btn small" data-subs="${t.id}">bài nộp</button>
             <a class="btn small" href="/tournament/${id}/live">bảng xếp hạng</a>
@@ -363,10 +363,10 @@
         showMembers(tournaments.find(t => t.id === b.dataset.members));
       });
       if (membersOpen && !tournaments.some(x => x.id === membersOpen.t.id)) { membersOpen = null; $('#membersPanel').classList.add('hidden'); }
-      $$('[data-rename]').forEach(b => b.onclick = () => {
-        if (panelShown('rename', b.dataset.rename)) return $('#renameName').focus();
+      $$('[data-trename]').forEach(b => b.onclick = () => {
+        if (panelShown('rename', b.dataset.trename)) return $('#renameName').focus();
         closePanels();
-        showRename(tournaments.find(t => t.id === b.dataset.rename));
+        showRename(tournaments.find(t => t.id === b.dataset.trename));
       });
     }
 
@@ -400,7 +400,7 @@
       const boxes = [[$('#renameName'), t.name, 80], [$('#renameDesc'), t.description || '', 500]];
       const close = () => { renameOpen = null; panel.classList.add('hidden'); };
       const save = async () => {
-        const name = lineText($('#renameName').textContent), description = lineText($('#renameDesc').textContent);
+        const name = lineText($('#renameName').innerText), description = lineText($('#renameDesc').innerText);
         if (!name) { $('#renameName').classList.add('bad'); $('#renameName').focus(); return toast('Hãy đặt tên cho giải đấu', 'error'); }
         if (name === t.name && description === (t.description || '')) return close();
         try {
@@ -413,14 +413,14 @@
       for (const [box, text, max] of boxes) {
         box.textContent = text;
         box.oninput = () => {
-          if (box.textContent.length > max) {
-            box.textContent = box.textContent.slice(0, max);
+          if (box.innerText.length > max) {
+            box.textContent = box.innerText.slice(0, max);
             const sel = getSelection(); sel.selectAllChildren(box); sel.collapseToEnd();
           }
           box.classList.remove('bad');
         };
         box.onkeydown = e => {
-          if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); document.execCommand('insertText', false, '\n'); } // a new line
+          if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); document.execCommand('insertLineBreak'); } // a new line (a <br>: read back with innerText)
           else if (e.key === 'Enter') { e.preventDefault(); save(); }
           else if (e.key === 'Escape') close();
         };
@@ -674,7 +674,7 @@ public class Bot {
         const close = () => { done = true; botsOpen.inline = null; renderBots(); };
         const save = async () => {
           if (done || botsOpen.seq !== seq) return; // already saved, or this box was re-rendered away
-          const value = lineText(box.textContent);
+          const value = lineText(box.innerText);
           if (value === (x[field] || '') || (kind === 'bot' && field === 'name' && !value)) return close();
           done = true;
           try {
@@ -695,12 +695,12 @@ public class Bot {
         box.focus();
         caretToEnd();
         box.oninput = () => {
-          if (box.textContent.length > max) { box.textContent = box.textContent.slice(0, max); caretToEnd(); }
-          inline.value = box.textContent;
+          if (box.innerText.length > max) { box.textContent = box.innerText.slice(0, max); caretToEnd(); }
+          inline.value = box.innerText;
           box.classList.remove('bad');
         };
         box.onkeydown = e => {
-          if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); document.execCommand('insertText', false, '\n'); } // a new line
+          if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); document.execCommand('insertLineBreak'); } // a new line (a <br>: read back with innerText)
           else if (e.key === 'Enter') { e.preventDefault(); save(); }
           else if (e.key === 'Escape') close();
         };
