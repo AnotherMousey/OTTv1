@@ -96,7 +96,7 @@
       const groupLabel = key => (groups.find(x => x.key === key) || {}).label || '';
       const me = ME && ME.username;
       const empty = q ? 'Không có trận nào khớp.'
-        : g && !data.judge && g.status !== 'published' ? 'Kết quả vòng này chưa được công bố.'
+        : g && !data.judge && g.status !== 'published' && !g.live ? 'Kết quả vòng này chưa được công bố.'
         : 'Chưa có trận nào trong vòng này.';
       $('#rows').innerHTML = list.map(m => {
         const winner = m.winner === 'A' ? team(m.teamA, m.userA) : m.winner === 'B' ? team(m.teamB, m.userB) : '<span class="muted">hòa 🤝</span>';

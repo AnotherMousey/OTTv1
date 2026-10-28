@@ -116,7 +116,8 @@
       $('#tname').textContent = b.name;
       document.title = `Trực tiếp · ${b.name}`;
       const banner = $('#banner'), sub = $('#sub'), prog = $('#progress');
-      const published = b.days.filter(d => d.status === 'published');
+      // published days, and days being rejudged live (their points fill in as matches end)
+      const published = b.days.filter(d => d.status === 'published' || d.live);
       // evaluation | the points of each published day (scrolls sideways, all rows together) | total
       const dayCells = cell => `<div class="dayscroll"><div class="daystrip">${published.map(cell).join('') || '<span class="muted daynone">chưa có vòng nào</span>'}</div></div>`;
       // a click on a heading sorts by that column (again: the other way round); # stays the real rank
@@ -137,7 +138,9 @@
       const tickBanner = () => {
         if (b.status === 'finished') banner.innerHTML = `🏁 Giải kết thúc sau ${published.length} vòng đấu.`;
         else if (b.error) banner.innerHTML = `😵 Có lỗi xảy ra: ${esc(b.error)}`;
-        else if (pending) {
+        else if (pending && pending.live) {
+          banner.innerHTML = `🔁 Vòng ${pending.number} đang được chấm lại${pending.rounds ? ` · đợt ${pending.round}/${pending.rounds}` : ''} · kết quả cập nhật trực tiếp`;
+        } else if (pending) {
           const left = Date.parse(pending.publishAt) - serverNow();
           const what = pending.status !== 'running' ? `⏳ Vòng ${pending.number} đã đấu xong` : `⚔️ Vòng ${pending.number} đang thi đấu${pending.rounds ? ` · đợt ${pending.round}/${pending.rounds}` : ''}`;
           banner.innerHTML = `${what} · kết quả công bố ${left > 0 ? `sau <b>${fmtCountdown(left)}</b>` : 'ngay khi đấu xong'}`;
@@ -149,7 +152,7 @@
       prog.classList.toggle('hidden', !(pending && pending.status === 'running'));
       if (pending && pending.status === 'running') prog.firstElementChild.style.width = (pending.totalMatches ? (100 * pending.played) / pending.totalMatches : 0) + '%';
       const playing = pending && pending.status === 'running' ? ` · vòng ${pending.number}: đã đấu ${pending.played}/${pending.totalMatches} trận` : '';
-      sub.innerHTML = `Mỗi ngày một vòng lúc ${esc(b.dailyTime)} · ${b.pairing === 'swiss' ? 'thể thức Thụy Sĩ' : 'vòng tròn'} · thắng 3 · hòa 1 · thua 0 · đã qua ${published.length} vòng${playing} · ${b.status === 'finished' ? 'kết thúc' : 'kết thúc lúc'} ${esc(fmtDate(b.deadline))}`
+      sub.innerHTML = `Mỗi ngày một vòng lúc ${esc(b.dailyTime)} · ${b.pairing === 'swiss' ? 'thể thức Thụy Sĩ' : 'vòng tròn'} · thắng 3 · hòa 1 · thua 0 · đã qua ${published.filter(d => d.status === 'published').length} vòng${playing} · ${b.status === 'finished' ? 'kết thúc' : 'kết thúc lúc'} ${esc(fmtDate(b.deadline))}`
         + (b.status === 'open' && ME.role !== 'judge' ? ` · <a href="/tournament/${encodeURIComponent(tid)}/submit">nộp bot</a>` : '')
         + '<br>↕️ Bấm vào tiêu đề cột (điểm đánh giá, từng vòng, tổng điểm) để sắp xếp bảng theo cột đó; bấm lần nữa để đảo chiều.'
         + (game === 'board' ? '<br>Thời gian: mỗi bot được dùng tối đa <b>1 giây CPU mỗi nước</b> và <b>180 giây CPU mỗi ván</b> (dùng hết thì thua ván đó).' : '');

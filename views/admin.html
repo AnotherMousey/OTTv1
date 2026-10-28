@@ -69,6 +69,7 @@
     <div id="membersPanel" class="hidden" style="margin-top:20px"></div>
     <div id="botsPanel" class="hidden" style="margin-top:20px"></div>
     <div id="subsPanel" class="hidden" style="margin-top:20px"></div>
+    <div id="rejudgePanel" class="hidden" style="margin-top:20px"></div>
 
     <div id="accountsArea">
     <div class="squiggle"></div>
@@ -296,22 +297,6 @@
           toast('Các bot đang ra sân ⚡');
         } catch (e) { toast(e.message, 'error'); }
       });
-      $$('[data-rejudge]').forEach(b => b.onclick = async () => {
-        const t = tournaments.find(x => x.id === b.dataset.rejudge);
-        const n = prompt(`Chấm lại vòng đấu số mấy? (1–${t.daily.played})`, t.daily.played);
-        if (n === null) return;
-        if (!(+n >= 1 && +n <= t.daily.played && Number.isInteger(+n))) return toast('Số vòng không hợp lệ', 'error');
-        const p = prompt('Thể thức cho vòng này (và các vòng sau): rr = vòng tròn, swiss = Thụy Sĩ', t.daily.pairing);
-        if (p === null) return;
-        const pairing = p.trim().toLowerCase();
-        if (!['rr', 'swiss'].includes(pairing)) return toast('Thể thức phải là rr hoặc swiss', 'error');
-        if (!confirm(`Xóa toàn bộ kết quả vòng ${+n} và cho các bot đấu lại theo thể thức ${pairing === 'swiss' ? 'Thụy Sĩ' : 'vòng tròn'}?`)) return;
-        try {
-          await api(`/api/admin/tournaments/${encodeURIComponent(t.id)}/days/${+n}/rejudge`, { method: 'POST', body: { pairing } });
-          toast(`Vòng ${+n} đang được đấu lại 🔁`);
-          loadTournaments();
-        } catch (e) { toast(e.message, 'error'); }
-      });
       $$('[data-hide]').forEach(b => b.onclick = () => {
         const hide = !tournaments.find(t => t.id === b.dataset.hide).hidden;
         patch(b.dataset.hide, { hidden: hide }, hide ? 'Đã ẩn giải với người chơi 🙈' : 'Người chơi đã thấy giải 👁');
@@ -357,6 +342,13 @@
         showMembers(tournaments.find(t => t.id === b.dataset.members));
       });
       if (membersOpen && !tournaments.some(x => x.id === membersOpen.t.id)) { membersOpen = null; $('#membersPanel').classList.add('hidden'); }
+      $$('[data-rejudge]').forEach(b => b.onclick = () => {
+        if (panelShown('rejudge', b.dataset.rejudge)) return $('#rejudgePanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        closePanels();
+        showRejudge(tournaments.find(t => t.id === b.dataset.rejudge));
+      });
+      // keep an open rejudge panel in sync (a round finished or was published)
+      if (rejudgeOpen) { const t = tournaments.find(x => x.id === rejudgeOpen.t.id); if (t && t.daily) showRejudge(t, true); else { rejudgeOpen = null; $('#rejudgePanel').classList.add('hidden'); } }
       $$('[data-trename]').forEach(b => b.onclick = () => {
         if (panelShown('rename', b.dataset.trename)) return $('#renameName').focus();
         closePanels();
@@ -366,12 +358,73 @@
 
     // ---------- the panels under the list (players, sparring bots, submissions) ----------
     function panelShown(kind, id) {
-      const open = { members: membersOpen && membersOpen.t.id, bots: botsOpen && botsOpen.t.id, subs: subsOpen && subsOpen.id, rename: renameOpen }[kind];
+      const open = { members: membersOpen && membersOpen.t.id, bots: botsOpen && botsOpen.t.id, subs: subsOpen && subsOpen.id, rename: renameOpen, rejudge: rejudgeOpen && rejudgeOpen.t.id }[kind];
       return open === id && !$(`#${kind}Panel`).classList.contains('hidden');
     }
     function closePanels() {
-      membersOpen = botsOpen = subsOpen = renameOpen = null;
-      ['#membersPanel', '#botsPanel', '#subsPanel', '#renamePanel'].forEach(p => $(p).classList.add('hidden'));
+      membersOpen = botsOpen = subsOpen = renameOpen = rejudgeOpen = null;
+      ['#membersPanel', '#botsPanel', '#subsPanel', '#renamePanel', '#rejudgePanel'].forEach(p => $(p).classList.add('hidden'));
+    }
+
+    // ---------- rejudge (daily league) ----------
+    // rejudgeOpen = { t, picked: Set of round numbers, pairing } while the panel is open. It keeps
+    // the judge's ticks when the list refreshes; nothing is sent until "Chấm lại".
+    let rejudgeOpen = null;
+    function showRejudge(t, refresh = false) {
+      if (!refresh || !rejudgeOpen) rejudgeOpen = { t, picked: new Set(), pairing: t.daily.pairing };
+      const r = rejudgeOpen;
+      r.t = t;
+      const days = t.daily.list || [];
+      const busy = days.some(d => d.status === 'running');
+      for (const n of r.picked) if (!days.some(d => d.number === n)) r.picked.delete(n);
+      const STATUS = { running: 'đang đấu', done: 'chờ công bố', published: 'đã công bố' };
+      const panel = $('#rejudgePanel');
+      panel.innerHTML = `<section class="box">
+        <div class="row" style="justify-content:space-between"><h3 class="lines" style="margin:0">Chấm lại vòng đấu · ${esc(t.name)}</h3><button class="btn small" id="closeRejudge">đóng</button></div>
+        <p class="muted" style="font-size:17px;margin:4px 0 10px">Tick các vòng cần chấm lại. Kết quả của chúng bị xóa, rồi các bot (cùng đội, cùng bài nộp như lúc đầu) đấu lại lần lượt từ vòng nhỏ nhất. Không có thời gian chờ công bố: kết quả cập nhật trực tiếp sau từng trận.</p>
+        <div class="row" style="gap:8px;margin-bottom:8px">
+          <button class="btn small" id="rjAll" ${busy ? 'disabled' : ''}>chọn tất cả</button><button class="btn small" id="rjNone" ${busy ? 'disabled' : ''}>bỏ tất cả</button>
+          <b id="rjCount">${r.picked.size} vòng được chọn</b>
+        </div>
+        <div class="member-grid">${days.map(d => `<label class="member ${r.picked.has(d.number) ? 'on' : ''}">
+            <input type="checkbox" data-day="${d.number}" ${r.picked.has(d.number) ? 'checked' : ''} ${busy ? 'disabled' : ''}>
+            <span><b>Vòng ${d.number}</b><small>${d.at ? esc(fmtDate(d.at)) + ' · ' : ''}${d.pairing === 'swiss' ? 'Thụy Sĩ' : d.pairing === 'rr' ? 'vòng tròn' : ''} · ${d.live && d.status !== 'published' ? 'đang chấm lại' : STATUS[d.status] || d.status}</small></span>
+          </label>`).join('')}</div>
+        <div class="row" style="margin:12px 0 0;gap:14px">
+          <span>Thể thức (cho các vòng này và các vòng sau):</span>
+          <label class="row" style="gap:6px;margin:0;cursor:pointer"><input type="radio" name="rjPairing" value="rr" ${r.pairing === 'rr' ? 'checked' : ''}> vòng tròn</label>
+          <label class="row" style="gap:6px;margin:0;cursor:pointer"><input type="radio" name="rjPairing" value="swiss" ${r.pairing === 'swiss' ? 'checked' : ''}> Thụy Sĩ</label>
+        </div>
+        ${busy ? '<p class="muted" style="font-size:17px">Đang có một vòng đấu chưa xong: hãy chờ nó đấu xong rồi chấm lại.</p>' : ''}
+        <div class="row" style="margin-top:12px"><button class="btn red" id="rjGo" ${busy || !r.picked.size ? 'disabled' : ''}>🔁 Chấm lại</button></div>
+      </section>`;
+      panel.classList.remove('hidden');
+      const sync = () => {
+        $('#rjCount').textContent = `${r.picked.size} vòng được chọn`;
+        $('#rjGo').disabled = busy || !r.picked.size;
+      };
+      $$('[data-day]', panel).forEach(c => c.onchange = () => {
+        c.checked ? r.picked.add(+c.dataset.day) : r.picked.delete(+c.dataset.day);
+        c.closest('.member').classList.toggle('on', c.checked);
+        sync();
+      });
+      $('#rjAll').onclick = () => { days.forEach(d => r.picked.add(d.number)); showRejudge(t, true); };
+      $('#rjNone').onclick = () => { r.picked.clear(); showRejudge(t, true); };
+      $$('input[name="rjPairing"]', panel).forEach(x => x.onchange = () => { r.pairing = x.value; });
+      $('#closeRejudge').onclick = () => { rejudgeOpen = null; panel.classList.add('hidden'); };
+      $('#rjGo').onclick = async () => {
+        const days = [...r.picked].sort((a, b) => a - b);
+        const which = days.length === 1 ? `vòng ${days[0]}` : `${days.length} vòng (${days.join(', ')})`;
+        if (!confirm(`Xóa toàn bộ kết quả ${which} và cho các bot đấu lại theo thể thức ${r.pairing === 'swiss' ? 'Thụy Sĩ' : 'vòng tròn'}?`)) return;
+        try {
+          await api(`/api/admin/tournaments/${encodeURIComponent(t.id)}/rejudge`, { method: 'POST', body: { days, pairing: r.pairing } });
+          toast(`${which.charAt(0).toUpperCase()}${which.slice(1)} đang được đấu lại 🔁`);
+          rejudgeOpen = null;
+          panel.classList.add('hidden');
+          loadTournaments();
+        } catch (e) { toast(e.message, 'error'); }
+      };
+      if (!refresh) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
     // ---------- name and description ----------

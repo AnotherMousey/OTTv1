@@ -11,8 +11,10 @@
 // sparring bots, see grader/practice.js), live: the same number as on the practice board. The
 // standings sort by points, then by evaluation.
 // t.days = [{ number, slot, startedAt, publishAt, entries, status: 'running' | 'done' | 'published',
-//             finishedAt, publishedAt, pairing, and for Swiss: rounds, pairs: { r: [{ a, b, name }] },
+//             finishedAt, publishedAt, pairing, live, and for Swiss: rounds, pairs: { r: [{ a, b, name }] },
 //             byes: [{ round, userId }] }]
+// A day the judge rejudges is `live` until it is published again: its results show as its matches
+// end (no hidden period, no frozen submissions), and it is published as soon as it is done.
 const db = require('./db');
 const { avatarOf } = require('./auth');
 const { canPlay } = require('./access');
@@ -133,15 +135,17 @@ const dayTotal = d => (d.pairing === 'swiss' ? (d.rounds || 0) * Math.floor(d.en
 // Submissions are frozen from a match time until that day's results are published:
 // { day, publishAt } (publishAt is null while the day hasn't been set up yet), or null.
 function frozen(t, now = Date.now()) {
-  const day = (t.days || []).find(d => d.status !== 'published');
+  const day = (t.days || []).find(d => !shown(d));
   if (day) return { day: day.number, publishAt: day.publishAt };
   return dueSlots(t, now).length ? { day: (t.days || []).length + 1, publishAt: null } : null;
 }
 
 const dayMatches = (t, day) => Object.values(db.data.matches[t.id] || {}).filter(m => m.day === day.number);
-const isPublished = (t, dayNumber) => (t.days || []).some(d => d.number === dayNumber && d.status === 'published');
+// whether a day's results can be seen: published, or being rejudged live
+const shown = d => d.status === 'published' || !!d.live;
+const isPublished = (t, dayNumber) => (t.days || []).some(d => d.number === dayNumber && shown(d));
 
-// Cumulative standings over the published days. Teams with a working bot that haven't played a
+// Cumulative standings over the published days (and live ones, as far as they have been played). Teams with a working bot that haven't played a
 // published day yet are listed with 0 points. byDay[day number] = the points a team gained that day
 // (missing: it didn't take part).
 function standings(t) {
@@ -154,7 +158,7 @@ function standings(t) {
     }
     return rows.get(id);
   };
-  const published = (t.days || []).filter(d => d.status === 'published');
+  const published = (t.days || []).filter(shown);
   const last = published[published.length - 1];
   for (const day of published) {
     for (const e of day.entries) {
@@ -215,7 +219,7 @@ function board(t, now = Date.now()) {
     publishDelayMs: PUBLISH_DELAY_MS, pairing: pairingOf(t),
     days: (t.days || []).map(d => {
       const fights = dayTotal(d);
-      return { number: d.number, at: d.slot || d.startedAt, status: d.status, publishAt: d.publishAt, publishedAt: d.publishedAt || null, teams: d.entries.length,
+      return { number: d.number, at: d.slot || d.startedAt, status: d.status, live: !!d.live, publishAt: d.publishAt, publishedAt: d.publishedAt || null, teams: d.entries.length,
         played: Math.min(fights, dayMatches(t, d).length), totalMatches: fights,
         ...(d.pairing === 'swiss' ? { rounds: d.rounds, round: Object.keys(d.pairs || {}).length } : {}) };
     }),

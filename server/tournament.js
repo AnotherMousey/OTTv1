@@ -150,6 +150,7 @@ class TournamentManager {
   publishDay(t, day) {
     day.status = 'published';
     day.publishedAt = new Date().toISOString();
+    delete day.live;
     db.save();
     console.log(`[daily] "${t.name}" day ${day.number} published`);
     this.broadcast(t);
