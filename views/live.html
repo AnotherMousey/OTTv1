@@ -135,15 +135,16 @@
       const rows = b.rows.slice().sort((x, y) => (lbSort.desc ? valueOf(y) - valueOf(x) : valueOf(x) - valueOf(y)) || x.rank - y.rank);
       const pending = b.days.find(d => d.status !== 'published'); // playing, or waiting to be published
       clearInterval(dailyTimer);
+      const waiting = (b.rejudgeQueue || []).length ? ` · ⏳ chờ chấm lại: ${b.rejudgeQueue.map(n => `vòng ${n}`).join(', ')}` : '';
       const tickBanner = () => {
         if (b.status === 'finished') banner.innerHTML = `🏁 Giải kết thúc sau ${published.length} vòng đấu.`;
         else if (b.error) banner.innerHTML = `😵 Có lỗi xảy ra: ${esc(b.error)}`;
         else if (pending && pending.live) {
-          banner.innerHTML = `🔁 Vòng ${pending.number} đang được chấm lại${pending.rounds ? ` · đợt ${pending.round}/${pending.rounds}` : ''} · kết quả cập nhật trực tiếp`;
+          banner.innerHTML = `🔁 Vòng ${pending.number} đang được chấm lại${pending.rounds ? ` · đợt ${pending.round}/${pending.rounds}` : ''} · kết quả cập nhật trực tiếp${waiting}`;
         } else if (pending) {
           const left = Date.parse(pending.publishAt) - serverNow();
           const what = pending.status !== 'running' ? `⏳ Vòng ${pending.number} đã đấu xong` : `⚔️ Vòng ${pending.number} đang thi đấu${pending.rounds ? ` · đợt ${pending.round}/${pending.rounds}` : ''}`;
-          banner.innerHTML = `${what} · kết quả công bố ${left > 0 ? `sau <b>${fmtCountdown(left)}</b>` : 'ngay khi đấu xong'}`;
+          banner.innerHTML = `${what} · kết quả công bố ${left > 0 ? `sau <b>${fmtCountdown(left)}</b>` : 'ngay khi đấu xong'}${waiting}`;
         } else if (b.nextAt) banner.innerHTML = `📅 Vòng đấu tiếp theo sau <b>${fmtCountdown(Date.parse(b.nextAt) - serverNow())}</b>`;
         else banner.innerHTML = b.status === 'running' ? '⏳ Đang công bố vòng cuối…' : '📅 Không còn vòng đấu nào trước khi giải kết thúc';
       };

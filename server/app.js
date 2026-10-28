@@ -110,7 +110,7 @@ function publicTournament(t, user) {
     description: t.description || '',
     deadline: t.deadline,
     startsAt: t.startsAt || null,
-    ...(daily.isDaily(t) ? { daily: { time: t.dailyTime, pairing: daily.pairingOf(t), nextAt: t.status === 'open' ? daily.nextSlot(t, Date.now()) : null, frozen: t.status === 'open' ? daily.frozen(t) : null, days: (t.days || []).filter(d => d.status === 'published').length, played: (t.days || []).length, list: (t.days || []).map(d => ({ number: d.number, at: d.startedAt, pairing: d.pairing || null, status: d.status, live: !!d.live })), publishDelayMs: daily.PUBLISH_DELAY_MS } } : {}),
+    ...(daily.isDaily(t) ? { daily: { time: t.dailyTime, pairing: daily.pairingOf(t), nextAt: t.status === 'open' ? daily.nextSlot(t, Date.now()) : null, frozen: t.status === 'open' ? daily.frozen(t) : null, days: (t.days || []).filter(d => d.status === 'published').length, played: (t.days || []).length, list: (t.days || []).map(d => ({ number: d.number, at: d.startedAt, pairing: d.pairing || null, status: d.status, live: !!d.live })), queue: (t.rejudgeQueue || []).map(q => q.day), publishDelayMs: daily.PUBLISH_DELAY_MS } } : {}),
     status: t.status,
     createdAt: t.createdAt || t.startsAt || t.deadline,
     teamsReady: t.entries ? t.entries.length : ready.size,
@@ -584,11 +584,10 @@ app.post('/api/admin/tournaments/:id/play-now', apiAuth, apiJudge, (req, res) =>
   res.json({ ok: true });
 });
 // Daily league: play the days numbered in `days` again from scratch (e.g. they ran with the wrong
-// pairing). Their matches are deleted and they go back to 'running' with the same teams and bots;
-// the ticks play them one after another, lowest number first. They are `live` (see daily.js): the
-// results update as each match ends, and each day is published as soon as it is done. `pairing`
-// also becomes the tournament's.
-app.post('/api/admin/tournaments/:id/rejudge', apiAuth, apiJudge, wrap(async (req, res) => {
+// pairing). They join the end of t.rejudgeQueue, which is played in the order the requests came
+// (one request's days lowest number first), see TournamentManager#rejudgeDay. A day keeps its
+// current results until its turn. `pairing` also becomes the tournament's.
+app.post('/api/admin/tournaments/:id/rejudge', apiAuth, apiJudge, (req, res) => {
   const t = findTournament(req.params.id);
   if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
   if (!daily.isDaily(t)) return fail(res, 400, 'Chỉ giải hỗn chiến mới chấm lại được một vòng');
@@ -597,17 +596,13 @@ app.post('/api/admin/tournaments/:id/rejudge', apiAuth, apiJudge, wrap(async (re
   const days = (t.days || []).filter(d => numbers.map(Number).includes(d.number));
   if (days.length !== new Set(numbers).size) return fail(res, 404, 'Không tìm thấy vòng đấu này');
   if (!['rr', 'swiss'].includes(pairing)) return fail(res, 400, 'Thể thức phải là vòng tròn (rr) hoặc Thụy Sĩ (swiss)');
-  if (manager.active.has(t.id) || (t.days || []).some(d => d.status === 'running')) return fail(res, 400, 'Đang có một vòng đấu chưa xong');
-  await db.deleteMatches(t.id, days.flatMap(day => daily.dayMatches(t, day).map(m => m.name)));
+  const queue = t.rejudgeQueue = t.rejudgeQueue || [];
+  const fresh = days.filter(d => !queue.some(q => q.day === d.number)).sort((a, b) => a.number - b.number);
+  if (!fresh.length) return fail(res, 400, 'Các vòng này đã ở trong hàng chờ chấm lại');
+  const ahead = queue.length + ((t.days || []).some(d => d.status === 'running') ? 1 : 0);
+  const requestedAt = new Date().toISOString();
+  queue.push(...fresh.map(d => ({ day: d.number, pairing, requestedAt })));
   t.pairing = pairing;
-  const publishAt = new Date().toISOString();
-  for (const day of days) {
-    day.pairing = pairing;
-    day.status = 'running';
-    day.live = true;
-    day.publishAt = publishAt;
-    for (const k of ['rounds', 'pairs', 'byes', 'finishedAt', 'publishedAt']) delete day[k];
-  }
   if (t.status === 'finished') { // the champion is decided again once every day is published
     t.status = 'running';
     delete t.championId;
@@ -615,11 +610,11 @@ app.post('/api/admin/tournaments/:id/rejudge', apiAuth, apiJudge, wrap(async (re
   }
   delete t.error;
   db.save();
-  console.log(`[daily] "${t.name}" day ${days.map(d => d.number).join(', ')}: rejudging (${pairing})`);
+  console.log(`[daily] "${t.name}" day ${fresh.map(d => d.number).join(', ')}: queued for rejudging (${pairing}), ${ahead} ahead`);
   manager.broadcast(t);
   io.to('users').emit('tournaments:changed');
-  res.json({ ok: true });
-}));
+  res.json({ ok: true, queued: fresh.map(d => d.number), skipped: days.length - fresh.length, ahead });
+});
 // Announcements: a short message to everyone who can see the tournament, gone after 24 hours.
 app.post('/api/admin/tournaments/:id/announcements', apiAuth, apiJudge, (req, res) => {
   const t = findTournament(req.params.id);

@@ -76,10 +76,13 @@ class TournamentManager {
     if (this.active.has(t.id)) return;
     const running = (t.days || []).find(d => d.status === 'running'); // cut off by a restart
     const [slot] = running ? [] : daily.dueSlots(t, now);
-    const manual = !running && !slot && t.runNow && t.status === 'open';
-    if (running || slot || manual) {
+    // queued rejudges and due match times are played in the order they came
+    const [first] = running ? [] : t.rejudgeQueue || [];
+    const rejudge = first && (!slot || Date.parse(first.requestedAt) <= slot) ? first : null;
+    const manual = !running && !slot && !rejudge && t.runNow && t.status === 'open';
+    if (running || slot || rejudge || manual) {
       this.active.add(t.id);
-      this.runDay(t, running, slot ? new Date(slot).toISOString() : null)
+      (rejudge ? this.rejudgeDay(t, rejudge) : this.runDay(t, running, slot ? new Date(slot).toISOString() : null))
         .catch(e => {
           console.error(`[daily] "${t.name}" crashed:`, e);
           t.error = String(e.message || e);
@@ -88,7 +91,30 @@ class TournamentManager {
         .finally(() => this.active.delete(t.id));
       return;
     }
-    if (t.status === 'running' && (t.days || []).every(d => d.status === 'published')) this.finishDaily(t);
+    if (t.status === 'running' && (t.days || []).every(d => d.status === 'published') && !(t.rejudgeQueue || []).length) this.finishDaily(t);
+  }
+
+  // The first queued rejudge: its day's matches are deleted and it plays again from scratch with the
+  // same teams and bots, `live` (see daily.js). It leaves the queue only once the day is reset and
+  // saved, so a restart in between starts it over.
+  async rejudgeDay(t, item) {
+    const day = (t.days || []).find(d => d.number === item.day);
+    if (day) {
+      await db.deleteMatches(t.id, daily.dayMatches(t, day).map(m => m.name));
+      day.pairing = item.pairing;
+      day.status = 'running';
+      day.live = true;
+      day.publishAt = new Date().toISOString(); // published as soon as it is done
+      for (const k of ['rounds', 'pairs', 'byes', 'finishedAt', 'publishedAt']) delete day[k];
+    }
+    t.rejudgeQueue = (t.rejudgeQueue || []).filter(q => q !== item);
+    if (!t.rejudgeQueue.length) delete t.rejudgeQueue;
+    db.save();
+    if (!day) return;
+    console.log(`[daily] "${t.name}" day ${day.number}: rejudging (${day.pairing}, requested ${item.requestedAt})`);
+    this.broadcast(t);
+    this.io.to('users').emit('tournaments:changed');
+    await this.runDay(t, day);
   }
 
   // Plays one day: a new one at `slot` (null = the judge's "play now"), or `day` after a restart.

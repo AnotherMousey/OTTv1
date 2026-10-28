@@ -13,6 +13,7 @@
 // t.days = [{ number, slot, startedAt, publishAt, entries, status: 'running' | 'done' | 'published',
 //             finishedAt, publishedAt, pairing, live, and for Swiss: rounds, pairs: { r: [{ a, b, name }] },
 //             byes: [{ round, userId }] }]
+// t.rejudgeQueue = [{ day, pairing, requestedAt }]: days waiting to be rejudged, in request order.
 // A day the judge rejudges is `live` until it is published again: its results show as its matches
 // end (no hidden period, no frozen submissions), and it is published as soon as it is done.
 const db = require('./db');
@@ -216,7 +217,7 @@ function board(t, now = Date.now()) {
   return {
     id: t.id, name: t.name, mode: 'brawl', format: 'daily', status: t.status, error: t.error || null,
     deadline: t.deadline, startsAt: t.startsAt || null, dailyTime: t.dailyTime, nextAt: t.status === 'open' ? nextSlot(t, now) : null,
-    publishDelayMs: PUBLISH_DELAY_MS, pairing: pairingOf(t),
+    publishDelayMs: PUBLISH_DELAY_MS, pairing: pairingOf(t), rejudgeQueue: (t.rejudgeQueue || []).map(q => q.day),
     days: (t.days || []).map(d => {
       const fights = dayTotal(d);
       return { number: d.number, at: d.slot || d.startedAt, status: d.status, live: !!d.live, publishAt: d.publishAt, publishedAt: d.publishedAt || null, teams: d.entries.length,

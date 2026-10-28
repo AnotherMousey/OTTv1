@@ -375,50 +375,53 @@
       const r = rejudgeOpen;
       r.t = t;
       const days = t.daily.list || [];
-      const busy = days.some(d => d.status === 'running');
-      for (const n of r.picked) if (!days.some(d => d.number === n)) r.picked.delete(n);
+      const queue = t.daily.queue || []; // round numbers waiting to be rejudged, in order
+      const busy = days.some(d => d.status === 'running') || queue.length > 0; // a new request waits its turn
+      for (const n of r.picked) if (!days.some(d => d.number === n) || queue.includes(n)) r.picked.delete(n);
       const STATUS = { running: 'đang đấu', done: 'chờ công bố', published: 'đã công bố' };
+      const state = d => (queue.includes(d.number) ? `⏳ hàng chờ #${queue.indexOf(d.number) + 1}` : d.live && d.status !== 'published' ? 'đang chấm lại' : STATUS[d.status] || d.status);
       const panel = $('#rejudgePanel');
       panel.innerHTML = `<section class="box">
         <div class="row" style="justify-content:space-between"><h3 class="lines" style="margin:0">Chấm lại vòng đấu · ${esc(t.name)}</h3><button class="btn small" id="closeRejudge">đóng</button></div>
-        <p class="muted" style="font-size:17px;margin:4px 0 10px">Tick các vòng cần chấm lại. Kết quả của chúng bị xóa, rồi các bot (cùng đội, cùng bài nộp như lúc đầu) đấu lại lần lượt từ vòng nhỏ nhất. Không có thời gian chờ công bố: kết quả cập nhật trực tiếp sau từng trận.</p>
+        <p class="muted" style="font-size:17px;margin:4px 0 10px">Tick các vòng cần chấm lại. Mỗi yêu cầu vào cuối hàng chờ và được chấm theo thứ tự gửi (trong một yêu cầu: từ vòng nhỏ nhất). Đến lượt, kết quả cũ của vòng bị xóa và các bot (cùng đội, cùng bài nộp như lúc đầu) đấu lại; không có thời gian chờ công bố: kết quả cập nhật trực tiếp sau từng trận.</p>
+        ${queue.length ? `<p style="font-size:17px;margin:0 0 8px">⏳ Hàng chờ chấm lại: ${queue.map(n => `vòng ${n}`).join(' → ')}</p>` : ''}
         <div class="row" style="gap:8px;margin-bottom:8px">
-          <button class="btn small" id="rjAll" ${busy ? 'disabled' : ''}>chọn tất cả</button><button class="btn small" id="rjNone" ${busy ? 'disabled' : ''}>bỏ tất cả</button>
+          <button class="btn small" id="rjAll">chọn tất cả</button><button class="btn small" id="rjNone">bỏ tất cả</button>
           <b id="rjCount">${r.picked.size} vòng được chọn</b>
         </div>
-        <div class="member-grid">${days.map(d => `<label class="member ${r.picked.has(d.number) ? 'on' : ''}">
-            <input type="checkbox" data-day="${d.number}" ${r.picked.has(d.number) ? 'checked' : ''} ${busy ? 'disabled' : ''}>
-            <span><b>Vòng ${d.number}</b><small>${d.at ? esc(fmtDate(d.at)) + ' · ' : ''}${d.pairing === 'swiss' ? 'Thụy Sĩ' : d.pairing === 'rr' ? 'vòng tròn' : ''} · ${d.live && d.status !== 'published' ? 'đang chấm lại' : STATUS[d.status] || d.status}</small></span>
+        <div class="member-grid">${days.map(d => `<label class="member ${r.picked.has(d.number) ? 'on' : ''}" ${queue.includes(d.number) ? 'title="đã ở trong hàng chờ"' : ''}>
+            <input type="checkbox" data-day="${d.number}" ${r.picked.has(d.number) ? 'checked' : ''} ${queue.includes(d.number) ? 'disabled' : ''}>
+            <span><b>Vòng ${d.number}</b><small>${d.at ? esc(fmtDate(d.at)) + ' · ' : ''}${d.pairing === 'swiss' ? 'Thụy Sĩ' : d.pairing === 'rr' ? 'vòng tròn' : ''} · ${state(d)}</small></span>
           </label>`).join('')}</div>
         <div class="row" style="margin:12px 0 0;gap:14px">
           <span>Thể thức (cho các vòng này và các vòng sau):</span>
           <label class="row" style="gap:6px;margin:0;cursor:pointer"><input type="radio" name="rjPairing" value="rr" ${r.pairing === 'rr' ? 'checked' : ''}> vòng tròn</label>
           <label class="row" style="gap:6px;margin:0;cursor:pointer"><input type="radio" name="rjPairing" value="swiss" ${r.pairing === 'swiss' ? 'checked' : ''}> Thụy Sĩ</label>
         </div>
-        ${busy ? '<p class="muted" style="font-size:17px">Đang có một vòng đấu chưa xong: hãy chờ nó đấu xong rồi chấm lại.</p>' : ''}
-        <div class="row" style="margin-top:12px"><button class="btn red" id="rjGo" ${busy || !r.picked.size ? 'disabled' : ''}>🔁 Chấm lại</button></div>
+        <div class="row" style="margin-top:12px"><button class="btn red" id="rjGo" ${!r.picked.size ? 'disabled' : ''}>🔁 ${busy ? 'Thêm vào hàng chờ' : 'Chấm lại'}</button></div>
       </section>`;
       panel.classList.remove('hidden');
       const sync = () => {
         $('#rjCount').textContent = `${r.picked.size} vòng được chọn`;
-        $('#rjGo').disabled = busy || !r.picked.size;
+        $('#rjGo').disabled = !r.picked.size;
       };
       $$('[data-day]', panel).forEach(c => c.onchange = () => {
         c.checked ? r.picked.add(+c.dataset.day) : r.picked.delete(+c.dataset.day);
         c.closest('.member').classList.toggle('on', c.checked);
         sync();
       });
-      $('#rjAll').onclick = () => { days.forEach(d => r.picked.add(d.number)); showRejudge(t, true); };
+      $('#rjAll').onclick = () => { days.forEach(d => { if (!queue.includes(d.number)) r.picked.add(d.number); }); showRejudge(t, true); };
       $('#rjNone').onclick = () => { r.picked.clear(); showRejudge(t, true); };
       $$('input[name="rjPairing"]', panel).forEach(x => x.onchange = () => { r.pairing = x.value; });
       $('#closeRejudge').onclick = () => { rejudgeOpen = null; panel.classList.add('hidden'); };
       $('#rjGo').onclick = async () => {
         const days = [...r.picked].sort((a, b) => a - b);
         const which = days.length === 1 ? `vòng ${days[0]}` : `${days.length} vòng (${days.join(', ')})`;
-        if (!confirm(`Xóa toàn bộ kết quả ${which} và cho các bot đấu lại theo thể thức ${r.pairing === 'swiss' ? 'Thụy Sĩ' : 'vòng tròn'}?`)) return;
+        if (!confirm(`Chấm lại ${which} theo thể thức ${r.pairing === 'swiss' ? 'Thụy Sĩ' : 'vòng tròn'}? Đến lượt, kết quả cũ bị xóa và các bot đấu lại.${busy ? '\n\nĐang có vòng khác đấu hoặc chờ chấm lại: yêu cầu này vào cuối hàng chờ.' : ''}`)) return;
         try {
-          await api(`/api/admin/tournaments/${encodeURIComponent(t.id)}/rejudge`, { method: 'POST', body: { days, pairing: r.pairing } });
-          toast(`${which.charAt(0).toUpperCase()}${which.slice(1)} đang được đấu lại 🔁`);
+          const res = await api(`/api/admin/tournaments/${encodeURIComponent(t.id)}/rejudge`, { method: 'POST', body: { days, pairing: r.pairing } });
+          const queued = res.queued.length === 1 ? `Vòng ${res.queued[0]}` : `${res.queued.length} vòng (${res.queued.join(', ')})`;
+          toast(res.ahead ? `${queued} đã vào hàng chờ, sau ${res.ahead} vòng khác ⏳` : `${queued} đang được đấu lại 🔁`);
           rejudgeOpen = null;
           panel.classList.add('hidden');
           loadTournaments();
