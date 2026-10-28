@@ -11,6 +11,9 @@
 # meter stops it: it kills the process, answers "CPU <ms>" + "MOVE X" for it (the grader skips the
 # turn) and starts the bot afresh for its next turn (whatever it kept in memory is gone). Lines the
 # bot prints starting with "CPU " are dropped, so a bot can't report its own time.
+# The bot says "READY" once started. The first one is passed on (the grader waits for it before its
+# first request; that request's budget still counts the CPU used to start). A restarted bot's start
+# is not charged to the move it is restarted for, and it is not stopped before it is ready.
 import collections
 import os
 import subprocess
@@ -86,7 +89,8 @@ class Meter:
 
     def start(self):
         self.child = subprocess.Popen(self.command, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-        self.last = 0     # CPU reading at this bot's previous answer
+        self.last = 0     # CPU reading at this bot's previous answer (or when it became ready)
+        self.ready = False
         self.served = 0   # requests sent to this bot
         self.started += 1
         threading.Thread(target=self.answers, args=(self.child,), daemon=True).start()
@@ -100,6 +104,16 @@ class Meter:
     def answers(self, child):
         for line in child.stdout:
             if line.startswith(b"CPU "):
+                continue
+            if line.strip() == b"READY":
+                with self.lock:
+                    if child is not self.child or self.ready:
+                        continue
+                    self.ready = True
+                    if self.started == 1:
+                        self.say(line)
+                    else:  # restarted: its start-up is not part of any move
+                        self.last = cpu_ms(child.pid) or self.last
                 continue
             with self.lock:
                 if child is not self.child:
@@ -123,7 +137,7 @@ class Meter:
         while True:
             time.sleep(0.005)
             with self.lock:
-                if not self.asked:
+                if not self.asked or not self.ready:
                     continue
                 now = cpu_ms(self.child.pid)
                 if now is None:
@@ -153,9 +167,10 @@ class Meter:
     def request(self, line):
         with self.lock:
             if line.startswith((b"STATE ", b"TURN ")):
-                budget = self.first if self.started == 1 and self.served == 0 else self.limit
+                first = self.started == 1 and self.served == 0
                 self.served += 1
-                self.asked.append((cpu_ms(self.child.pid) or self.last, budget))
+                # the first move's budget includes starting up: count from the bot's very start
+                self.asked.append((0 if first else cpu_ms(self.child.pid) or self.last, self.first if first else self.limit))
             try:
                 self.child.stdin.write(line)
                 self.child.stdin.flush()

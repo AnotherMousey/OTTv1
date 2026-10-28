@@ -192,6 +192,8 @@ def main():
     real_stdout = sys.stdout
     sys.stdout = sys.stderr  # anything the bot prints goes to stderr
     play = load_restricted(args[1], board) if args[0] == "--restricted" else load_trusted(args[0])
+    real_stdout.write("READY\n")  # loaded: the grader may send the first request
+    real_stdout.flush()
 
     mine, theirs = [], []
     while True:

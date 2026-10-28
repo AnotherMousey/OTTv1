@@ -10,6 +10,7 @@ char play(const std::vector<char>& myMoves, const std::vector<char>& opponentMov
 int main() {
     std::vector<char> mine, theirs;
     std::string line;
+    std::cout << "READY" << std::endl;  // started: the grader may send the first request
     while (std::getline(std::cin, line)) {
         while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
         if (line == "END") break;

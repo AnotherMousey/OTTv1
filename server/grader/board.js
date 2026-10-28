@@ -1,5 +1,6 @@
 // Board game matches ("Cờ OTT", rules in public/js/board-rules.js).
-// Every game starts each bot as a fresh process. The bot is asked for a move on its own turns:
+// Every game starts each bot as a fresh process, and waits until it says READY (see bot.js) before
+// its clock starts. The bot is asked for a move on its own turns:
 //   grader -> bot : "STATE <currentTurn> <maxTurn> <n> <pid type x y> * n <m> <pid type x y> * m"
 //                   (its n pieces, then the enemy's m, from the bot's own side: see R.pieces)
 //   bot -> grader : "MOVE <pid> <direction 1-8>"

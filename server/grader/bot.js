@@ -2,8 +2,14 @@
 //   grader -> bot : "TURN <myPrevMove> <opponentPrevMove>"   ('-' on turn 1)
 //   bot -> grader : "MOVE <R|P|S>"   (any other output line is ignored)
 // Board game (see board.js): "STATE <turn> <maxTurn> <pieces>" in, "MOVE <pid> <direction>" out.
+// Before anything else the bot prints "READY" (the harness does it, once the bot's code is loaded).
+// Its first request is only sent after that, so the time it takes to start (a container, a JVM, a
+// busy server starting many bots at once) never counts as time spent on a move.
 const { spawn } = require('child_process');
 const { command, removeContainer, SANDBOX, IS_WIN } = require('./languages');
+
+// wall time a bot may take to start, before its first request is sent
+const START_TIMEOUT_MS = +process.env.START_TIMEOUT_MS || 60000;
 
 // Without the sandbox a bot can be more than one process (the CPU meter and the bot under it, or
 // a launcher like Windows' java.exe): stop them all. In the sandbox, removing the container does.
@@ -29,6 +35,27 @@ class Bot {
     this.stderr = '';
     this.late = 0; // answers still owed to requests that timed out (thrown away when they come)
     this.cpu = null; // CPU ms the last answer took, as the meter reported it (board bots)
+    this.ready = false;
+    this.readyWaiters = [];
+  }
+
+  _setReady() {
+    this.ready = true;
+    for (const w of this.readyWaiters.splice(0)) w();
+  }
+
+  // Resolves once the bot has said READY (true) or is dead / took over START_TIMEOUT_MS (false).
+  waitReady() {
+    if (this.ready || this.dead || !this.proc) return Promise.resolve(this.ready && !this.dead);
+    return new Promise(resolve => {
+      const done = () => { clearTimeout(timer); resolve(this.ready && !this.dead); };
+      const timer = setTimeout(() => {
+        this.readyWaiters = this.readyWaiters.filter(w => w !== done);
+        this.fail(`không khởi động xong trong ${START_TIMEOUT_MS / 1000} giây`);
+        resolve(false);
+      }, START_TIMEOUT_MS);
+      this.readyWaiters.push(done);
+    });
   }
 
   start() {
@@ -56,7 +83,8 @@ class Bot {
     while ((i = this.stdoutBuf.indexOf('\n')) >= 0) {
       const line = this.stdoutBuf.slice(0, i).trim();
       this.stdoutBuf = this.stdoutBuf.slice(i + 1);
-      if (line.startsWith('CPU ')) this.cpu = +line.slice(4);
+      if (line === 'READY') { if (!this.ready) this._setReady(); }
+      else if (line.startsWith('CPU ')) this.cpu = +line.slice(4);
       else if (line.startsWith('MOVE ') && this.late > 0) this.late--;
       else if (line.startsWith('MOVE ') && this.waiter) {
         const w = this.waiter;
@@ -76,6 +104,7 @@ class Bot {
       this.waiter = null;
       w(null);
     }
+    for (const w of this.readyWaiters.splice(0)) w();
   }
 
   fail(reason) {
@@ -92,9 +121,10 @@ class Bot {
 
   // Sends one request line; resolves with the text after "MOVE ", or null (then this.dead tells
   // a dead bot from a slow one). Too slow: the bot is killed, or with { skipLate } it lives on and
-  // its late answer is thrown away.
-  ask(line, timeoutMs, { skipLate = false } = {}) {
-    if (this.dead || !this.proc) return Promise.resolve(null);
+  // its late answer is thrown away. The clock starts once the bot is ready (see waitReady).
+  async ask(line, timeoutMs, { skipLate = false } = {}) {
+    if (!this.ready && !(await this.waitReady())) return null;
+    if (this.dead || !this.proc) return null;
     this.cpu = null;
     return new Promise(resolve => {
       const done = m => { clearTimeout(timer); resolve(m); };

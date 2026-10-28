@@ -40,6 +40,8 @@ public class Main {
         System.setOut(System.err); // anything the bot prints goes to stderr
         BufferedReader in = new BufferedReader(new InputStreamReader(System.in));
         Bot bot = new Bot();
+        out.print("READY\n"); // started: the grader may send the first request
+        out.flush();
         String line;
         while ((line = in.readLine()) != null) {
             line = line.trim();

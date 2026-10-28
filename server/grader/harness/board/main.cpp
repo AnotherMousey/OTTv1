@@ -22,6 +22,7 @@ static bool readPieces(std::istringstream& in, std::vector<Piece>& out) {
 
 int main() {
     std::string line;
+    std::cout << "READY" << std::endl;  // started: the grader may send the first request
     while (std::getline(std::cin, line)) {
         while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
         if (line == "END") break;

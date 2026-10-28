@@ -16,7 +16,7 @@ const BOARD_HARNESS = path.join(HARNESS, 'board');
 // compiles + submission checks at the same time (default: one per CPU)
 const MAX_PARALLEL_BUILDS = +process.env.PARALLEL_BUILDS || os.cpus().length;
 // Written into .ok; a build made under older rules is rebuilt (and so re-checked) before it plays.
-const BUILD_VERSION = 'v3-board-state-meter';
+const BUILD_VERSION = 'v4-ready-handshake';
 
 // Runs { cmd, args, cwd, container } (see languages.boxed) to the end; resolves { code, out }.
 function exec({ cmd, args, cwd, container }, timeoutMs = 90000) {
