@@ -113,10 +113,20 @@ Brawl, campaign, invite-only and hidden tournaments work the same way for both.
   each of the 5 games in a series is a single game, with the sides taking turns at moving first.
   Rules live in [board-rules.js](public/js/board-rules.js), shared by the grader and the replay page.
 
+  **Maps:** on a Cờ OTT tournament's page (**⚙️ quản lý** → **🗺️ bản đồ**) the judge can draw maps: where
+  each side's pieces start (any number per side, anywhere) and **walls**, squares no piece can enter
+  (black on the board). The judge marks one map as active (or the standard start), and can create, edit,
+  switch or delete maps at any time. A match plays both games on the map active when it starts. A daily
+  round keeps the map it started with, and a rejudged round uses the map active when it replays. In a
+  brawl, switching maps replays every team's practice on the new map. The goals stay the two corners.
+  Players see the active map in the rules on the submit page, and each replay shows the map it was
+  played on.
+
   Bots always see the board from their own side (black's view is rotated 180°): you start
   bottom-left at `(1, 1)`, your goal is the top-right corner `(9, 9)`, and the enemy's goal is `(1, 1)`.
-  Every turn the bot gets `gameState`: `ally` (its pieces), `opponent` (the enemy's), `maxTurn`
-  (1000) and `currentTurn` (moves played so far, both sides). Each piece has `pid` (1–9, kept for
+  Every turn the bot gets `gameState`: `ally` (its pieces), `opponent` (the enemy's), `walls` (the
+  map's walls, each with `x` and `y`; usually none), `maxTurn` (1000) and `currentTurn` (moves played
+  so far, both sides). Each piece has `pid` (1, 2, …, numbered in reading order from its own side, kept for
   the whole game), `Type` (`'R'`, `'P'` or `'S'`), `x` and `y` (1–9). The bot returns
   `(pid, direction)`, direction 1–8 clockwise from up-left: 1 up-left, 2 up, 3 up-right, 4 right,
   5 down-right, 6 down, 7 down-left, 8 left (up = toward its goal row).
@@ -124,12 +134,12 @@ Brawl, campaign, invite-only and hidden tournaments work the same way for both.
   | Language | Signature |
   |---|---|
   | Python | `def play(gameState) -> (pid, direction)` |
-  | C++17 | `std::pair<int, int> play(const State& gameState)` (`struct Piece { int pid; char Type; int x, y; }` and `struct State { std::vector<Piece> ally, opponent; int maxTurn, currentTurn; }` are provided) |
-  | Java | `public int[] play(State gameState)` returning `{pid, direction}` (`Piece` and `State` with `List<Piece>` fields are provided) |
+  | C++17 | `std::pair<int, int> play(const State& gameState)` (`struct Piece { int pid; char Type; int x, y; }`, `struct Cell { int x, y; }` and `struct State { std::vector<Piece> ally, opponent; std::vector<Cell> walls; int maxTurn, currentTurn; }` are provided) |
+  | Java | `public int[] play(State gameState)` returning `{pid, direction}` (`Piece`, `Cell` and `State` with `List<Piece>` / `List<Cell>` fields are provided) |
 
   The same player-code restrictions apply. Each game starts the bot as a fresh process. Protocol:
-  `STATE <currentTurn> <maxTurn> <n> <pid type x y>… <m> <pid type x y>…` in (ally pieces, then
-  opponent pieces), `MOVE <pid> <direction>` out
+  `STATE <currentTurn> <maxTurn> <n> <pid type x y>… <m> <pid type x y>… <k> <x y>…` in (ally pieces,
+  opponent pieces, then walls), `MOVE <pid> <direction>` out
   ([harness/board/](server/grader/harness/board/), plus `--board` in [runner.py](server/grader/harness/runner.py)).
   The 5 built-in sparring bots, easiest first, are Thẳng Tiến (races for the corner),
   Thận Trọng (one move ahead, never hangs a piece), Săn Mồi (hunter), Tính Toán (2-ply minimax) and
@@ -184,9 +194,11 @@ When creating a tournament the judge also picks who may enter it:
 
 ## How a tournament works (brawl)
 
-1. The judge creates a tournament with an end date (the deadline) and a **daily match time**, e.g. 21:00,
-   in the judge's own time zone. Creating it is refused if that time never falls between the start and
-   the end. The main page shows the next round and the end date.
+1. The judge creates a tournament with an end date (the deadline) and a **schedule**: either a **daily
+   match time**, e.g. 21:00 in the judge's own time zone, or a **cycle**, e.g. every 12 hours, counted
+   from the start time (from creation if no start is set): rounds at start + 12 h, start + 24 h, ...
+   (15 minutes to 30 days). Creating it is refused if no round falls between the start and the end.
+   The main page shows the next round and the end date.
 2. Players press **Submit code**, pick a language and paste or upload their bot. Each submission
    is compiled and given a 5-turn test run. The newest ✅ submission is the one that plays.
    Every ✅ bot also plays a practice game (100 turns) against each of 10 built-in sparring bots
@@ -195,7 +207,7 @@ When creating a tournament the judge also picks who may enter it:
    Thức Thời (decay/window), Thiên Cơ (Markov chain), Mưu Lược (n-gram) and Minh Triết (Bayesian inference).
    The submit page shows a practice board with every team's total (max 3000). Only you (and the judge)
    can open your per-bot scores. Practice games don't affect the tournament.
-3. **A round** starts every day at the match time (from the start until the end date), and whenever
+3. **A round** starts at every scheduled time (from the start until the end date), and whenever
    the judge presses **⚡ đấu ngay**. Each team's newest ✅ bot submitted before that moment plays. The
    judge picks the pairing (and can change it for later rounds): **round robin** (every other team
    once) or **Swiss**: ⌈log₂(teams)⌉ stages (đợt) per round, each stage pairing teams with similar
@@ -216,8 +228,9 @@ When creating a tournament the judge also picks who may enter it:
    round's matches. Before that only the judge sees the matches (on the live page, marked
    "chưa công bố"). The standings rank by points, then match wins, then the "điểm phụ" (total score
    in all matches). The live page counts down to the next round or to the next publication.
-5. On the Judge desk the judge can change the daily time (it applies from the next occurrence, never
-   retroactively to a time already passed today), add an extra round with **⚡ đấu ngay**, or end the
+5. On the Judge desk the judge can change the schedule, the daily time or the cycle, or switch between
+   the two (it applies from the next scheduled time, never retroactively to one already passed; a cycle
+   stays counted from the start time, so moving the start moves the cycle too), add an extra round with **⚡ đấu ngay**, or end the
    tournament early (**kết thúc giải ngay**). After the end date, submissions close, the last round still
    publishes, and the top team becomes champion. Players can submit at most once every 90 seconds.
 6. If the server is down at a match time, that round is played as soon as it is back, and a round cut

@@ -53,7 +53,7 @@ const HEADS = {
     '# The process lives for one game (100 turns), so module-level state is per game.',
   board: '# Same interface as a player bot: play(gameState) -> (pid, direction).\n' +
     '# gameState.ally / .opponent: pieces with .pid .Type .x .y; x, y = 1-9, y = 1 is my home row, I win on the\n' +
-    '# top-right corner. Directions 1-8: up-left, up, up-right, right, down-right, down, down-left, left.\n' +
+    '# top-right corner. gameState.walls: squares (.x .y) of the map no piece can enter. Directions 1-8: up-left, up, up-right, right, down-right, down, down-left, left.\n' +
     '# The process lives for one game, so module-level state is per game.',
 };
 

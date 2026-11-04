@@ -72,6 +72,17 @@ function fmtDate(iso) {
   return new Date(iso).toLocaleString('vi-VN', { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+// A cycle in words: 12 -> "12 giờ", 1.5 -> "1 giờ 30 phút", 0.5 -> "30 phút".
+function fmtHours(hours) {
+  const min = Math.round(hours * 60), h = Math.floor(min / 60), m = min % 60;
+  return [h ? `${h} giờ` : '', m ? `${m} phút` : ''].filter(Boolean).join(' ');
+}
+// A daily league's schedule ({ time, cycleHours }) in words: "mỗi ngày lúc 21:00" or
+// "mỗi 12 giờ kể từ lúc bắt đầu".
+function scheduleText(d) {
+  return d.cycleHours ? `mỗi ${fmtHours(d.cycleHours)} kể từ lúc bắt đầu` : `mỗi ngày lúc ${d.time}`;
+}
+
 function renderTopbar() {
   const bar = $('#topbar');
   if (!bar || !ME) return;

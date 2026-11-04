@@ -6,6 +6,7 @@ const os = require('os');
 const db = require('../db');
 const { HOUSE_BOTS, houseBots, defaultRunnable } = require('./house');
 const { runMatch } = require('./match');
+const { layoutOf } = require('./board');
 
 // practice matches at the same time, across all submissions (default: one per CPU)
 const PARALLEL = +process.env.PRACTICE_PARALLEL || os.cpus().length;
@@ -106,10 +107,14 @@ async function saveReplay(sub, house, r) {
   }
 }
 
-// The match rules practice was played under, per game. Changing it replays the practice of every
-// team's newest bot in open brawls at the next start (resumePractice), so all are scored alike.
+// The match rules practice was played under, per game, with the board game's map when it isn't the
+// standard start. Changing it replays the practice of every team's newest bot in open brawls
+// (at the next start, or right away when the judge switches maps), so all are scored alike.
 const RULES = { board: 'cpu-180s-per-game' };
-const rulesOf = t => RULES[gameOf(t)] || null;
+function rulesOf(t) {
+  const rules = RULES[gameOf(t)] || null;
+  return rules && layoutOf(t) ? `${rules} map:${layoutOf(t)}` : rules;
+}
 
 const running = new Map();
 // topUp (brawl, after the judge added or removed a sparring bot): if this submission's practice
@@ -123,7 +128,7 @@ function evaluate(sub, ensureBuilt, { topUp = false } = {}) {
   const all = botsFor(tournamentOf(sub));
   const opponents = isCampaign(sub) && sub.target ? all.filter(h => h.id === sub.target) : all;
   const play = async (house, opts) => {
-    const r = await runMatch(sub, house.custom, ensureBuilt, opts);
+    const r = await runMatch(sub, house.custom, ensureBuilt, { ...opts, layout: layoutOf(tournamentOf(sub)) });
     return { ...r, issue: r.issues.A };
   };
   const old = sub.practice;

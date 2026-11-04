@@ -153,7 +153,7 @@
       prog.classList.toggle('hidden', !(pending && pending.status === 'running'));
       if (pending && pending.status === 'running') prog.firstElementChild.style.width = (pending.totalMatches ? (100 * pending.played) / pending.totalMatches : 0) + '%';
       const playing = pending && pending.status === 'running' ? ` · vòng ${pending.number}: đã đấu ${pending.played}/${pending.totalMatches} trận` : '';
-      sub.innerHTML = `Mỗi ngày một vòng lúc ${esc(b.dailyTime)} · ${b.pairing === 'swiss' ? 'thể thức Thụy Sĩ' : 'vòng tròn'} · thắng 3 · hòa 1 · thua 0 · đã qua ${published.filter(d => d.status === 'published').length} vòng${playing} · ${b.status === 'finished' ? 'kết thúc' : 'kết thúc lúc'} ${esc(fmtDate(b.deadline))}`
+      sub.innerHTML = `Một vòng ${esc(scheduleText({ time: b.dailyTime, cycleHours: b.cycleHours }))} · ${b.pairing === 'swiss' ? 'thể thức Thụy Sĩ' : 'vòng tròn'} · thắng 3 · hòa 1 · thua 0 · đã qua ${published.filter(d => d.status === 'published').length} vòng${playing} · ${b.status === 'finished' ? 'kết thúc' : 'kết thúc lúc'} ${esc(fmtDate(b.deadline))}`
         + (b.status === 'open' && ME.role !== 'judge' ? ` · <a href="/tournament/${encodeURIComponent(tid)}/submit">nộp bot</a>` : '')
         + '<br>↕️ Bấm vào tiêu đề cột (điểm đánh giá, từng vòng, tổng điểm) để sắp xếp bảng theo cột đó; bấm lần nữa để đảo chiều.'
         + (game === 'board' ? '<br>Thời gian: mỗi bot được dùng tối đa <b>1 giây CPU mỗi nước</b> và <b>180 giây CPU mỗi ván</b> (dùng hết thì thua ván đó).' : '');

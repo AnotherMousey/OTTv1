@@ -8,14 +8,19 @@
 #include <vector>
 
 struct Piece {
-    int pid;    // 1..9, the same piece keeps its number for the whole game
+    int pid;    // 1, 2, ..., the same piece keeps its number for the whole game
     char Type;  // 'R' (búa), 'P' (bao) or 'S' (kéo)
+    int x, y;
+};
+
+struct Cell {
     int x, y;
 };
 
 struct State {
     std::vector<Piece> ally;      // your pieces
     std::vector<Piece> opponent;  // the enemy's pieces
+    std::vector<Cell> walls;      // squares no piece can enter (the tournament's map; often none)
     int maxTurn;                  // the game is a draw after this many moves (both sides)
     int currentTurn;              // moves already played in this game (both sides)
 };

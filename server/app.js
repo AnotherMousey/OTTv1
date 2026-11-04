@@ -13,6 +13,7 @@ const { normalizeAvatar } = require('../public/js/avatar');
 const { TournamentManager, matchSummary } = require('./tournament');
 const { TURNS } = require('./grader/match');
 const boardGame = require('./grader/board');
+const BoardRules = require('../public/js/board-rules');
 const SUBMIT_COOLDOWN_MS = +process.env.SUBMIT_COOLDOWN_MS || 90000;
 const campaign = require('./campaign');
 
@@ -110,7 +111,7 @@ function publicTournament(t, user) {
     description: t.description || '',
     deadline: t.deadline,
     startsAt: t.startsAt || null,
-    ...(daily.isDaily(t) ? { daily: { time: t.dailyTime, pairing: daily.pairingOf(t), nextAt: t.status === 'open' ? daily.nextSlot(t, Date.now()) : null, frozen: t.status === 'open' ? daily.frozen(t) : null, days: (t.days || []).filter(d => d.status === 'published').length, played: (t.days || []).length, list: (t.days || []).map(d => ({ number: d.number, at: d.startedAt, pairing: d.pairing || null, status: d.status, live: !!d.live })), queue: (t.rejudgeQueue || []).map(q => q.day), publishDelayMs: daily.PUBLISH_DELAY_MS } } : {}),
+    ...(daily.isDaily(t) ? { daily: { time: t.dailyTime || null, cycleHours: daily.cycleHoursOf(t), pairing: daily.pairingOf(t), nextAt: t.status === 'open' ? daily.nextSlot(t, Date.now()) : null, frozen: t.status === 'open' ? daily.frozen(t) : null, days: (t.days || []).filter(d => d.status === 'published').length, played: (t.days || []).length, list: (t.days || []).map(d => ({ number: d.number, at: d.startedAt, pairing: d.pairing || null, status: d.status, live: !!d.live })), queue: (t.rejudgeQueue || []).map(q => q.day), publishDelayMs: daily.PUBLISH_DELAY_MS } } : {}),
     status: t.status,
     createdAt: t.createdAt || t.startsAt || t.deadline,
     teamsReady: t.entries ? t.entries.length : ready.size,
@@ -118,6 +119,7 @@ function publicTournament(t, user) {
     members: isInviteOnly(t) && isJudge(user) ? (t.members || []).filter(id => findUser(id)).length : undefined,
     hidden: isJudge(user) ? !!t.hidden : undefined,
     champion: champion ? champion.teamName : null,
+    ...(gameOf(t) === 'board' ? { map: activeMap(t) } : {}), // the board game: what games start from
     announcements: publicAnnouncements(t),
     mySubmission: mine[0] ? publicSubmission(mine[0]) : null,
     myActive: (mine.find(s => s.status === 'ok') || {}).id || null,
@@ -501,8 +503,9 @@ function parseMaxSubs(v) {
   if (!Number.isInteger(n) || n < 1 || n > campaign.MAX_SUBS_LIMIT) throw new Error(`Số lượt nộp mỗi bot phải là số nguyên từ 1 đến ${campaign.MAX_SUBS_LIMIT} (bỏ trống = không giới hạn)`);
   return n;
 }
+const CYCLE_ERROR = `Chu kỳ phải từ ${daily.MIN_CYCLE_HOURS * 60} phút đến ${daily.MAX_CYCLE_HOURS / 24} ngày`;
 app.post('/api/admin/tournaments', apiAuth, apiJudge, (req, res) => {
-  const { name, deadline, startsAt, description, mode = 'brawl', game = 'rps', access = 'open', hidden = false, dailyTime, tzOffset = 0, pairing = 'rr' } = req.body || {};
+  const { name, deadline, startsAt, description, mode = 'brawl', game = 'rps', access = 'open', hidden = false, dailyTime, cycleHours, tzOffset = 0, pairing = 'rr' } = req.body || {};
   if (!String(name || '').trim()) return fail(res, 400, 'Hãy đặt tên cho giải đấu');
   if (!['rps', 'board'].includes(game)) return fail(res, 400, 'Trò chơi phải là rps (oẳn tù tì) hoặc board (cờ OTT)');
   if (!['brawl', 'campaign'].includes(mode)) return fail(res, 400, 'Chế độ phải là brawl (hỗn chiến) hoặc campaign (chiến dịch)');
@@ -512,15 +515,19 @@ app.post('/api/admin/tournaments', apiAuth, apiJudge, (req, res) => {
     dl = parseDeadline(deadline);
     if (startsAt) start = parseStart(startsAt, dl);
   } catch (e) { return fail(res, 400, e.message); }
-  // brawl = daily league: needs the time of day the matches start
+  // brawl = daily league: needs its schedule, the time of day the rounds start or a cycle (cycleHours)
   let schedule = {};
   if (mode === 'brawl') {
-    if (!daily.validTime(dailyTime)) return fail(res, 400, 'Hãy chọn giờ thi đấu hằng ngày (HH:MM)');
+    const cycle = cycleHours !== undefined && cycleHours !== null && cycleHours !== '';
+    if (cycle && !daily.validCycle(cycleHours)) return fail(res, 400, CYCLE_ERROR);
+    if (!cycle && !daily.validTime(dailyTime)) return fail(res, 400, 'Hãy chọn giờ thi đấu hằng ngày (HH:MM)');
     if (!Number.isInteger(tzOffset) || Math.abs(tzOffset) > 14 * 60) return fail(res, 400, 'Múi giờ không hợp lệ');
     const now = new Date().toISOString();
     if (!['rr', 'swiss'].includes(pairing)) return fail(res, 400, 'Thể thức phải là vòng tròn (rr) hoặc Thụy Sĩ (swiss)');
-    schedule = { format: 'daily', pairing, dailyTime, tzOffset, dailySince: now, days: [] };
-    if (!daily.nextSlot({ ...schedule, startsAt: start, createdAt: now, deadline: dl }, Date.now())) return fail(res, 400, `Không có vòng đấu nào: giờ ${dailyTime} không rơi vào khoảng từ lúc bắt đầu đến hạn chót`);
+    schedule = { format: 'daily', pairing, ...(cycle ? { cycleMinutes: Math.round(cycleHours * 60) } : { dailyTime }), tzOffset, dailySince: now, days: [] };
+    if (!daily.nextSlot({ ...schedule, startsAt: start, createdAt: now, deadline: dl }, Date.now())) {
+      return fail(res, 400, cycle ? 'Không có vòng đấu nào: từ lúc bắt đầu đến hạn chót chưa đủ một chu kỳ' : `Không có vòng đấu nào: giờ ${dailyTime} không rơi vào khoảng từ lúc bắt đầu đến hạn chót`);
+    }
   }
   const t = { id: db.id(), name: lineText(name, 80), mode, game, ...schedule, access, ...(access === 'invite' ? { members: [] } : {}), ...(start ? { startsAt: start } : {}), ...(hidden === true ? { hidden: true } : {}), description: lineText(description, 500), deadline: dl, status: 'open', createdAt: new Date().toISOString() };
   db.data.tournaments.push(t);
@@ -531,13 +538,18 @@ app.post('/api/admin/tournaments', apiAuth, apiJudge, (req, res) => {
 app.patch('/api/admin/tournaments/:id', apiAuth, apiJudge, (req, res) => {
   const t = findTournament(req.params.id);
   if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
-  const { name, deadline, startsAt, description, access, hidden, dailyTime, tzOffset, pairing } = req.body || {};
+  const { name, deadline, startsAt, description, access, hidden, dailyTime, cycleHours, tzOffset, pairing } = req.body || {};
   // hiding / showing, the name and the description can change at any time; everything else only before the tournament starts
   const anyTime = Object.keys(req.body || {}).every(k => ['hidden', 'name', 'description'].includes(k));
   if (t.status !== 'open' && !anyTime) return fail(res, 400, 'Chỉ sửa được giải đấu chưa bắt đầu');
   if (name !== undefined && !String(name).trim()) return fail(res, 400, 'Hãy đặt tên cho giải đấu');
   if (hidden !== undefined && typeof hidden !== 'boolean') return fail(res, 400, 'hidden phải là true hoặc false');
   if (access !== undefined && !['open', 'invite'].includes(access)) return fail(res, 400, 'Quyền tham gia phải là open hoặc invite');
+  if (cycleHours !== undefined) {
+    if (!daily.isDaily(t)) return fail(res, 400, 'Chỉ giải hỗn chiến mới có lịch thi đấu');
+    if (dailyTime !== undefined) return fail(res, 400, 'Chọn một trong hai: giờ thi đấu hằng ngày hoặc chu kỳ');
+    if (!daily.validCycle(cycleHours)) return fail(res, 400, CYCLE_ERROR);
+  }
   if (pairing !== undefined) {
     if (!daily.isDaily(t) || !['rr', 'swiss'].includes(pairing)) return fail(res, 400, 'Thể thức phải là vòng tròn (rr) hoặc Thụy Sĩ (swiss)');
     t.pairing = pairing; // from the next day on
@@ -546,8 +558,13 @@ app.patch('/api/admin/tournaments/:id', apiAuth, apiJudge, (req, res) => {
     if (!daily.isDaily(t)) return fail(res, 400, 'Chỉ giải hỗn chiến mới có giờ thi đấu hằng ngày');
     if (!daily.validTime(dailyTime)) return fail(res, 400, 'Giờ thi đấu hằng ngày không hợp lệ (HH:MM)');
     t.dailyTime = dailyTime;
+    delete t.cycleMinutes; // back to (or still) once a day
     if (Number.isInteger(tzOffset) && Math.abs(tzOffset) <= 14 * 60) t.tzOffset = tzOffset;
     t.dailySince = new Date().toISOString(); // a time already passed today waits for tomorrow
+  }
+  if (cycleHours !== undefined) {
+    t.cycleMinutes = Math.round(cycleHours * 60); // still counted from the start
+    t.dailySince = new Date().toISOString(); // only rounds from now on: none fires retroactively
   }
   try {
     const dl = deadline !== undefined ? parseDeadline(deadline) : t.deadline;
@@ -894,6 +911,89 @@ app.put('/api/admin/tournaments/:id/limits/:botId', apiAuth, apiJudge, (req, res
   db.save();
   botChanged(t);
   res.json({ maxSubs: n });
+});
+// Board game maps, per tournament: t.maps = [{ id, name, layout, createdAt, updatedAt }] (layout: see
+// board-rules.js) and t.activeMap, the id of the one games start from (none: the standard start).
+// The judge can change them at any time; a daily round keeps the map it started with (see
+// tournament.js), and a brawl's practice is replayed on the new one.
+const activeMap = t => {
+  const m = t.activeMap && (t.maps || []).find(x => x.id === t.activeMap);
+  return m ? { id: m.id, name: m.name, layout: m.layout } : null;
+};
+const publicMap = m => ({ id: m.id, name: m.name, layout: m.layout, createdAt: m.createdAt, updatedAt: m.updatedAt || null });
+function boardTournament(req, res) {
+  const t = findTournament(req.params.id);
+  if (!t) { fail(res, 404, 'Không tìm thấy giải đấu'); return null; }
+  if (gameOf(t) !== 'board') { fail(res, 400, 'Chỉ giải cờ OTT mới có bản đồ'); return null; }
+  return t;
+}
+function checkMap(t, name, layout, except = null) {
+  if (!name) return 'Hãy đặt tên cho bản đồ';
+  if ((t.maps || []).some(m => m !== except && m.name.toLowerCase() === name.toLowerCase())) return 'Đã có bản đồ tên này';
+  const why = BoardRules.layoutProblem(layout);
+  return why ? `Bản đồ không hợp lệ: ${why}` : null;
+}
+// The map games start from changed: brawl practice is replayed on it, pages showing it refresh.
+function mapChanged(t) {
+  db.save();
+  grader.replayStalePractice(t);
+  io.to('users').emit('tournaments:changed');
+  manager.broadcast(t);
+}
+app.get('/api/admin/tournaments/:id/maps', apiAuth, apiJudge, (req, res) => {
+  const t = boardTournament(req, res);
+  if (!t) return;
+  res.json({ maps: (t.maps || []).map(publicMap), activeMap: (activeMap(t) || {}).id || null, defaultLayout: BoardRules.DEFAULT_LAYOUT });
+});
+app.post('/api/admin/tournaments/:id/maps', apiAuth, apiJudge, (req, res) => {
+  const t = boardTournament(req, res);
+  if (!t) return;
+  const name = lineText((req.body || {}).name, 40);
+  const { layout } = req.body || {};
+  const bad = checkMap(t, name, layout);
+  if (bad) return fail(res, 400, bad);
+  const map = { id: 'map-' + db.id(), name, layout, createdAt: new Date().toISOString() };
+  (t.maps = t.maps || []).push(map);
+  db.save();
+  res.json({ map: publicMap(map) });
+});
+// Body: { name?, layout? }
+app.put('/api/admin/tournaments/:id/maps/:mapId', apiAuth, apiJudge, (req, res) => {
+  const t = boardTournament(req, res);
+  if (!t) return;
+  const map = (t.maps || []).find(m => m.id === req.params.mapId);
+  if (!map) return fail(res, 404, 'Không tìm thấy bản đồ');
+  const name = lineText((req.body || {}).name ?? map.name, 40);
+  const layout = (req.body || {}).layout ?? map.layout;
+  const bad = checkMap(t, name, layout, map);
+  if (bad) return fail(res, 400, bad);
+  const moved = layout !== map.layout && t.activeMap === map.id;
+  Object.assign(map, { name, layout, updatedAt: new Date().toISOString() });
+  if (moved) mapChanged(t);
+  else { db.save(); io.to('users').emit('tournaments:changed'); }
+  res.json({ map: publicMap(map) });
+});
+app.delete('/api/admin/tournaments/:id/maps/:mapId', apiAuth, apiJudge, (req, res) => {
+  const t = boardTournament(req, res);
+  if (!t) return;
+  const map = (t.maps || []).find(m => m.id === req.params.mapId);
+  if (!map) return fail(res, 404, 'Không tìm thấy bản đồ');
+  t.maps = t.maps.filter(m => m !== map);
+  if (!t.maps.length) delete t.maps;
+  if (t.activeMap === map.id) { delete t.activeMap; mapChanged(t); } // back to the standard start
+  else db.save();
+  res.json({ ok: true });
+});
+// Body: { mapId } (null = the standard start)
+app.put('/api/admin/tournaments/:id/active-map', apiAuth, apiJudge, (req, res) => {
+  const t = boardTournament(req, res);
+  if (!t) return;
+  const { mapId } = req.body || {};
+  if (mapId && !(t.maps || []).some(m => m.id === mapId)) return fail(res, 404, 'Không tìm thấy bản đồ');
+  if ((t.activeMap || null) === (mapId || null)) return res.json({ activeMap: mapId || null });
+  if (mapId) t.activeMap = mapId; else delete t.activeMap;
+  mapChanged(t);
+  res.json({ activeMap: mapId || null });
 });
 app.get('/api/admin/tournaments/:id/submissions', apiAuth, apiJudge, wrap(async (req, res) => {
   const subs = await withCode(db.data.submissions.filter(s => s.tournamentId === req.params.id),

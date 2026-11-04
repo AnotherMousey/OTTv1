@@ -1,7 +1,7 @@
 # uses: board
 # Săn Mồi: a hunter. Captures whenever it can (safe captures first). Otherwise it walks a
-# piece toward the nearest enemy it beats, avoiding squares where it would be captured,
-# and only then heads for the goal.
+# piece toward the nearest enemy it beats (nearest by the way around the walls), avoiding squares
+# where it would be captured, and only then heads for the goal.
 
 
 def play(gameState):
@@ -20,9 +20,7 @@ def play(gameState):
 
     def prey_distance(m):
         kind = cells[m[0]]
-        x, y = xy(m[1])
-        d = [max(abs(x - xy(k)[0]), abs(y - xy(k)[1])) for k, t in enumerate(cells)
-             if t != "." and t.islower() and BEATS[kind] == t.upper()]
+        d = [steps(m[1], k) for k, t in enumerate(cells) if t.islower() and BEATS[kind] == t.upper()]
         return min(d) if d else 99
 
     best = min((prey_distance(m), dist(m[1])) for m in ok)

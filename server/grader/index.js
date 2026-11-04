@@ -16,7 +16,7 @@ const BOARD_HARNESS = path.join(HARNESS, 'board');
 // compiles + submission checks at the same time (default: one per CPU)
 const MAX_PARALLEL_BUILDS = +process.env.PARALLEL_BUILDS || os.cpus().length;
 // Written into .ok; a build made under older rules is rebuilt (and so re-checked) before it plays.
-const BUILD_VERSION = 'v4-ready-handshake';
+const BUILD_VERSION = 'v5-board-walls'; // the harnesses are compiled in: a change rebuilds every bot
 
 // Runs { cmd, args, cwd, container } (see languages.boxed) to the end; resolves { code, out }.
 function exec({ cmd, args, cwd, container }, timeoutMs = 90000) {
@@ -125,7 +125,8 @@ function ensureBuilt(sub, force = false) {
 // Play 5 turns against a scripted opponent to make sure the bot actually answers.
 async function smokeTest(sub) {
   if (gameOf(sub) === 'board') {
-    const r = await board.smokeTest(sub);
+    // on the tournament's map (a judge's bot, with no tournament: the standard start)
+    const r = await board.smokeTest(sub, board.layoutOf(db.data.tournaments.find(t => t.id === sub.tournamentId)));
     if (r.ok) return { ok: true, message: r.message };
     await new Promise(res => setTimeout(res, 100)); // let the last stderr arrive
     const err = stripDir(r.bot.stderr, buildDir(sub));
@@ -263,6 +264,9 @@ function topUpPractice(t, s, resumeCutOff = false) {
   // a run still going against the old set finishes first, then only this submission is checked again
   const run = practice.runningFor(s);
   if (!run) return practice.evaluate(s, ensureBuilt, { topUp: true });
+  // under other rules (e.g. the judge changed the map) none of its results will count: stop its
+  // remaining games so the new run starts as soon as the games already being played end
+  if ((s.practice.rules ?? null) !== practice.rulesOf(t)) s.practice.cancelled = true;
   if (waitingTopUp.has(s.id)) return;
   waitingTopUp.add(s.id);
   run.then(() => {

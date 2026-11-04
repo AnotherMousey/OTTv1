@@ -20,6 +20,18 @@ static bool readPieces(std::istringstream& in, std::vector<Piece>& out) {
     return true;
 }
 
+// "<k> <x y> * k"
+static bool readWalls(std::istringstream& in, std::vector<Cell>& out) {
+    int k = 0;
+    if (!(in >> k)) return false;
+    for (int i = 0; i < k; i++) {
+        Cell c;
+        if (!(in >> c.x >> c.y)) return false;
+        out.push_back(c);
+    }
+    return true;
+}
+
 int main() {
     std::string line;
     std::cout << "READY" << std::endl;  // started: the grader may send the first request
@@ -27,10 +39,10 @@ int main() {
         while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
         if (line == "END") break;
         if (line.rfind("STATE ", 0) != 0) continue;
-        // "STATE <currentTurn> <maxTurn> <ally pieces> <opponent pieces>"
+        // "STATE <currentTurn> <maxTurn> <ally pieces> <opponent pieces> <walls>"
         std::istringstream in(line.substr(6));
         State s;
-        if (!(in >> s.currentTurn >> s.maxTurn) || !readPieces(in, s.ally) || !readPieces(in, s.opponent)) continue;
+        if (!(in >> s.currentTurn >> s.maxTurn) || !readPieces(in, s.ally) || !readPieces(in, s.opponent) || !readWalls(in, s.walls)) continue;
         std::pair<int, int> m = play(s);
         std::cout << "\nMOVE " << m.first << ' ' << m.second << std::endl;
     }

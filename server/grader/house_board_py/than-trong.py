@@ -1,6 +1,6 @@
 # uses: board
 # Thận Trọng: looks one move ahead. It scores every move with a position evaluation
-# (pieces left, which kinds the enemy can no longer stop, distance to the goals), then
+# (pieces left, which kinds the enemy can no longer stop, distance to the goals around the walls), then
 # checks your immediate answers: it won't leave you a winning move or a free capture.
 
 

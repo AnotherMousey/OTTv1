@@ -1,6 +1,8 @@
-// Brawl ("hỗn chiến") as a daily league. Every day at t.dailyTime ('HH:MM' in the judge's time
-// zone; t.tzOffset = the judge's Date#getTimezoneOffset()), from the start until the deadline, the
-// teams' newest working bots (submitted before that moment) play: win = 3, draw = 1, loss = 0.
+// Brawl ("hỗn chiến") as a daily league. On a schedule from the start until the deadline, the
+// teams' newest working bots (submitted before that moment) play a round: win = 3, draw = 1, loss = 0.
+// The schedule is either every day at t.dailyTime ('HH:MM' in the judge's time zone; t.tzOffset =
+// the judge's Date#getTimezoneOffset()), or, with t.cycleMinutes, a cycle: a round every
+// t.cycleMinutes counted from the start (start + 1 cycle, start + 2 cycles, ...).
 // The judge picks the pairing (t.pairing):
 //   'rr'    round robin: every team plays every other team once.
 //   'swiss' ceil(log2(teams)) rounds; each round pairs teams with similar points (all days so far,
@@ -34,9 +36,19 @@ const gameOf = t => (t.game === 'board' ? 'board' : 'rps');
 // The most a bot can score in practice: every match against every sparring bot won outright.
 const evalMax = t => botsFor(t).length * (gameOf(t) === 'board' ? MAX_SCORE : TURNS * 3);
 const validTime = v => typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
+// A cycle the judge may pick, in hours: 15 minutes to 30 days.
+const MIN_CYCLE_HOURS = 0.25, MAX_CYCLE_HOURS = 30 * 24;
+const validCycle = h => typeof h === 'number' && Number.isFinite(h) && h >= MIN_CYCLE_HOURS && h <= MAX_CYCLE_HOURS;
+const cycleHoursOf = t => (t.cycleMinutes ? t.cycleMinutes / 60 : null);
 
 // Match times in [from, to] (ms timestamps), oldest first.
 function slotsBetween(t, from, to) {
+  if (t.cycleMinutes) {
+    const start = Date.parse(t.startsAt || t.createdAt), every = t.cycleMinutes * 60000;
+    const out = [];
+    for (let k = Math.max(1, Math.ceil((from - start) / every)), s; (s = start + k * every) <= to && out.length < 4000; k++) out.push(s);
+    return out;
+  }
   const [h, m] = t.dailyTime.split(':').map(Number);
   const off = (t.tzOffset || 0) * 60000; // UTC - local
   const local = new Date(from - off);
@@ -50,8 +62,8 @@ function slotsBetween(t, from, to) {
   return out;
 }
 
-// Daily matches only count from the start (and from when the judge last set the time, so moving
-// it earlier doesn't fire today's match retroactively).
+// Daily matches only count from the start (and from when the judge last set the time or the cycle,
+// so moving it earlier doesn't fire a round retroactively).
 const firstMoment = t => Math.max(Date.parse(t.startsAt || t.createdAt), Date.parse(t.dailySince || t.createdAt));
 
 // Scheduled times that have come and have no day yet.
@@ -216,7 +228,7 @@ function board(t, now = Date.now()) {
   const champ = t.championId && rows.find(r => r.userId === t.championId);
   return {
     id: t.id, name: t.name, mode: 'brawl', format: 'daily', status: t.status, error: t.error || null,
-    deadline: t.deadline, startsAt: t.startsAt || null, dailyTime: t.dailyTime, nextAt: t.status === 'open' ? nextSlot(t, now) : null,
+    deadline: t.deadline, startsAt: t.startsAt || null, dailyTime: t.dailyTime || null, cycleHours: cycleHoursOf(t), nextAt: t.status === 'open' ? nextSlot(t, now) : null,
     publishDelayMs: PUBLISH_DELAY_MS, pairing: pairingOf(t), rejudgeQueue: (t.rejudgeQueue || []).map(q => q.day),
     days: (t.days || []).map(d => {
       const fights = dayTotal(d);
@@ -229,4 +241,4 @@ function board(t, now = Date.now()) {
   };
 }
 
-module.exports = { isDaily, pairingOf, swissRounds, swissPairs, frozen, validTime, slotsBetween, dueSlots, nextSlot, entriesAt, pairsOf, dayMatches, isPublished, standings, board, PUBLISH_DELAY_MS };
+module.exports = { isDaily, pairingOf, swissRounds, swissPairs, frozen, validTime, validCycle, cycleHoursOf, MIN_CYCLE_HOURS, MAX_CYCLE_HOURS, slotsBetween, dueSlots, nextSlot, entriesAt, pairsOf, dayMatches, isPublished, standings, board, PUBLISH_DELAY_MS };

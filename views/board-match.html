@@ -75,7 +75,7 @@
 
     let M = null, AV = { A: null, B: null };
     let G = 0;                 // which game is shown
-    let replay = null;         // { states, events, teamOf, N }
+    let replay = null;         // { states, events, teamOf, N, wall }
     let ply = 0, timer = null;
 
     // ---------- replaying a game from its moves ----------
@@ -86,7 +86,7 @@
       return out;
     }
     function buildReplay(game) {
-      const g = R.newGame();
+      const g = R.newGame(game.layout); // the map it was played on (none: the standard start)
       const states = [snapshot(g.board)], events = [];
       game.moves.forEach((move, k) => {
         const side = g.toMove;
@@ -96,7 +96,7 @@
         states.push(snapshot(g.board));
       });
       const teamOf = { white: game.white, black: game.white === 'A' ? 'B' : 'A' };
-      return { states, events, teamOf, N: game.moves.length };
+      return { states, events, teamOf, N: game.moves.length, wall: g.wall };
     }
 
     // ---------- scene ----------
@@ -122,7 +122,7 @@
     function buildScene() {
       const cells = [], lines = [], labels = [];
       for (let y = 0; y < R.H; y++) for (let x = 0; x < R.W; x++) {
-        cells.push(`<rect x="${px(x)}" y="${py(y)}" width="${C}" height="${C}" fill="${(x + y) % 2 ? '#fffdf3' : '#f4f0e2'}"/>`);
+        cells.push(`<rect x="${px(x)}" y="${py(y)}" width="${C}" height="${C}" fill="${replay.wall[y][x] ? '#2b2b2b' : (x + y) % 2 ? '#fffdf3' : '#f4f0e2'}"/>`);
       }
       for (let k = 0; k <= R.W; k++) lines.push(`<path d="M${X0 + k * C} ${Y0} L${X0 + k * C} ${Y0 + R.H * C}"/>`);
       for (let k = 0; k <= R.H; k++) lines.push(`<path d="M${X0} ${Y0 + k * C} L${X0 + R.W * C} ${Y0 + k * C}"/>`);

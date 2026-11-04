@@ -1,6 +1,6 @@
 # uses: board
 # Thẳng Tiến: races for the enemy's corner. Every turn it makes the step that gets one of its
-# pieces as close to the goal as possible, ignoring danger (it only refuses to walk into a
+# pieces as close to the goal as possible (counting the way around the walls), ignoring danger (it only refuses to walk into a
 # piece that beats it).
 
 

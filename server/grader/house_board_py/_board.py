@@ -3,7 +3,7 @@ import time
 
 # The game state (gameState.ally / .opponent: pieces with .pid .Type .x .y, x and y from 1) is turned
 # into a flat board `cells`: cell i = (x, y) counted from 0, i = y * W + x, "R" "P" "S" = mine, "r" "p" "s" = enemy,
-# "." = empty. I start bottom-left and win on the top-right corner; the enemy wins on (0, 0).
+# "." = empty, "#" = a wall (the map's: no piece can enter it). I start bottom-left and win on the top-right corner; the enemy wins on (0, 0).
 # A move is (from cell, to cell); to_move turns it into the answer (pid, direction).
 BEATS = {"R": "S", "S": "P", "P": "R"}     # kind -> the kind it captures
 BEATEN_BY = {"S": "R", "P": "S", "R": "P"}  # kind -> the kind that captures it
@@ -26,7 +26,52 @@ def setup(state):
         PID[(p.y - 1) * W + p.x - 1] = p.pid
     for p in state.opponent:
         cells[(p.y - 1) * W + p.x - 1] = p.Type.lower()
+    for w in state.walls:
+        cells[(w.y - 1) * W + w.x - 1] = "#"
+    walls = frozenset(i for i, c in enumerate(cells) if c == "#")
+    if PATHS.get("walls") != walls:
+        measure(walls)
     return cells
+
+
+# Distances count real steps around the walls (a piece moves one square in 8 directions), not a
+# straight line. They only change with the walls, so they are worked out once per game:
+#   PATHS[True] / PATHS[False] = steps from every cell to my goal / the enemy's goal,
+#   PATHS["far"][me] = one more than the longest of those: what a walled-in cell counts as.
+PATHS = {}
+
+
+def flood(start, walls):
+    # steps from `start` to every cell (None = no way there)
+    d = [None] * (W * H)
+    d[start] = 0
+    queue = [start]
+    for i in queue:
+        for j in NEIGH[i]:
+            if d[j] is None and j not in walls:
+                d[j] = d[i] + 1
+                queue.append(j)
+    return d
+
+
+def measure(walls):
+    PATHS.clear()
+    PATHS["walls"] = walls
+    PATHS["far"] = {}
+    PATHS["from"] = {}  # cell -> flood from it, filled in as steps() needs them
+    for me in (True, False):
+        d = flood(goal(me), walls)
+        far = max(v for v in d if v is not None) + 1
+        PATHS[me] = [far if v is None else v for v in d]
+        PATHS["far"][me] = far
+
+
+def steps(a, b):
+    # steps from cell a to cell b around the walls (99 = no way through)
+    if a not in PATHS["from"]:
+        PATHS["from"][a] = flood(a, PATHS["walls"])
+    d = PATHS["from"][a][b]
+    return 99 if d is None else d
 
 
 def mine(c, me=True):
@@ -47,8 +92,8 @@ def to_move(m):
 
 
 def dist(i, me=True):
-    x, y = xy(i)
-    return max(W - 1 - x, H - 1 - y) if me else max(x, y)
+    # steps from cell i to the goal (mine, or the enemy's), around the walls
+    return PATHS[me][i]
 
 
 def moves(cells, me=True):
@@ -58,7 +103,7 @@ def moves(cells, me=True):
             continue
         for j in NEIGH[i]:
             t = cells[j]
-            if t == "." or (not mine(t, me) and t.upper() != c.upper()):
+            if t == "." or (t != "#" and not mine(t, me) and t.upper() != c.upper()):
                 out.append((i, j))
     return out
 
@@ -93,7 +138,7 @@ def threatened(cells, j, me=True):
     c = cells[j]
     for k in NEIGH[j]:
         t = cells[k]
-        if t != "." and not mine(t, me) and BEATS[t.upper()] == c.upper():
+        if t not in ".#" and not mine(t, me) and BEATS[t.upper()] == c.upper():
             return True
     return False
 
@@ -103,22 +148,22 @@ def evaluate(cells):
     have, foe = {"R": 0, "P": 0, "S": 0}, {"R": 0, "P": 0, "S": 0}
     near_me = near_foe = 99
     sum_me = sum_foe = 0
-    adv_me = adv_foe = 0  # progress, growing faster the closer a piece gets
+    adv_me = adv_foe = 0  # progress, growing faster the closer a piece gets (a walled-in piece: none)
     for i, c in enumerate(cells):
-        if c == ".":
+        if c in ".#":
             continue
         if c.isupper():
             have[c] += 1
             d = dist(i, True)
             near_me = min(near_me, d)
             sum_me += d
-            adv_me += (W - d) ** 2
+            adv_me += (PATHS["far"][True] - d) ** 2
         else:
             foe[c.upper()] += 1
             d = dist(i, False)
             near_foe = min(near_foe, d)
             sum_foe += d
-            adv_foe += (W - d) ** 2
+            adv_foe += (PATHS["far"][False] - d) ** 2
     n_me, n_foe = sum(have.values()), sum(foe.values())
     if n_foe == 0:
         return WIN

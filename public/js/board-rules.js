@@ -6,6 +6,8 @@
 //     loses the attacker (the defender stays put).
 //   - A side wins by reaching the enemy's home corner, or by eliminating every enemy piece.
 //   - After MAX_TURNS moves (both sides counted, skipped turns too) without a winner: a draw.
+//   - A map (the judge's, per tournament) may change where the pieces start and add walls: squares
+//     no piece can enter.
 // Coordinates: x = column 0..W-1 (a..i), y = row 0..H-1 (1..9). White starts bottom-left and
 // heads for the top-right corner; black starts top-right and heads for (0, 0).
 (function (root) {
@@ -18,18 +20,47 @@
   const other = side => (side === 'white' ? 'black' : 'white');
   const square = (x, y) => String.fromCharCode(97 + x) + (y + 1);
 
-  // board[y][x] = null | { side, kind, id }
-  function initialBoard() {
-    const board = Array.from({ length: H }, () => Array(W).fill(null));
-    WHITE_START.forEach(([x, y, kind], i) => {
-      board[y][x] = { side: 'white', kind, id: 'w' + i };
-      board[H - 1 - y][W - 1 - x] = { side: 'black', kind, id: 'b' + i };
+  // A map is a layout: W * H characters, row y = 0 first, 'R' 'P' 'S' = white's pieces,
+  // 'r' 'p' 's' = black's, '#' = a wall, '.' = empty. null = the standard start (DEFAULT_LAYOUT).
+  const DEFAULT_LAYOUT = (() => {
+    const cells = Array(W * H).fill('.');
+    WHITE_START.forEach(([x, y, kind]) => {
+      cells[y * W + x] = kind;
+      cells[(H - 1 - y) * W + W - 1 - x] = kind.toLowerCase();
     });
-    return board;
+    return cells.join('');
+  })();
+
+  // Why a layout can't be played, or null if it is fine.
+  function layoutProblem(layout) {
+    if (typeof layout !== 'string' || layout.length !== W * H || /[^RPSrps#.]/.test(layout)) return `bản đồ phải gồm ${W * H} ô, mỗi ô là R P S (bên đi trước), r p s (bên đi sau), # (tường) hoặc . (trống)`;
+    if (!/[RPS]/.test(layout)) return 'bên đi trước cần ít nhất một quân';
+    if (!/[rps]/.test(layout)) return 'bên đi sau cần ít nhất một quân';
+    const at = ([x, y]) => layout[y * W + x];
+    if (at(GOAL.white) === '#' || at(GOAL.black) === '#') return 'không được đặt tường ở hai góc đích';
+    if (/[RPS]/.test(at(GOAL.white))) return 'quân bên đi trước không được đứng sẵn ở đích của mình (góc trên phải)';
+    if (/[rps]/.test(at(GOAL.black))) return 'quân bên đi sau không được đứng sẵn ở đích của mình (góc dưới trái)';
+    return null;
   }
 
-  function newGame() {
-    return { board: initialBoard(), toMove: 'white', turn: 0, winner: null, reason: null };
+  // board[y][x] = null | { side, kind, id }; wall[y][x] = true on a wall. Each side numbers its
+  // pieces in reading order from its own side (bottom row first, left to right; black's view is
+  // rotated 180°): ids w0, w1... and b0, b1..., so pid = number + 1.
+  function initialBoard(layout = DEFAULT_LAYOUT) {
+    const board = Array.from({ length: H }, () => Array(W).fill(null));
+    const wall = Array.from({ length: H }, () => Array(W).fill(false));
+    let w = 0, b = 0;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const c = layout[y * W + x], d = layout[(H - 1 - y) * W + W - 1 - x];
+      if (c === '#') wall[y][x] = true;
+      if ('RPS'.includes(c)) board[y][x] = { side: 'white', kind: c, id: 'w' + w++ };
+      if ('rps'.includes(d)) board[H - 1 - y][W - 1 - x] = { side: 'black', kind: d.toUpperCase(), id: 'b' + b++ };
+    }
+    return { board, wall };
+  }
+
+  function newGame(layout) {
+    return { ...initialBoard(layout || DEFAULT_LAYOUT), toMove: 'white', turn: 0, winner: null, reason: null };
   }
 
   const count = (board, side) => board.reduce((n, row) => n + row.filter(c => c && c.side === side).length, 0);
@@ -44,6 +75,7 @@
     if (!piece || piece.side !== side) return 'ô xuất phát không có quân của bạn';
     const dx = Math.abs(x2 - x1), dy = Math.abs(y2 - y1);
     if (dx > 1 || dy > 1 || (dx === 0 && dy === 0)) return 'mỗi lượt chỉ được đi 1 ô (8 hướng)';
+    if (g.wall[y2][x2]) return 'không được đi vào tường';
     const target = g.board[y2][x2];
     if (target && target.side === side) return 'không được đi vào ô có quân mình';
     if (target && target.kind === piece.kind) return 'hai quân cùng loại chặn nhau, không ăn được';
@@ -102,24 +134,27 @@
 
   // What a bot sees: the board from its own side (black's view is rotated 180°, so every bot
   // starts bottom-left and heads for the top-right corner). Uppercase = mine, lowercase = enemy,
-  // '.' = empty; row y = 0 first. Moves the bot returns are mapped back with fromView.
+  // '#' = wall, '.' = empty; row y = 0 first. Moves the bot returns are mapped back with fromView.
   function view(g, side) {
     let s = '';
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      const c = side === 'white' ? g.board[y][x] : g.board[H - 1 - y][W - 1 - x];
-      s += !c ? '.' : c.side === side ? c.kind : c.kind.toLowerCase();
+      const [rx, ry] = side === 'white' ? [x, y] : [W - 1 - x, H - 1 - y];
+      const c = g.board[ry][rx];
+      s += g.wall[ry][rx] ? '#' : !c ? '.' : c.side === side ? c.kind : c.kind.toLowerCase();
     }
     return s;
   }
   const fromView = (side, [x1, y1, x2, y2]) => (side === 'white' ? [x1, y1, x2, y2] : [W - 1 - x1, H - 1 - y1, W - 1 - x2, H - 1 - y2]);
 
-  // The game state a bot gets, in its own view: { ally, opponent } with each piece as
-  // { pid, type, x, y }. pid = 1..9, fixed for the whole game (each side numbers its own pieces);
-  // x, y = 1..9, (1, 1) = bottom-left (the board itself counts from 0).
+  // The game state a bot gets, in its own view: { ally, opponent, walls } with each piece as
+  // { pid, type, x, y } and each wall as { x, y }. pid = 1, 2, ..., fixed for the whole game (each
+  // side numbers its own pieces); x, y = 1..9, (1, 1) = bottom-left (the board itself counts from 0).
   function pieces(g, side) {
-    const out = { ally: [], opponent: [] };
+    const out = { ally: [], opponent: [], walls: [] };
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      const c = side === 'white' ? g.board[y][x] : g.board[H - 1 - y][W - 1 - x];
+      const [rx, ry] = side === 'white' ? [x, y] : [W - 1 - x, H - 1 - y];
+      const c = g.board[ry][rx];
+      if (g.wall[ry][rx]) out.walls.push({ x: x + 1, y: y + 1 });
       if (c) out[c.side === side ? 'ally' : 'opponent'].push({ pid: +c.id.slice(1) + 1, type: c.kind, x: x + 1, y: y + 1 });
     }
     out.ally.sort((a, b) => a.pid - b.pid);
@@ -142,7 +177,7 @@
     return why ? { error: why } : { move };
   }
 
-  const api = { W, H, MAX_TURNS, BEATS, GOAL, DIRS, other, square, newGame, initialBoard, count, problem, legalMoves, apply, forfeit, view, fromView, pieces, fromAnswer };
+  const api = { W, H, MAX_TURNS, BEATS, GOAL, DIRS, DEFAULT_LAYOUT, other, square, layoutProblem, newGame, initialBoard, count, problem, legalMoves, apply, forfeit, view, fromView, pieces, fromAnswer };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.BoardRules = api;
 })(typeof window !== 'undefined' ? window : globalThis);

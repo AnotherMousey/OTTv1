@@ -7,14 +7,19 @@ import java.io.*;
 import java.util.*;
 
 class Piece {
-    public int pid;    // 1..9, the same piece keeps its number for the whole game
+    public int pid;    // 1, 2, ..., the same piece keeps its number for the whole game
     public char Type;  // 'R' (búa), 'P' (bao) or 'S' (kéo)
+    public int x, y;
+}
+
+class Cell {
     public int x, y;
 }
 
 class State {
     public List<Piece> ally = new ArrayList<>();      // your pieces
     public List<Piece> opponent = new ArrayList<>();  // the enemy's pieces
+    public List<Cell> walls = new ArrayList<>();      // squares no piece can enter (the map; often none)
     public int maxTurn;                               // a draw after this many moves (both sides)
     public int currentTurn;                           // moves already played (both sides)
 }
@@ -35,6 +40,18 @@ public class Main {
         return at;
     }
 
+    // "<k> <x y> * k" starting at p[at]
+    static void readWalls(String[] p, int at, List<Cell> out) {
+        int k = Integer.parseInt(p[at++]);
+        for (int i = 0; i < k; i++) {
+            Cell c = new Cell();
+            c.x = Integer.parseInt(p[at]);
+            c.y = Integer.parseInt(p[at + 1]);
+            out.add(c);
+            at += 2;
+        }
+    }
+
     public static void main(String[] args) throws Exception {
         PrintStream out = new PrintStream(new FileOutputStream(FileDescriptor.out), true);
         System.setOut(System.err); // anything the bot prints goes to stderr
@@ -47,12 +64,12 @@ public class Main {
             line = line.trim();
             if (line.equals("END")) break;
             if (!line.startsWith("STATE ")) continue;
-            // "STATE <currentTurn> <maxTurn> <ally pieces> <opponent pieces>"
+            // "STATE <currentTurn> <maxTurn> <ally pieces> <opponent pieces> <walls>"
             String[] p = line.split("\s+");
             State s = new State();
             s.currentTurn = Integer.parseInt(p[1]);
             s.maxTurn = Integer.parseInt(p[2]);
-            readPieces(p, readPieces(p, 3, s.ally), s.opponent);
+            readWalls(p, readPieces(p, readPieces(p, 3, s.ally), s.opponent), s.walls);
             int[] m = bot.play(s);
             String reply = m == null || m.length != 2 ? "X" : m[0] + " " + m[1];
             out.print("\nMOVE " + reply + "\n");

@@ -24,7 +24,7 @@
             <option value="board">♟️ Cờ OTT: bàn cờ 9×9, quân búa/bao/kéo đi từng ô, chạm góc đích hoặc ăn hết quân địch là thắng</option>
           </select></label>
           <label><span>chế độ</span><select name="mode" style="width:100%">
-            <option value="brawl">⚔️ Hỗn chiến: mỗi ngày vào giờ cố định có một vòng đấu giữa các bot, điểm cộng dồn đến hạn chót</option>
+            <option value="brawl">⚔️ Hỗn chiến: các bot đấu từng vòng theo lịch (mỗi ngày hoặc cứ mỗi N giờ), điểm cộng dồn đến hạn chót</option>
             <option value="campaign">🗺️ Chiến dịch: đua hạ hết các bot đấu tập, ai về đích sớm nhất thắng</option>
           </select></label>
           <label><span>ai được tham gia</span><select name="access" style="width:100%">
@@ -35,12 +35,17 @@
             <option value="rr">🔁 Vòng tròn: mỗi đội đấu với tất cả các đội khác</option>
             <option value="swiss">🔀 Thụy Sĩ: mỗi vòng có log₂(số đội) đợt, mỗi đợt đấu đội có điểm gần mình, không gặp lại trong vòng</option>
           </select></label>
+          <label id="scheduleRow"><span>lịch thi đấu</span><select name="schedule" style="width:100%">
+            <option value="daily">📅 Mỗi ngày một vòng vào giờ cố định</option>
+            <option value="cycle">🔁 Cứ mỗi N giờ một vòng, tính từ lúc bắt đầu (ví dụ 12 giờ)</option>
+          </select></label>
           <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" name="hidden"><span>🙈 Ẩn giải với người chơi (chỉ trọng tài thấy, có thể hiện sau)</span></label>
           <label><span>mô tả (không bắt buộc)</span><textarea name="description" class="oneline" rows="1" maxlength="500" style="width:100%" placeholder="Mang theo những bot xịn nhất" title="Shift+Enter: xuống dòng"></textarea></label>
           <div class="form-row">
             <label><span>bắt đầu nhận bài <small class="muted">(bỏ trống = mở ngay)</small></span><input name="startsAt" type="datetime-local" style="width:100%"></label>
             <label><span id="dlLabel">ngày kết thúc (hạn chót nộp bài)</span><input name="deadline" type="datetime-local" required style="width:100%"></label>
             <label id="dailyRow"><span>giờ thi đấu hằng ngày</span><input name="dailyTime" type="time" value="21:00" style="width:100%"></label>
+            <label id="cycleRow"><span>chu kỳ (giờ)</span><input name="cycleHours" type="number" min="0.25" max="720" step="0.25" value="12" style="width:100%" title="từ 0.25 giờ (15 phút) đến 720 giờ (30 ngày)"></label>
           </div>
           <p class="muted" style="font-size:16px;margin:-4px 0 10px" id="timeHint"></p>
           <button class="btn red">Tạo giải 🏁</button>
@@ -70,6 +75,7 @@
     <div id="botsPanel" class="hidden" style="margin-top:20px"></div>
     <div id="subsPanel" class="hidden" style="margin-top:20px"></div>
     <div id="rejudgePanel" class="hidden" style="margin-top:20px"></div>
+    <div id="mapsPanel" class="hidden" style="margin-top:20px"></div>
 
     <div id="accountsArea">
     <div class="squiggle"></div>
@@ -133,12 +139,19 @@
     // The form's hints follow the chosen mode.
     function syncModeFields() {
       const brawl = $('#tform').mode.value === 'brawl';
-      $('#dailyRow').classList.toggle('hidden', !brawl);
+      const cycle = brawl && $('#tform').schedule.value === 'cycle';
+      $('#dailyRow').classList.toggle('hidden', !brawl || cycle);
+      $('#cycleRow').classList.toggle('hidden', !cycle);
       $('#pairingRow').classList.toggle('hidden', !brawl);
-      $('#tform').dailyTime.required = brawl;
+      $('#scheduleRow').classList.toggle('hidden', !brawl);
+      $('#tform').dailyTime.required = brawl && !cycle;
+      $('#tform').cycleHours.required = cycle;
+      const when = cycle
+        ? `Cứ mỗi ${fmtHours(+$('#tform').cycleHours.value || 0) || '…'} kể từ lúc bắt đầu (lúc tạo giải nếu bỏ trống giờ bắt đầu), đến hạn chót, có một vòng đấu`
+        : 'Mỗi ngày vào giờ thi đấu (từ lúc bắt đầu đến hạn chót) có một vòng đấu';
       $('#dlLabel').textContent = brawl ? 'ngày kết thúc (hạn chót nộp bài)' : 'hạn chót nộp bài';
       $('#timeHint').textContent = brawl
-        ? `Theo giờ máy bạn. Mỗi ngày vào giờ thi đấu (từ lúc bắt đầu đến hạn chót) có một vòng đấu (trọng tài có thể thêm vòng bằng "⚡ đấu ngay"): bot mới nhất của mỗi đội ${$('#tform').pairing.value === 'swiss' ? 'đấu ⌈log₂(số đội)⌉ đợt Thụy Sĩ (mỗi đợt gặp đội có điểm gần mình, không gặp lại trong vòng)' : 'đấu vòng tròn với tất cả đội khác'}: thắng 3, hòa 1, thua 0. Bảng xếp hạng cộng dồn được công bố sau 10 phút. Người chơi được nộp bài suốt giải, trừ lúc đang thi đấu.`
+        ? `Theo giờ máy bạn. ${when} (trọng tài có thể thêm vòng bằng "⚡ đấu ngay"): bot mới nhất của mỗi đội ${$('#tform').pairing.value === 'swiss' ? 'đấu ⌈log₂(số đội)⌉ đợt Thụy Sĩ (mỗi đợt gặp đội có điểm gần mình, không gặp lại trong vòng)' : 'đấu vòng tròn với tất cả đội khác'}: thắng 3, hòa 1, thua 0. Bảng xếp hạng cộng dồn được công bố sau 10 phút. Người chơi được nộp bài suốt giải, trừ lúc đang thi đấu.`
         : 'Theo giờ máy bạn. Trước giờ bắt đầu, người chơi chỉ thấy đồng hồ đếm ngược; số phút của điểm phạt được tính từ giờ bắt đầu.';
     }
     // A daily league runs for days (a week, ending at 23:59); a campaign defaults to an hour.
@@ -151,6 +164,8 @@
     $('#tform').mode.addEventListener('change', () => { $('#tform').deadline.value = defaultDeadline(); });
     $('#tform').mode.addEventListener('change', syncModeFields);
     $('#tform').pairing.addEventListener('change', syncModeFields);
+    $('#tform').schedule.addEventListener('change', syncModeFields);
+    $('#tform').cycleHours.addEventListener('input', syncModeFields);
     syncModeFields();
 
     // /admin?t=<id> (the "Quản lý" button of a tournament): only that tournament's settings
@@ -202,6 +217,17 @@
       if (list.length) annTimer = setTimeout(() => renderAnnouncements(t), 30000);
     }
 
+    // A daily league's schedule: in words, or on the tournament's own page (edit) a picker between
+    // "every day at" a time and "every N hours" from the start, with both boxes (the other one hidden).
+    function scheduleCell(t, edit) {
+      const d = t.daily, cycle = !!d.cycleHours;
+      if (!edit) return `${cycle ? '🔁' : '📅'} ${scheduleText(d)}`;
+      const box = 'font-size:15px;padding:0 4px';
+      return `<span class="sched">📅 <select data-sched="${t.id}" style="${box}"><option value="daily" ${cycle ? '' : 'selected'}>mỗi ngày lúc</option><option value="cycle" ${cycle ? 'selected' : ''}>cứ mỗi</option></select>
+        <input type="time" data-daily="${t.id}" value="${d.time || '21:00'}" class="${cycle ? 'hidden' : ''}" style="${box}">
+        <span class="cycle-box ${cycle ? '' : 'hidden'}"><input type="number" data-cycle="${t.id}" value="${d.cycleHours || 24}" min="0.25" max="720" step="0.25" style="${box};width:70px"> giờ, tính từ lúc bắt đầu</span></span>`;
+    }
+
     let startTimer = null;
     let allTournaments = [];
     async function loadTournaments() {
@@ -231,7 +257,7 @@
           : t.startsAt ? esc(fmtDate(t.startsAt)) : '<span class="muted">–</span>';
         return `<tr>
           <td><span class="lines">${esc(t.name)}</span>${focusId && t.description ? `<br><small class="muted lines">${esc(t.description)}</small>` : ''}</td>
-          <td>${t.game === 'board' ? '♟️ cờ OTT' : '✊ oẳn tù tì'} · ${t.mode === 'campaign' ? '🗺️ chiến dịch' : '⚔️ hỗn chiến'}${t.daily ? `<br><span class="muted" style="font-size:16px">📅 hằng ngày lúc ${edit ? `<input type="time" data-daily="${t.id}" value="${t.daily.time}" style="font-size:15px;padding:0 4px">` : t.daily.time} · ${edit ? `<select data-pairing="${t.id}" style="font-size:15px;padding:0 4px"><option value="rr" ${t.daily.pairing === 'rr' ? 'selected' : ''}>vòng tròn</option><option value="swiss" ${t.daily.pairing === 'swiss' ? 'selected' : ''}>Thụy Sĩ</option></select>` : t.daily.pairing === 'swiss' ? 'Thụy Sĩ' : 'vòng tròn'} · đã qua ${t.daily.days} vòng</span>` : ''}${t.access === 'invite' ? `<br><span class="muted" style="font-size:16px">🔒 ${t.members} đội</span>` : ''}${t.hidden ? '<br><span class="muted" style="font-size:16px">🙈 đang ẩn với người chơi</span>' : ''}</td>
+          <td>${t.game === 'board' ? '♟️ cờ OTT' : '✊ oẳn tù tì'} · ${t.mode === 'campaign' ? '🗺️ chiến dịch' : '⚔️ hỗn chiến'}${t.daily ? `<br><span class="muted" style="font-size:16px">${scheduleCell(t, edit)} · ${edit ? `<select data-pairing="${t.id}" style="font-size:15px;padding:0 4px"><option value="rr" ${t.daily.pairing === 'rr' ? 'selected' : ''}>vòng tròn</option><option value="swiss" ${t.daily.pairing === 'swiss' ? 'selected' : ''}>Thụy Sĩ</option></select>` : t.daily.pairing === 'swiss' ? 'Thụy Sĩ' : 'vòng tròn'} · đã qua ${t.daily.days} vòng</span>` : ''}${t.access === 'invite' ? `<br><span class="muted" style="font-size:16px">🔒 ${t.members} đội</span>` : ''}${t.hidden ? '<br><span class="muted" style="font-size:16px">🙈 đang ẩn với người chơi</span>' : ''}</td>
           <td><span class="tag ${waiting ? 'pending' : t.status}">${waiting ? 'chưa mở' : STATUS_VI[t.status] || t.status}</span></td>
           <td>${startCell}</td>
           <td>${edit ? `<input type="datetime-local" data-dl="${t.id}" value="${toLocalInput(new Date(t.deadline))}" style="font-size:16px;padding:2px 6px">` : esc(fmtDate(t.deadline))}</td>
@@ -247,6 +273,7 @@
             <button class="btn small" data-members="${t.id}">${t.access === 'invite' ? '🔒 ' : ''}người chơi</button>
             <button class="btn small" data-trename="${t.id}" title="đổi tên và mô tả giải">✏️ đổi tên</button>
             <button class="btn small" data-bots="${t.id}">bot đấu tập</button>
+            ${t.game === 'board' ? `<button class="btn small" data-maps="${t.id}" title="vị trí xuất phát của các quân và các ô tường">🗺️ bản đồ</button>` : ''}
             <button class="btn small" data-subs="${t.id}">bài nộp</button>
             <a class="btn small" href="/tournament/${id}/live">bảng xếp hạng</a>
             <a class="btn small" href="/tournament/${id}/matches">lịch sử trận</a>
@@ -287,9 +314,20 @@
       $$('[data-pairing]').forEach(sel => sel.onchange = () => {
         patch(sel.dataset.pairing, { pairing: sel.value }, `Từ vòng đấu tiếp theo: ${sel.value === 'swiss' ? 'thể thức Thụy Sĩ 🔀' : 'vòng tròn 🔁'}`);
       });
-      $$('[data-daily]').forEach(inp => onDone(inp, () => {
-        if (inp.value) patch(inp.dataset.daily, { dailyTime: inp.value, tzOffset: new Date().getTimezoneOffset() }, `Đã đổi giờ thi đấu hằng ngày sang ${inp.value} ⏰`);
-      }));
+      const saveDaily = inp => { if (inp.value) patch(inp.dataset.daily, { dailyTime: inp.value, tzOffset: new Date().getTimezoneOffset() }, `Đã đổi lịch: mỗi ngày một vòng lúc ${inp.value} ⏰`); };
+      const saveCycle = inp => {
+        const h = +inp.value;
+        if (h > 0) patch(inp.dataset.cycle, { cycleHours: h }, `Đã đổi lịch: cứ mỗi ${fmtHours(h)} một vòng, tính từ lúc bắt đầu 🔁`);
+      };
+      $$('[data-daily]').forEach(inp => onDone(inp, () => saveDaily(inp)));
+      $$('[data-cycle]').forEach(inp => onDone(inp, () => saveCycle(inp)));
+      // switching between the two schedules saves the one picked, with what its box holds
+      $$('[data-sched]').forEach(sel => sel.onchange = () => {
+        const row = sel.closest('.sched');
+        $('[data-daily]', row).classList.toggle('hidden', sel.value !== 'daily');
+        $('.cycle-box', row).classList.toggle('hidden', sel.value !== 'cycle');
+        if (sel.value === 'daily') saveDaily($('[data-daily]', row)); else saveCycle($('[data-cycle]', row));
+      });
       $$('[data-playnow]').forEach(b => b.onclick = async () => {
         if (!confirm('Cho các bot đấu một vòng ngay bây giờ? Đây là một vòng đấu thêm, kết quả công bố sau 10 phút.')) return;
         try {
@@ -349,6 +387,12 @@
       });
       // keep an open rejudge panel in sync (a round finished or was published)
       if (rejudgeOpen) { const t = tournaments.find(x => x.id === rejudgeOpen.t.id); if (t && t.daily) showRejudge(t, true); else { rejudgeOpen = null; $('#rejudgePanel').classList.add('hidden'); } }
+      $$('[data-maps]').forEach(b => b.onclick = () => {
+        if (panelShown('maps', b.dataset.maps)) return $('#mapsPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        closePanels();
+        showMaps(tournaments.find(t => t.id === b.dataset.maps));
+      });
+      if (mapsOpen && !tournaments.some(x => x.id === mapsOpen.t.id)) { mapsOpen = null; $('#mapsPanel').classList.add('hidden'); }
       $$('[data-trename]').forEach(b => b.onclick = () => {
         if (panelShown('rename', b.dataset.trename)) return $('#renameName').focus();
         closePanels();
@@ -358,12 +402,12 @@
 
     // ---------- the panels under the list (players, sparring bots, submissions) ----------
     function panelShown(kind, id) {
-      const open = { members: membersOpen && membersOpen.t.id, bots: botsOpen && botsOpen.t.id, subs: subsOpen && subsOpen.id, rename: renameOpen, rejudge: rejudgeOpen && rejudgeOpen.t.id }[kind];
+      const open = { members: membersOpen && membersOpen.t.id, bots: botsOpen && botsOpen.t.id, subs: subsOpen && subsOpen.id, rename: renameOpen, rejudge: rejudgeOpen && rejudgeOpen.t.id, maps: mapsOpen && mapsOpen.t.id }[kind];
       return open === id && !$(`#${kind}Panel`).classList.contains('hidden');
     }
     function closePanels() {
-      membersOpen = botsOpen = subsOpen = renameOpen = rejudgeOpen = null;
-      ['#membersPanel', '#botsPanel', '#subsPanel', '#renamePanel', '#rejudgePanel'].forEach(p => $(p).classList.add('hidden'));
+      membersOpen = botsOpen = subsOpen = renameOpen = rejudgeOpen = mapsOpen = null;
+      ['#membersPanel', '#botsPanel', '#subsPanel', '#renamePanel', '#rejudgePanel', '#mapsPanel'].forEach(p => $(p).classList.add('hidden'));
     }
 
     // ---------- rejudge (daily league) ----------
@@ -383,7 +427,7 @@
       const panel = $('#rejudgePanel');
       panel.innerHTML = `<section class="box">
         <div class="row" style="justify-content:space-between"><h3 class="lines" style="margin:0">Chấm lại vòng đấu · ${esc(t.name)}</h3><button class="btn small" id="closeRejudge">đóng</button></div>
-        <p class="muted" style="font-size:17px;margin:4px 0 10px">Tick các vòng cần chấm lại. Mỗi yêu cầu vào cuối hàng chờ và được chấm theo thứ tự gửi (trong một yêu cầu: từ vòng nhỏ nhất). Đến lượt, kết quả cũ của vòng bị xóa và các bot (cùng đội, cùng bài nộp như lúc đầu) đấu lại; không có thời gian chờ công bố: kết quả cập nhật trực tiếp sau từng trận.</p>
+        <p class="muted" style="font-size:17px;margin:4px 0 10px">Tick các vòng cần chấm lại. Mỗi yêu cầu vào cuối hàng chờ và được chấm theo thứ tự gửi (trong một yêu cầu: từ vòng nhỏ nhất). Đến lượt, kết quả cũ của vòng bị xóa và các bot (cùng đội, cùng bài nộp như lúc đầu) đấu lại; không có thời gian chờ công bố: kết quả cập nhật trực tiếp sau từng trận.${t.game === 'board' ? ' Vòng chấm lại dùng bản đồ đang được chọn lúc đến lượt nó.' : ''}</p>
         ${queue.length ? `<p style="font-size:17px;margin:0 0 8px">⏳ Hàng chờ chấm lại: ${queue.map(n => `vòng ${n}`).join(' → ')}</p>` : ''}
         <div class="row" style="gap:8px;margin-bottom:8px">
           <button class="btn small" id="rjAll">chọn tất cả</button><button class="btn small" id="rjNone">bỏ tất cả</button>
@@ -428,6 +472,157 @@
         } catch (e) { toast(e.message, 'error'); }
       };
       if (!refresh) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    // ---------- board game maps ----------
+    // mapsOpen = { t, maps, activeMap, defaultLayout, editing: null | { id (null = a new map), name, cells, tool } }.
+    // The map being drawn lives in `editing`, so a refresh of the list doesn't lose it; nothing is
+    // sent until "Lưu". The grid is the real board (the side moving first starts bottom-left).
+    let mapsOpen = null;
+    const MAP_TOOLS = [
+      ['R', 'búa (đi trước)'], ['P', 'bao (đi trước)'], ['S', 'kéo (đi trước)'],
+      ['r', 'búa (đi sau)'], ['p', 'bao (đi sau)'], ['s', 'kéo (đi sau)'],
+      ['#', 'tường'], ['.', 'ô trống'],
+    ];
+    const mapsUrl = t => `/api/admin/tournaments/${encodeURIComponent(t.id)}`;
+    // What changing the map being played does, for the judge's confirmation. An open brawl's
+    // evaluation is rejudged right away: every team's newest bot replays its practice on the new map.
+    const mapChangeNote = t => `\n\nCác trận bắt đầu từ giờ sẽ dùng bố cục mới (trận đang đấu${t.daily ? ' và vòng đấu hằng ngày đã bắt đầu' : ''} vẫn giữ bố cục cũ).`
+      + (t.mode !== 'campaign' && t.status === 'open' ? '\nĐiểm đánh giá sẽ được chấm lại ngay: bot mới nhất của mỗi đội đấu tập lại với các bot đấu tập trên bố cục mới.' : '');
+    async function showMaps(t, refresh = false) {
+      let data;
+      try { data = await api(`${mapsUrl(t)}/maps`); }
+      catch (e) { return toast(e.message, 'error'); }
+      const editing = refresh && mapsOpen && mapsOpen.t.id === t.id ? mapsOpen.editing : null;
+      mapsOpen = { t, ...data, editing };
+      renderMaps();
+      if (!refresh) $('#mapsPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    function startMap(id) {
+      const m = mapsOpen, map = id && m.maps.find(x => x.id === id);
+      m.editing = { id: map ? map.id : null, name: map ? map.name : '', cells: [...(map ? map.layout : m.defaultLayout)], tool: '#' };
+      renderMaps();
+      $('#mapsPanel .map-editor').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    function renderMaps() {
+      const { t, maps, activeMap, defaultLayout, editing } = mapsOpen;
+      const panel = $('#mapsPanel');
+      const card = (id, name, layout, extra) => `<div class="map-card ${activeMap === id ? 'on' : ''}">
+          ${boardMapSvg(layout, { size: 150 })}
+          <b class="lines">${esc(name)}</b>
+          <div class="row" style="gap:6px;justify-content:center">${activeMap === id
+            ? '<span class="tag ok">✅ đang dùng</span>'
+            : `<button class="btn small yellow" data-mapuse="${id || ''}" title="các ván từ giờ bắt đầu từ bản đồ này">dùng</button>`}${extra}</div>
+        </div>`;
+      panel.innerHTML = `<section class="box">
+        <div class="row" style="justify-content:space-between"><h3 class="lines" style="margin:0">Bản đồ · ${esc(t.name)}</h3><button class="btn small" id="closeMaps">đóng</button></div>
+        <p class="muted" style="font-size:17px;margin:4px 0 10px">Bản đồ đang dùng quyết định chỗ xuất phát của các quân (bên đi trước màu đỏ, đích là góc trên phải; bên đi sau màu xanh, đích là góc dưới trái) và các ô <b>tường</b> (ô đen, không quân nào đi vào được). Mỗi trận hai đội lần lượt cầm bên đi trước, nên bản đồ lệch vẫn công bằng giữa hai đội. Đổi bản đồ lúc nào cũng được: trận đang đấu giữ bản đồ cũ${t.daily ? ', vòng đấu hằng ngày đã bắt đầu giữ bản đồ của nó, và bot mới nhất của mỗi đội đấu tập lại trên bản đồ mới' : ''}.</p>
+        <div class="map-list">
+          ${card(null, 'Bàn cờ chuẩn', defaultLayout, '')}
+          ${maps.map(m => card(m.id, m.name, m.layout, `<button class="btn small" data-mapedit="${m.id}">✏️ sửa</button><button class="btn small" data-mapdel="${m.id}" title="xóa bản đồ">🗑</button>`)).join('')}
+        </div>
+        ${editing ? mapEditor(editing) : '<button class="btn small" id="mapNew" style="margin-top:10px">➕ Tạo bản đồ mới</button>'}
+      </section>`;
+      panel.classList.remove('hidden');
+      $('#closeMaps').onclick = () => { mapsOpen = null; panel.classList.add('hidden'); };
+      if ($('#mapNew')) $('#mapNew').onclick = () => startMap(null);
+      $$('[data-mapedit]', panel).forEach(b => b.onclick = () => startMap(b.dataset.mapedit));
+      $$('[data-mapuse]', panel).forEach(b => b.onclick = async () => {
+        const id = b.dataset.mapuse || null;
+        if (!confirm(`Đổi bàn cờ đang đấu sang ${id ? `bản đồ "${maps.find(m => m.id === id).name}"` : 'bàn cờ chuẩn'}?${mapChangeNote(t)}`)) return;
+        try {
+          await api(`${mapsUrl(t)}/active-map`, { method: 'PUT', body: { mapId: id } });
+          toast(`Từ giờ các ván bắt đầu từ ${id ? `bản đồ "${maps.find(m => m.id === id).name}"` : 'bàn cờ chuẩn'} 🗺️`);
+          showMaps(t, true);
+        } catch (e) { toast(e.message, 'error'); }
+      });
+      $$('[data-mapdel]', panel).forEach(b => b.onclick = async () => {
+        const map = maps.find(m => m.id === b.dataset.mapdel);
+        if (!confirm(`Xóa bản đồ "${map.name}"?${map.id === activeMap ? `\n\nBản đồ này đang được dùng: các ván sau sẽ dùng bàn cờ chuẩn.${mapChangeNote(t)}` : ''}`)) return;
+        try {
+          await api(`${mapsUrl(t)}/maps/${encodeURIComponent(map.id)}`, { method: 'DELETE' });
+          if (editing && editing.id === map.id) mapsOpen.editing = null;
+          toast('Đã xóa bản đồ 🗑');
+          showMaps(t, true);
+        } catch (e) { toast(e.message, 'error'); }
+      });
+      if (editing) bindMapEditor();
+    }
+    function mapEditor(e) {
+      const swatch = c => (c === '#' ? '<span class="map-swatch wall"></span>' : c === '.' ? '<span class="map-swatch"></span>'
+        : `<svg viewBox="0 0 64 64" width="26" height="26">${boardPieceMarkup(c.toUpperCase(), BOARD_SIDE_COLOR[c === c.toUpperCase() ? 'white' : 'black'])}</svg>`);
+      return `<div class="map-editor box" style="margin-top:14px">
+        <div class="row" style="justify-content:space-between"><h3 class="lines" style="margin:0">${e.id ? `Sửa bản đồ: ${esc(mapsOpen.maps.find(m => m.id === e.id).name)}` : 'Tạo bản đồ mới'}</h3><button class="btn small" id="meClose">đóng</button></div>
+        <label style="display:block;margin:8px 0"><span>tên bản đồ</span><input id="meName" maxlength="40" value="${esc(e.name)}" placeholder="Mê cung" style="width:100%;max-width:420px"></label>
+        <div class="map-palette">${MAP_TOOLS.map(([c, label]) => `<button class="btn small ${e.tool === c ? 'on' : ''}" data-tool="${c}">${swatch(c)} ${label}</button>`).join('')}</div>
+        <div class="row" style="align-items:flex-start;gap:18px;margin-top:10px">
+          <div id="meGrid" class="map-grid"></div>
+          <div style="flex:1;min-width:220px">
+            <p class="muted" style="font-size:17px;margin:0 0 8px">Chọn một loại ô ở trên rồi bấm (hoặc kéo) trên bàn cờ để đặt. Bấm vào ô đã là loại đang chọn thì ô đó thành trống. Số hiệu <code>pid</code> của các quân mỗi bên được đánh theo thứ tự đọc từ phía bên đó (hàng nhà trước, từ trái sang phải).</p>
+            <p id="meCount" style="margin:0 0 6px"></p>
+            <p id="meProblem" style="margin:0;color:var(--red)"></p>
+            <div class="row" style="gap:8px;margin-top:12px">
+              <button class="btn red" id="meSave">Lưu 💾</button>
+              <button class="btn small" id="meDefault" title="đặt lại như bàn cờ chuẩn (chưa lưu)">nạp bàn cờ chuẩn</button>
+              <button class="btn small" id="meClear" title="xóa mọi quân và tường (chưa lưu)">xóa hết</button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+    }
+    function bindMapEditor() {
+      const m = mapsOpen, e = m.editing;
+      const draw = () => {
+        const layout = e.cells.join('');
+        $('#meGrid').innerHTML = boardMapSvg(layout, { size: 380 });
+        const n = re => e.cells.filter(c => re.test(c)).length;
+        $('#meCount').innerHTML = `<span style="color:${BOARD_SIDE_COLOR.white}">bên đi trước: ${n(/[RPS]/)} quân</span> · <span style="color:${BOARD_SIDE_COLOR.black}">bên đi sau: ${n(/[rps]/)} quân</span> · tường: ${n(/#/)} ô`;
+        const why = BoardRules.layoutProblem(layout);
+        $('#meProblem').textContent = why ? `⚠️ ${why.charAt(0).toUpperCase()}${why.slice(1)}` : '';
+        $('#meSave').disabled = !!why;
+      };
+      draw();
+      $('#meName').oninput = () => { e.name = $('#meName').value; };
+      $$('[data-tool]').forEach(b => b.onclick = () => {
+        e.tool = b.dataset.tool;
+        $$('[data-tool]').forEach(x => x.classList.toggle('on', x === b));
+      });
+      // painting: the first square of a stroke decides whether it places the tool or clears (that
+      // square already held it); dragging then does the same to every square it crosses
+      let stroke = null;
+      const grid = $('#meGrid');
+      const cellAt = ev => {
+        const r = grid.querySelector('svg').getBoundingClientRect();
+        const x = Math.floor((ev.clientX - r.left) / r.width * BoardRules.W), row = Math.floor((ev.clientY - r.top) / r.height * BoardRules.H);
+        return x < 0 || x >= BoardRules.W || row < 0 || row >= BoardRules.H ? -1 : (BoardRules.H - 1 - row) * BoardRules.W + x;
+      };
+      const paint = ev => {
+        const i = cellAt(ev);
+        if (i < 0) return;
+        if (stroke === null) stroke = e.cells[i] === e.tool ? '.' : e.tool;
+        if (e.cells[i] !== stroke) { e.cells[i] = stroke; draw(); }
+      };
+      grid.onpointerdown = ev => { ev.preventDefault(); grid.setPointerCapture(ev.pointerId); stroke = null; paint(ev); };
+      grid.onpointermove = ev => { if (stroke !== null) paint(ev); };
+      grid.onpointerup = grid.onpointercancel = () => { stroke = null; };
+      $('#meDefault').onclick = () => { e.cells = [...m.defaultLayout]; draw(); };
+      $('#meClear').onclick = () => { e.cells = e.cells.map(() => '.'); draw(); };
+      $('#meClose').onclick = () => { m.editing = null; renderMaps(); };
+      $('#meSave').onclick = async () => {
+        const name = e.name.trim();
+        if (!name) { $('#meName').focus(); return toast('Hãy đặt tên cho bản đồ', 'error'); }
+        // the map being played: a new layout changes the games from now on, so ask first
+        const playing = e.id && e.id === m.activeMap && m.maps.find(x => x.id === e.id).layout !== e.cells.join('');
+        if (playing && !confirm(`Bản đồ "${name}" đang được dùng. Lưu bố cục mới cho nó?${mapChangeNote(m.t)}`)) return;
+        try {
+          const body = { name, layout: e.cells.join('') };
+          if (e.id) await api(`${mapsUrl(m.t)}/maps/${encodeURIComponent(e.id)}`, { method: 'PUT', body });
+          else await api(`${mapsUrl(m.t)}/maps`, { method: 'POST', body });
+          toast(e.id ? 'Đã lưu bản đồ 🗺️' : 'Đã tạo bản đồ 🗺️ Bấm "dùng" để các ván bắt đầu từ bản đồ này.');
+          m.editing = null;
+          showMaps(m.t, true);
+        } catch (err) { toast(err.message, 'error'); }
+      };
     }
 
     // ---------- name and description ----------
@@ -1045,7 +1240,7 @@ public class Bot {
       e.preventDefault();
       const f = new FormData(e.target);
       try {
-        const { tournament } = await api('/api/admin/tournaments', { method: 'POST', body: { name: f.get('name'), game: f.get('game'), mode: f.get('mode'), dailyTime: f.get('mode') === 'brawl' ? f.get('dailyTime') : undefined, pairing: f.get('mode') === 'brawl' ? f.get('pairing') : undefined, tzOffset: new Date().getTimezoneOffset(), access: f.get('access'), hidden: f.get('hidden') === 'on', description: f.get('description'), startsAt: f.get('startsAt') ? new Date(f.get('startsAt')).toISOString() : '', deadline: new Date(f.get('deadline')).toISOString() } });
+        const { tournament } = await api('/api/admin/tournaments', { method: 'POST', body: { name: f.get('name'), game: f.get('game'), mode: f.get('mode'), dailyTime: f.get('mode') === 'brawl' && f.get('schedule') === 'daily' ? f.get('dailyTime') : undefined, cycleHours: f.get('mode') === 'brawl' && f.get('schedule') === 'cycle' ? +f.get('cycleHours') : undefined, pairing: f.get('mode') === 'brawl' ? f.get('pairing') : undefined, tzOffset: new Date().getTimezoneOffset(), access: f.get('access'), hidden: f.get('hidden') === 'on', description: f.get('description'), startsAt: f.get('startsAt') ? new Date(f.get('startsAt')).toISOString() : '', deadline: new Date(f.get('deadline')).toISOString() } });
         e.target.reset();
         $$('textarea.oneline', e.target).forEach(growBox);
         syncModeFields();

@@ -20,11 +20,27 @@ function boardPieceMarkup(kind, color) {
     <g transform="translate(9 9) scale(.72)">${rpsMarkup(kind)}</g>`;
 }
 
+// A map (layout, see board-rules.js) drawn as the real board: y = 0 at the bottom, walls black,
+// the side moving first red (its goal, the top-right corner, tinted red), the other blue.
+const BOARD_SIDE_COLOR = { white: '#e2433f', black: '#3a7bd5' };
+function boardMapSvg(layout, { size = 180, attrs = '' } = {}) {
+  const R = BoardRules, C = 40;
+  const cells = [];
+  for (let y = 0; y < R.H; y++) for (let x = 0; x < R.W; x++) {
+    const c = layout[y * R.W + x], X = x * C, Y = (R.H - 1 - y) * C;
+    const goal = x === R.GOAL.white[0] && y === R.GOAL.white[1] ? '#ffd9d7' : x === R.GOAL.black[0] && y === R.GOAL.black[1] ? '#d6e6fb' : null;
+    cells.push(`<rect x="${X}" y="${Y}" width="${C}" height="${C}" fill="${c === '#' ? '#2b2b2b' : goal || ((x + y) % 2 ? '#fffdf3' : '#f4f0e2')}"/>`);
+    if ('RPSrps'.includes(c)) cells.push(`<g transform="translate(${X + 2} ${Y + 2}) scale(${(C - 4) / 64})">${boardPieceMarkup(c.toUpperCase(), BOARD_SIDE_COLOR[c === c.toUpperCase() ? 'white' : 'black'])}</g>`);
+  }
+  return `<svg viewBox="0 0 ${R.W * C} ${R.H * C}" width="${size}" height="${size}" ${attrs} style="display:block;border:2px solid #2b2b2b;border-radius:6px;background:#fff">${cells.join('')}</svg>`;
+}
+
 const BOARD_TEMPLATES = {
   python: `import random
 
 # gameState.ally = your pieces, gameState.opponent = the enemy's pieces. Each piece has
-#   .pid (1-9, a piece keeps its number all game), .Type ('R' búa, 'P' bao, 'S' kéo), .x, .y
+#   .pid (1, 2, ..., a piece keeps its number all game), .Type ('R' búa, 'P' bao, 'S' kéo), .x, .y
+# gameState.walls = squares no piece can enter (.x, .y), if the tournament's map has any.
 # Coordinates are 1-9, from your side: (1, 1) is bottom-left and y = 1 is your home row. You win by
 # reaching the top-right corner (9, 9) or by capturing every enemy piece; the enemy heads for (1, 1).
 # gameState.currentTurn = moves already played (both sides); the game is a draw at gameState.maxTurn.
@@ -40,12 +56,13 @@ def play(gameState):
     STEP = {1: (-1, 1), 2: (0, 1), 3: (1, 1), 4: (1, 0), 5: (1, -1), 6: (0, -1), 7: (-1, -1), 8: (-1, 0)}
     BEATS = {'R': 'S', 'S': 'P', 'P': 'R'}  # piece -> the piece it captures
     mine = {(p.x, p.y) for p in gameState.ally}
+    walls = {(w.x, w.y) for w in gameState.walls}
     enemy = {(p.x, p.y): p.Type for p in gameState.opponent}
     moves = []
     for p in gameState.ally:
         for d, (dx, dy) in STEP.items():
             nx, ny = p.x + dx, p.y + dy
-            if not (1 <= nx <= 9 and 1 <= ny <= 9) or (nx, ny) in mine:
+            if not (1 <= nx <= 9 and 1 <= ny <= 9) or (nx, ny) in mine or (nx, ny) in walls:
                 continue
             t = enemy.get((nx, ny))
             # an empty square, or an enemy piece this one captures
@@ -59,7 +76,8 @@ def play(gameState):
     return (best[1], best[2])
 `,
   cpp: `// gameState.ally = your pieces, gameState.opponent = the enemy's pieces. Each Piece has
-//   pid (1-9, a piece keeps its number all game), Type ('R' búa, 'P' bao, 'S' kéo), x, y
+//   pid (1, 2, ..., a piece keeps its number all game), Type ('R' búa, 'P' bao, 'S' kéo), x, y
+// gameState.walls = squares no piece can enter (Cell: x, y), if the tournament's map has any.
 // Coordinates are 1-9, from your side: (1, 1) is bottom-left and y = 1 is your home row. You win by
 // reaching the top-right corner (9, 9) or by capturing every enemy piece; the enemy heads for (1, 1).
 // gameState.currentTurn = moves already played (both sides); the game is a draw at gameState.maxTurn.
@@ -73,9 +91,10 @@ def play(gameState):
 std::pair<int, int> play(const State& gameState) {
     const int DX[9] = {0, -1, 0, 1, 1, 1, 0, -1, -1};
     const int DY[9] = {0, 1, 1, 1, 0, -1, -1, -1, 0};
-    char at[10][10] = {};  // at[y][x] (1-9): 'R' 'P' 'S' = mine, 'r' 'p' 's' = enemy, 0 = empty
+    char at[10][10] = {};  // at[y][x] (1-9): 'R' 'P' 'S' = mine, 'r' 'p' 's' = enemy, '#' = wall, 0 = empty
     for (const Piece& p : gameState.ally) at[p.y][p.x] = p.Type;
     for (const Piece& p : gameState.opponent) at[p.y][p.x] = p.Type - 'A' + 'a';
+    for (const Cell& w : gameState.walls) at[w.y][w.x] = '#';
     std::pair<int, int> best{0, 0};  // stays invalid (turn skipped) if there is no move
     int bestDist = 1000;
     for (const Piece& p : gameState.ally)
@@ -94,7 +113,8 @@ std::pair<int, int> play(const State& gameState) {
 }
 `,
   java: `// gameState.ally = your pieces, gameState.opponent = the enemy's pieces (List<Piece>). Each Piece
-// has pid (1-9, a piece keeps its number all game), Type ('R' búa, 'P' bao, 'S' kéo), x, y.
+// has pid (1, 2, ..., a piece keeps its number all game), Type ('R' búa, 'P' bao, 'S' kéo), x, y.
+// gameState.walls = squares no piece can enter (List<Cell>: x, y), if the tournament's map has any.
 // Coordinates are 1-9, from your side: (1, 1) is bottom-left and y = 1 is your home row. You win by
 // reaching the top-right corner (9, 9) or by capturing every enemy piece; the enemy heads for (1, 1).
 // gameState.currentTurn = moves already played (both sides); the game is a draw at gameState.maxTurn.
@@ -110,9 +130,10 @@ public class Bot {
     static final int[] DY = {0, 1, 1, 1, 0, -1, -1, -1, 0};
 
     public int[] play(State gameState) {
-        char[][] at = new char[10][10];  // at[y][x] (1-9): 'R' 'P' 'S' = mine, 'r' 'p' 's' = enemy, 0 = empty
+        char[][] at = new char[10][10];  // at[y][x] (1-9): 'R' 'P' 'S' = mine, 'r' 'p' 's' = enemy, '#' = wall, 0 = empty
         for (Piece p : gameState.ally) at[p.y][p.x] = p.Type;
         for (Piece p : gameState.opponent) at[p.y][p.x] = Character.toLowerCase(p.Type);
+        for (Cell w : gameState.walls) at[w.y][w.x] = '#';
         int[] best = {0, 0};  // stays invalid (turn skipped) if there is no move
         int bestDist = 1000;
         for (Piece p : gameState.ally)
@@ -139,6 +160,7 @@ const BOARD_DOCS = {
 
 gameState.ally         # list quân của bạn
 gameState.opponent     # list quân địch
+gameState.walls        # list ô tường (wall.x, wall.y), không quân nào đi vào được
 gameState.maxTurn      # 1000: tới đây thì hòa
 gameState.currentTurn  # số nước đã đi trong ván (cả hai bên)
 piece.pid, piece.Type, piece.x, piece.y</pre>
@@ -148,8 +170,10 @@ piece.pid, piece.Type, piece.x, piece.y</pre>
 
 // có sẵn, đừng khai báo lại:
 struct Piece { int pid; char Type; int x, y; };
+struct Cell { int x, y; };
 struct State {
     std::vector&lt;Piece&gt; ally, opponent;
+    std::vector&lt;Cell&gt; walls;  // ô tường
     int maxTurn, currentTurn;
 };</pre>
     <p>Chỉ viết hàm (và hàm phụ, struct, biến toàn cục nếu cần). Các thư viện chuẩn thường dùng (<code>vector</code>, <code>string</code>, <code>algorithm</code>, <code>queue</code>, ... hoặc <code>bits/stdc++.h</code>) đã có sẵn. Không được dùng <code>#define</code>/<code>#pragma</code>, include thư viện khác, đọc ghi tệp hay gọi hệ thống. Muốn canh thời gian thì dùng <code>std::chrono::steady_clock::now()</code> (hoặc <code>clock()</code>).</p>`,
@@ -158,14 +182,16 @@ struct State {
 
 // có sẵn, đừng khai báo lại:
 class Piece { int pid; char Type; int x, y; }
-class State { List&lt;Piece&gt; ally, opponent; int maxTurn, currentTurn; }</pre>
+class Cell { int x, y; }
+class State { List&lt;Piece&gt; ally, opponent; List&lt;Cell&gt; walls; int maxTurn, currentTurn; }</pre>
     <p>Chỉ viết lớp <code>Bot</code>. <code>java.util.*</code> và <code>Math</code> luôn có sẵn; không được import gì khác. Trong <code>System</code> chỉ dùng được <code>System.out.println</code>/<code>print</code>/<code>printf</code>, <code>System.nanoTime</code>, <code>System.currentTimeMillis</code>. Không dùng reflection, luồng, tệp hay tiến trình. Muốn canh thời gian thì dùng <code>System.nanoTime()</code>.</p>`,
 };
 
 // Rules shared by both modes (the submit page adds the brawl / campaign specifics).
 function boardRules(maxTurns, cooldownMs) {
   return `
-    <li><b>Bàn cờ 9×9</b>, mỗi bên 9 quân: 3 <b>búa</b> (<code>R</code>), 3 <b>bao</b> (<code>P</code>), 3 <b>kéo</b> (<code>S</code>). Mỗi lượt bot nhận <code>gameState</code>: <code>ally</code> là các quân của bạn, <code>opponent</code> là các quân địch; mỗi quân có <code>pid</code> (số hiệu 1–9, giữ nguyên cả ván), <code>Type</code> (<code>R</code>/<code>P</code>/<code>S</code>), <code>x</code>, <code>y</code> (1–9).</li>
+    <li><b>Bàn cờ 9×9</b>, mặc định mỗi bên 9 quân: 3 <b>búa</b> (<code>R</code>), 3 <b>bao</b> (<code>P</code>), 3 <b>kéo</b> (<code>S</code>). Mỗi lượt bot nhận <code>gameState</code>: <code>ally</code> là các quân của bạn, <code>opponent</code> là các quân địch; mỗi quân có <code>pid</code> (số hiệu 1, 2, ..., giữ nguyên cả ván), <code>Type</code> (<code>R</code>/<code>P</code>/<code>S</code>), <code>x</code>, <code>y</code> (1–9).</li>
+    <li><b>Bản đồ:</b> trọng tài có thể chọn một bản đồ khác cho giải: quân xuất phát ở chỗ khác, số quân mỗi bên khác nhau, và có thể có <b>tường</b> (ô đen): không quân nào đi vào được. Các ô tường nằm trong <code>gameState.walls</code> (mỗi ô có <code>x</code>, <code>y</code>, cũng nhìn từ phía mình). Đích vẫn là hai góc như trên.</li>
     <li>Bot luôn nhìn bàn cờ <b>từ phía mình</b>: quân của bạn xuất phát ở góc <b>dưới trái</b> (góc <code>(1, 1)</code>, hàng <code>y = 1</code> là hàng nhà), đích của bạn là góc <b>trên phải</b> <code>(9, 9)</code>; đích của địch là góc <code>(1, 1)</code> nhà bạn. Bên đi sau được xoay bàn 180° nên thấy y hệt.</li>
     <li>Bot trả về <b>(pid, hướng)</b>: quân nào đi, đi hướng nào. Hướng (lên = về phía hàng <code>y = 9</code>): <b>1</b> lên-trái, <b>2</b> lên, <b>3</b> lên-phải, <b>4</b> phải, <b>5</b> xuống-phải, <b>6</b> xuống, <b>7</b> xuống-trái, <b>8</b> trái.</li>
     <li>Mỗi lượt đi <b>một quân, một ô</b> theo 8 hướng. Không được đi vào ô có quân mình, hay vào quân địch <b>cùng loại</b> (hai quân cùng loại chặn nhau).</li>

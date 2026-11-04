@@ -1,6 +1,6 @@
 # uses: board search
 # Tính Toán: minimax two moves deep (its move, then your best reply), with the same
-# evaluation as Thận Trọng. It never misses a win in one and sees most one-move threats.
+# evaluation as Thận Trọng (distances go around the walls). It never misses a win in one and sees most one-move threats.
 
 
 def play(gameState):

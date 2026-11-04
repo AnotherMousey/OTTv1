@@ -1,7 +1,7 @@
 # uses: board search
 # Thấu Suốt: the boss. Alpha-beta search with iterative deepening: it searches 2, 3, 4, ...
 # moves ahead until its thinking time (0.3 s per move) runs out, and plays the best move of
-# the deepest search it finished.
+# the deepest search it finished. Like every sparring bot it measures distances around the walls.
 THINK = 0.3
 
 
