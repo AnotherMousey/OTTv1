@@ -22,9 +22,9 @@ function boardPieceMarkup(kind, color) {
 
 // A map ({ layout, width, height }, see board-rules.js) drawn as the real board: y = 0 at the bottom,
 // walls black, the side moving first blue (its goal, the top-right corner, tinted blue), the other
-// red. `size` = the longer side, in pixels.
+// red. `size` = the longer side, in pixels; or `cell` = each square's side (the board grows with the map).
 const BOARD_SIDE_COLOR = { white: '#3a7bd5', black: '#e2433f' };
-function boardMapSvg({ layout, width: W = 9, height: H = 9 }, { size = 180, attrs = '' } = {}) {
+function boardMapSvg({ layout, width: W = 9, height: H = 9 }, { size = 180, cell = null, attrs = '' } = {}) {
   const C = 40, goal = BoardRules.goals(W, H);
   const cells = [];
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
@@ -33,7 +33,7 @@ function boardMapSvg({ layout, width: W = 9, height: H = 9 }, { size = 180, attr
     cells.push(`<rect x="${X}" y="${Y}" width="${C}" height="${C}" fill="${c === '#' ? '#2b2b2b' : tint || ((x + y) % 2 ? '#fffdf3' : '#f4f0e2')}"/>`);
     if ('RPSrps'.includes(c)) cells.push(`<g transform="translate(${X + 2} ${Y + 2}) scale(${(C - 4) / 64})">${boardPieceMarkup(c.toUpperCase(), BOARD_SIDE_COLOR[c === c.toUpperCase() ? 'white' : 'black'])}</g>`);
   }
-  const k = size / Math.max(W, H) / C;
+  const k = (cell || size / Math.max(W, H)) / C;
   return `<svg viewBox="0 0 ${W * C} ${H * C}" width="${Math.round(W * C * k)}" height="${Math.round(H * C * k)}" ${attrs} style="display:block;border:2px solid #2b2b2b;border-radius:6px;background:#fff">${cells.join('')}</svg>`;
 }
 
