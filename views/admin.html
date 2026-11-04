@@ -551,6 +551,7 @@
         } catch (e) { toast(e.message, 'error'); }
       });
       if (editing) bindMapEditor();
+      else fitPage();
     }
     // the two toggles: what a click places (búa / bao / kéo / tường), and for a piece, its team
     function mapPalette(e) {
@@ -565,17 +566,18 @@
       const [lo, hi] = mapsOpen.sizeLimits;
       return `<div class="map-editor box" style="margin-top:14px">
         <div class="row" style="justify-content:space-between"><h3 class="lines" style="margin:0">${e.id ? `Sửa bản đồ: ${esc(mapsOpen.maps.find(m => m.id === e.id).name)}` : 'Tạo bản đồ mới'}</h3><button class="btn small" id="meClose">đóng</button></div>
-        <div class="row" style="gap:12px;margin:8px 0;align-items:flex-end">
-          <label style="flex:1;min-width:200px;max-width:420px;margin:0"><span>tên bản đồ</span><input id="meName" maxlength="40" value="${esc(e.name)}" placeholder="Mê cung" style="width:100%"></label>
-          <label style="margin:0" title="số cột (${lo}–${hi})"><span>chiều rộng</span><input id="meWidth" type="number" min="${lo}" max="${hi}" step="1" value="${e.width}" style="width:90px"></label>
-          <label style="margin:0" title="số hàng (${lo}–${hi})"><span>chiều cao</span><input id="meHeight" type="number" min="${lo}" max="${hi}" step="1" value="${e.height}" style="width:90px"></label>
-          <label style="margin:0" title="tính cả hai bên; hết số nước này mà chưa ai thắng thì hòa"><span>số nước tối đa mỗi ván</span><input id="meTurns" type="number" min="${mapsOpen.turnLimits[0]}" max="${mapsOpen.turnLimits[1]}" step="1" value="${e.maxTurns}" style="width:140px"></label>
-        </div>
         <div class="map-edit-grid">
+          <div class="map-fields">
+            <label><span>tên bản đồ</span><input id="meName" maxlength="40" value="${esc(e.name)}" placeholder="Mê cung"></label>
+            <label title="số cột (${lo}–${hi})"><span>chiều rộng</span><input id="meWidth" type="number" min="${lo}" max="${hi}" step="1" value="${e.width}"></label>
+            <label title="số hàng (${lo}–${hi})"><span>chiều cao</span><input id="meHeight" type="number" min="${lo}" max="${hi}" step="1" value="${e.height}"></label>
+            <label title="tính cả hai bên; hết số nước này mà chưa ai thắng thì hòa"><span>số nước tối đa mỗi ván</span><input id="meTurns" type="number" min="${mapsOpen.turnLimits[0]}" max="${mapsOpen.turnLimits[1]}" step="1" value="${e.maxTurns}"></label>
+          </div>
           <div class="map-grid-wrap"><div id="meGrid" class="map-grid"></div></div>
           <div>
             ${mapPalette(e)}
-            <p id="meCount" style="margin:12px 0 6px"></p>
+            <p class="muted" style="font-size:17px;margin:12px 0 0">Bấm chuột phải vào một ô (hoặc giữ chuột phải và kéo) để xóa ô đó về ô trống.</p>
+            <p id="meCount" style="margin:8px 0 6px"></p>
             <p id="meProblem" style="margin:0;color:var(--red)"></p>
             <div class="row" style="gap:8px;margin-top:12px">
               <button class="btn red" id="meSave">Lưu 💾</button>
@@ -595,6 +597,15 @@
       cells.forEach((c, i) => { if (/[rps]/.test(c)) put(i % w + nw - w, Math.floor(i / w) + nh - h, c); });
       return out;
     }
+    // The page widens as much as the editor's board needs (it never shrinks below its usual width);
+    // closing the editor puts it back.
+    function fitPage() {
+      const main = $('main'), wrap = $('#mapsPanel .map-grid-wrap');
+      if (!wrap) return void (main.style.maxWidth = '');
+      main.style.maxWidth = '';
+      const short = wrap.querySelector('svg').getBoundingClientRect().width - wrap.clientWidth;
+      if (short > 0) main.style.maxWidth = `${Math.ceil(main.getBoundingClientRect().width + short)}px`;
+    }
     function bindMapEditor() {
       const m = mapsOpen, e = m.editing;
       const [lo, hi] = m.sizeLimits;
@@ -602,6 +613,7 @@
         const layout = e.cells.join('');
         // a fixed size per square: a bigger map gets a bigger grid, its squares stay as easy to click
         $('#meGrid').innerHTML = boardMapSvg({ layout, width: e.width, height: e.height }, { cell: MAP_CELL });
+        fitPage();
         const n = re => e.cells.filter(c => re.test(c)).length;
         $('#meCount').innerHTML = `${e.width}×${e.height} ô · <span style="color:${BOARD_SIDE_COLOR.white}">bên đi trước: ${n(/[RPS]/)} quân</span> · <span style="color:${BOARD_SIDE_COLOR.black}">bên đi sau: ${n(/[rps]/)} quân</span> · tường: ${n(/#/)} ô`;
         const why = BoardRules.layoutProblem(layout, e.width, e.height) || BoardRules.turnsProblem(e.maxTurns);
@@ -637,7 +649,8 @@
       };
       bindPalette();
       // painting: the first square of a stroke decides whether it places the tool or clears (that
-      // square already held it); dragging then does the same to every square it crosses
+      // square already held it); dragging then does the same to every square it crosses. The right
+      // button always clears.
       let stroke = null;
       const grid = $('#meGrid');
       const cellAt = ev => {
@@ -651,7 +664,8 @@
         if (stroke === null) stroke = e.cells[i] === mapTool(e) ? '.' : mapTool(e);
         if (e.cells[i] !== stroke) { e.cells[i] = stroke; draw(); }
       };
-      grid.onpointerdown = ev => { ev.preventDefault(); grid.setPointerCapture(ev.pointerId); stroke = null; paint(ev); };
+      grid.onpointerdown = ev => { ev.preventDefault(); grid.setPointerCapture(ev.pointerId); stroke = ev.button === 2 ? '.' : null; paint(ev); };
+      grid.oncontextmenu = ev => ev.preventDefault(); // the right button clears instead
       grid.onpointermove = ev => { if (stroke !== null) paint(ev); };
       grid.onpointerup = grid.onpointercancel = () => { stroke = null; };
       $('#meDefault').onclick = () => {

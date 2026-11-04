@@ -517,9 +517,12 @@ table.match-list td.score { font-family: 'Pangolin', cursive; }
 .map-toggle.off { opacity: .45; }
 /* the map editor: the board at a fixed size per square (scrolls when wider than its column), the
    controls in a fixed column at the right; the submit page's map the same way, in a wider side column */
-.map-edit-grid { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 18px; align-items: start; margin-top: 10px; }
+.map-edit-grid { display: grid; grid-template-columns: 220px minmax(0, 1fr) 380px; gap: 22px; align-items: start; margin-top: 10px; }
+.map-fields { display: flex; flex-direction: column; gap: 10px; }
+.map-fields label { margin: 0; }
+.map-fields input { width: 100%; }
 .map-grid-wrap, .map-view { overflow: auto; max-width: 100%; }
 .map-grid-wrap { text-align: center; } /* the board in the middle of its column (a wider one scrolls from its left edge) */
 .submit-grid.board-game { grid-template-columns: minmax(0, 1fr) var(--side, 520px); }
-@media (max-width: 900px) { .map-edit-grid { grid-template-columns: 1fr; } }
+@media (max-width: 1100px) { .map-edit-grid { grid-template-columns: 1fr; } }
 @media (max-width: 1100px) { .submit-grid.board-game { grid-template-columns: 1fr; } }
