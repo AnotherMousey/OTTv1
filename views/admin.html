@@ -483,7 +483,7 @@
     // what a click places: a kind (two toggles: búa / bao / kéo / tường, and the team for a piece)
     const MAP_KINDS = [['R', 'búa'], ['P', 'bao'], ['S', 'kéo'], ['#', 'tường']];
     const MAP_TEAMS = [['white', 'đi trước'], ['black', 'đi sau']];
-    const MAP_CELL = 52; // px per square in the editor (as in the replays)
+    const MAP_CELL = 52; // px per square in the editor (as in the replays and on the submit page)
     const mapTool = e => (e.kind === '#' ? '#' : e.team === 'white' ? e.kind : e.kind.toLowerCase());
     const mapsUrl = t => `/api/admin/tournaments/${encodeURIComponent(t.id)}`;
     // What changing the map being played does, for the judge's confirmation. An open brawl's
@@ -571,9 +571,9 @@
           <label style="margin:0" title="số hàng (${lo}–${hi})"><span>chiều cao</span><input id="meHeight" type="number" min="${lo}" max="${hi}" step="1" value="${e.height}" style="width:90px"></label>
           <label style="margin:0" title="tính cả hai bên; hết số nước này mà chưa ai thắng thì hòa"><span>số nước tối đa mỗi ván</span><input id="meTurns" type="number" min="${mapsOpen.turnLimits[0]}" max="${mapsOpen.turnLimits[1]}" step="1" value="${e.maxTurns}" style="width:140px"></label>
         </div>
-        <div class="row" style="align-items:flex-start;gap:18px;margin-top:10px">
-          <div id="meGrid" class="map-grid"></div>
-          <div style="flex:1;min-width:220px">
+        <div class="map-edit-grid">
+          <div class="map-grid-wrap"><div id="meGrid" class="map-grid"></div></div>
+          <div>
             ${mapPalette(e)}
             <p class="muted" style="font-size:17px;margin:12px 0 8px">Chọn loại ô (búa, bao, kéo hoặc tường) và bên (đi trước hoặc đi sau), rồi bấm (hoặc kéo) trên bàn cờ để đặt. Bấm vào ô đã là loại đang chọn thì ô đó thành trống. Đổi kích thước thì quân bên đi trước (và tường) giữ chỗ tính từ góc dưới trái, quân bên đi sau tính từ góc trên phải; ô nào ra ngoài bàn thì bị bỏ. Số hiệu <code>pid</code> của các quân mỗi bên được đánh theo thứ tự đọc từ phía bên đó (hàng nhà trước, từ trái sang phải).</p>
             <p id="meCount" style="margin:0 0 6px"></p>

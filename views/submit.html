@@ -70,6 +70,7 @@
           <p class="muted" style="font-size:16px;margin-top:-6px" id="yoursubsHint">Bài nộp ✅ mới nhất của bạn sẽ được dùng để thi đấu.</p>
           <div class="sublist" id="subs"><span class="muted">chưa có gì</span></div>
         </div>
+        <div class="box alt hidden" id="mapBox" style="margin-top:16px"></div>
       </aside>
     </div>
   </main>
@@ -125,11 +126,17 @@ public class Bot {
     const isBoard = () => !!tournament && tournament.game === 'board';
     const templates = () => (isBoard() ? BOARD_TEMPLATES : TEMPLATES);
     const docs = () => (isBoard() ? BOARD_DOCS : DOCS)[lang];
-    // the board game's map in play (the standard one too), first: drawn as the real board (as in the replays)
-    const mapRule = () => `
-        <li><b>Bản đồ của giải: ${esc(tournament.map.name)}</b> · bàn cờ <b>${tournament.map.width}×${tournament.map.height}</b> · tối đa <b>${tournament.map.maxTurns} nước</b> mỗi ván. Các ván bắt đầu như hình dưới (bên đi trước màu xanh, đích là góc trên phải; bên đi sau màu đỏ, đích là góc dưới trái; ô đen là tường). Ván bạn đi sau, bot của bạn thấy bàn cờ xoay 180° nên vẫn xuất phát ở phía dưới trái. Trọng tài có thể đổi bản đồ trong lúc giải diễn ra.
-          <div style="margin:8px 0">${boardMapSvg(tournament.map, { size: 220 })}</div></li>`;
-    const commonRules = () => isBoard() ? mapRule() + boardRules(TURNS, COOLDOWN) : `
+    // the board game's map in play (the standard one too), beside "Bài nộp của bạn": drawn as the real
+    // board, at the judge's editor size (a fixed size per square; a big map scrolls in its box)
+    function renderMap() {
+      const box = $('#mapBox'), map = isBoard() && tournament.map;
+      box.classList.toggle('hidden', !map);
+      if (!map) return;
+      box.innerHTML = `<h3 style="margin-top:0">Bản đồ: ${esc(map.name)}</h3>
+        <p class="muted" style="font-size:16px;margin-top:-6px">Bàn cờ <b>${map.width}×${map.height}</b> · tối đa <b>${map.maxTurns} nước</b> mỗi ván. Bên đi trước màu xanh (đích là góc trên phải), bên đi sau màu đỏ (đích là góc dưới trái), ô đen là tường. Ván bạn đi sau, bot của bạn thấy bàn cờ xoay 180° nên vẫn xuất phát ở phía dưới trái. Trọng tài có thể đổi bản đồ trong lúc giải diễn ra.</p>
+        <div class="map-view">${boardMapSvg(map, { cell: 52 })}</div>`;
+    }
+    const commonRules = () => isBoard() ? boardRules(TURNS, COOLDOWN) : `
         <li>Nước đi: <code>R</code> = búa, <code>P</code> = bao, <code>S</code> = kéo.</li>
         <li>Mỗi trận gồm <b>${TURNS} lượt</b>. Mỗi lượt: thắng = <b>3</b> điểm, hòa = <b>1</b>, thua = <b>0</b>.</li>
         <li>Hai danh sách lịch sử chứa mọi lượt trước đó, cũ nhất đứng đầu. Vị trí <i>i</i> của hai danh sách là cùng một lượt.</li>
@@ -225,11 +232,13 @@ public class Bot {
       $('#tdesc').textContent = tournament.description;
       document.title = `Nộp bài · ${tournament.name}`;
       renderSubs(data.submissions);
+      renderMap();
       if (tournament.status !== 'open') location.href = `/tournament/${encodeURIComponent(tid)}/live`;
     }
 
     // Adjust labels for the tournament's mode (called once the tournament is known).
     function setupMode() {
+      $('.submit-grid').classList.toggle('board-game', isBoard()); // a wider side column, for the map
       setLang(lang); // now that the game is known: its starter code and docs
       if (isBoard()) $('#tdesc').insertAdjacentHTML('beforebegin', '<span class="tag mode">♟️ cờ OTT</span> ');
       if (tournament.mode !== 'campaign') {

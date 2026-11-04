@@ -502,16 +502,23 @@ table.match-list td.score { font-family: 'Pangolin', cursive; }
 .map-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
 .map-card { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px; border: 2px dashed #ccc; border-radius: 10px; text-align: center; }
 .map-card.on { border: 2px solid var(--green); background: #effaf1; }
-.map-card svg, .map-grid svg { max-width: 100%; height: auto; }
+.map-card svg { max-width: 100%; height: auto; }
 .map-palette { display: flex; flex-wrap: wrap; gap: 6px; }
 .map-palette .btn { display: inline-flex; align-items: center; gap: 6px; }
 .map-palette .btn.on { outline: 3px solid var(--ink); background: #fff4c2; }
 .map-swatch { display: inline-block; width: 22px; height: 22px; border: 2px solid #2b2b2b; border-radius: 4px; background: #f4f0e2; }
 .map-swatch.wall { background: #2b2b2b; }
-.map-grid { flex: none; max-width: 100%; touch-action: none; cursor: crosshair; user-select: none; }
+.map-grid { display: inline-block; touch-action: none; cursor: crosshair; user-select: none; }
 
 .map-palette { flex-direction: column; align-items: flex-start; gap: 10px; }
 .map-toggle { display: inline-flex; flex-wrap: wrap; gap: 6px; padding: 4px; border: 1px dashed #ccc; border-radius: 10px; }
 .map-toggle .btn { border-width: 1.5px; box-shadow: 1px 1px 0 var(--ink); }
 .map-toggle .btn.on { outline: 2px solid var(--ink); }
 .map-toggle.off { opacity: .45; }
+/* the map editor: the board at a fixed size per square (scrolls when wider than its column), the
+   controls in a fixed column at the right; the submit page's map the same way, in a wider side column */
+.map-edit-grid { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 18px; align-items: start; margin-top: 10px; }
+.map-grid-wrap, .map-view { overflow: auto; max-width: 100%; }
+.submit-grid.board-game { grid-template-columns: minmax(0, 1fr) 520px; }
+@media (max-width: 900px) { .map-edit-grid { grid-template-columns: 1fr; } }
+@media (max-width: 1100px) { .submit-grid.board-game { grid-template-columns: 1fr; } }
