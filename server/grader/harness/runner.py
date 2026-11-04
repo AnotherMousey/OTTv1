@@ -43,7 +43,7 @@ for _m in ALLOWED_MODULES.values():
     ALLOWED_ATTRS |= {n for n in _public(_m) if not isinstance(getattr(_m, n), types.ModuleType)}
 ALLOWED_ATTRS -= {"format", "format_map"}  # format strings can walk attributes
 # board game: the fields of gameState and of its pieces
-STATE_ATTRS = {"ally", "opponent", "walls", "maxTurn", "currentTurn", "pid", "Type", "x", "y"}
+STATE_ATTRS = {"ally", "opponent", "walls", "width", "height", "maxTurn", "currentTurn", "pid", "Type", "x", "y"}
 
 FORBIDDEN_NODES = {
     ast.ClassDef: "khai báo class", ast.AsyncFunctionDef: "async", ast.Await: "await",
@@ -151,9 +151,9 @@ def load_trusted(path):
 
 
 def board_move(play, line):
-    # "STATE <currentTurn> <maxTurn> <n> <pid type x y>*n <m> <pid type x y>*m <k> <x y>*k" -> gameState
-    # with .ally / .opponent (lists of pieces with .pid .Type .x .y), .walls (squares with .x .y),
-    # .maxTurn and .currentTurn
+    # "STATE <currentTurn> <maxTurn> <n> <pid type x y>*n <m> <pid type x y>*m <k> <x y>*k <width> <height>"
+    # -> gameState with .ally / .opponent (lists of pieces with .pid .Type .x .y), .walls (squares
+    # with .x .y), .width / .height (the board's size), .maxTurn and .currentTurn
     parts = line.split()
     pos = 3
 
@@ -171,10 +171,15 @@ def board_move(play, line):
     ally = pieces()
     opponent = pieces()
     walls = []
+    width = height = 9
     if pos < len(parts):
         k = int(parts[pos])
         walls = [types.SimpleNamespace(x=int(parts[pos + 1 + 2 * i]), y=int(parts[pos + 2 + 2 * i])) for i in range(k)]
-    state = types.SimpleNamespace(ally=ally, opponent=opponent, walls=walls, maxTurn=int(parts[2]), currentTurn=int(parts[1]))
+        pos += 1 + 2 * k
+    if pos + 1 < len(parts):
+        width, height = int(parts[pos]), int(parts[pos + 1])
+    state = types.SimpleNamespace(ally=ally, opponent=opponent, walls=walls, width=width, height=height,
+                                  maxTurn=int(parts[2]), currentTurn=int(parts[1]))
     move = play(state)
     try:
         return " ".join(str(int(v)) for v in move)

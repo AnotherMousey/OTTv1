@@ -125,11 +125,11 @@ public class Bot {
     const isBoard = () => !!tournament && tournament.game === 'board';
     const templates = () => (isBoard() ? BOARD_TEMPLATES : TEMPLATES);
     const docs = () => (isBoard() ? BOARD_DOCS : DOCS)[lang];
-    // the board game's map, when the judge picked one: drawn as the real board (as in the replays)
-    const mapRule = () => (!tournament.map ? '' : `
-        <li><b>Bản đồ của giải: ${esc(tournament.map.name)}</b>. Các ván bắt đầu như hình dưới (bên đi trước màu đỏ, đích là góc trên phải; bên đi sau màu xanh, đích là góc dưới trái; ô đen là tường). Ván bạn đi sau, bot của bạn thấy bàn cờ xoay 180° nên vẫn xuất phát ở phía dưới trái. Trọng tài có thể đổi bản đồ trong lúc giải diễn ra.
-          <div style="margin:8px 0">${boardMapSvg(tournament.map.layout, { size: 220 })}</div></li>`);
-    const commonRules = () => isBoard() ? boardRules(TURNS, COOLDOWN) + mapRule() : `
+    // the board game's map in play (the standard one too), first: drawn as the real board (as in the replays)
+    const mapRule = () => `
+        <li><b>Bản đồ của giải: ${esc(tournament.map.name)}</b> · bàn cờ <b>${tournament.map.width}×${tournament.map.height}</b> · tối đa <b>${tournament.map.maxTurns} nước</b> mỗi ván. Các ván bắt đầu như hình dưới (bên đi trước màu xanh, đích là góc trên phải; bên đi sau màu đỏ, đích là góc dưới trái; ô đen là tường). Ván bạn đi sau, bot của bạn thấy bàn cờ xoay 180° nên vẫn xuất phát ở phía dưới trái. Trọng tài có thể đổi bản đồ trong lúc giải diễn ra.
+          <div style="margin:8px 0">${boardMapSvg(tournament.map, { size: 220 })}</div></li>`;
+    const commonRules = () => isBoard() ? mapRule() + boardRules(TURNS, COOLDOWN) : `
         <li>Nước đi: <code>R</code> = búa, <code>P</code> = bao, <code>S</code> = kéo.</li>
         <li>Mỗi trận gồm <b>${TURNS} lượt</b>. Mỗi lượt: thắng = <b>3</b> điểm, hòa = <b>1</b>, thua = <b>0</b>.</li>
         <li>Hai danh sách lịch sử chứa mọi lượt trước đó, cũ nhất đứng đầu. Vị trí <i>i</i> của hai danh sách là cùng một lượt.</li>

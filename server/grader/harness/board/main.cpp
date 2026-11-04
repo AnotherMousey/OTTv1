@@ -39,10 +39,11 @@ int main() {
         while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
         if (line == "END") break;
         if (line.rfind("STATE ", 0) != 0) continue;
-        // "STATE <currentTurn> <maxTurn> <ally pieces> <opponent pieces> <walls>"
+        // "STATE <currentTurn> <maxTurn> <ally pieces> <opponent pieces> <walls> <width> <height>"
         std::istringstream in(line.substr(6));
         State s;
         if (!(in >> s.currentTurn >> s.maxTurn) || !readPieces(in, s.ally) || !readPieces(in, s.opponent) || !readWalls(in, s.walls)) continue;
+        if (!(in >> s.width >> s.height)) s.width = s.height = 9;
         std::pair<int, int> m = play(s);
         std::cout << "\nMOVE " << m.first << ' ' << m.second << std::endl;
     }

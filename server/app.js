@@ -119,7 +119,7 @@ function publicTournament(t, user) {
     members: isInviteOnly(t) && isJudge(user) ? (t.members || []).filter(id => findUser(id)).length : undefined,
     hidden: isJudge(user) ? !!t.hidden : undefined,
     champion: champion ? champion.teamName : null,
-    ...(gameOf(t) === 'board' ? { map: activeMap(t) } : {}), // the board game: what games start from
+    ...(gameOf(t) === 'board' ? { map: activeMap(t) } : {}), // the board game: the map games are played on
     announcements: publicAnnouncements(t),
     mySubmission: mine[0] ? publicSubmission(mine[0]) : null,
     myActive: (mine.find(s => s.status === 'ok') || {}).id || null,
@@ -249,7 +249,7 @@ app.get('/api/tournaments/:id', apiAuth, wrap(async (req, res) => {
     submissions: mine,
     languages: grader.LANGS,
     bots: grader.practice.botsFor(t).map(h => ({ id: h.id, name: h.name, desc: h.desc, maxSubs: campaign.maxSubsOf(t, h.id) })),
-    turns: gameOf(t) === 'board' ? boardGame.MAX_TURNS : TURNS,
+    turns: gameOf(t) === 'board' ? activeMap(t).maxTurns : TURNS,
     maxScore: maxMatchScore(t),
     gamesNeeded: grader.practice.CAMPAIGN_GAMES,
     cooldownMs: SUBMIT_COOLDOWN_MS,
@@ -912,25 +912,31 @@ app.put('/api/admin/tournaments/:id/limits/:botId', apiAuth, apiJudge, (req, res
   botChanged(t);
   res.json({ maxSubs: n });
 });
-// Board game maps, per tournament: t.maps = [{ id, name, layout, createdAt, updatedAt }] (layout: see
-// board-rules.js) and t.activeMap, the id of the one games start from (none: the standard start).
+// Board game maps, per tournament: t.maps = [{ id, name, layout, maxTurns, createdAt, updatedAt }]
+// (layout: see board-rules.js, width x height squares; maxTurns: the move limit of its games) and
+// t.activeMap, the id of the one games are played on (none: the standard 9 x 9 start, BoardRules.MAX_TURNS moves).
+// Switching to another map discards the one in use (see active-map below).
 // The judge can change them at any time; a daily round keeps the map it started with (see
 // tournament.js), and a brawl's practice is replayed on the new one.
+// the map in play, the standard one included (id null)
+const STANDARD_MAP = { id: null, name: 'Bàn cờ chuẩn', layout: BoardRules.DEFAULT_LAYOUT, width: BoardRules.W, height: BoardRules.H, maxTurns: BoardRules.MAX_TURNS };
+// a map's playing fields, with the defaults of maps made before they existed
+const mapGame = m => ({ layout: m.layout, width: m.width || BoardRules.W, height: m.height || BoardRules.H, maxTurns: m.maxTurns || BoardRules.MAX_TURNS });
 const activeMap = t => {
   const m = t.activeMap && (t.maps || []).find(x => x.id === t.activeMap);
-  return m ? { id: m.id, name: m.name, layout: m.layout } : null;
+  return m ? { id: m.id, name: m.name, ...mapGame(m) } : STANDARD_MAP;
 };
-const publicMap = m => ({ id: m.id, name: m.name, layout: m.layout, createdAt: m.createdAt, updatedAt: m.updatedAt || null });
+const publicMap = m => ({ id: m.id, name: m.name, ...mapGame(m), createdAt: m.createdAt, updatedAt: m.updatedAt || null });
 function boardTournament(req, res) {
   const t = findTournament(req.params.id);
   if (!t) { fail(res, 404, 'Không tìm thấy giải đấu'); return null; }
   if (gameOf(t) !== 'board') { fail(res, 400, 'Chỉ giải cờ OTT mới có bản đồ'); return null; }
   return t;
 }
-function checkMap(t, name, layout, except = null) {
+function checkMap(t, name, { layout, width, height, maxTurns }, except = null) {
   if (!name) return 'Hãy đặt tên cho bản đồ';
   if ((t.maps || []).some(m => m !== except && m.name.toLowerCase() === name.toLowerCase())) return 'Đã có bản đồ tên này';
-  const why = BoardRules.layoutProblem(layout);
+  const why = BoardRules.layoutProblem(layout, width, height) || BoardRules.turnsProblem(maxTurns);
   return why ? `Bản đồ không hợp lệ: ${why}` : null;
 }
 // The map games start from changed: brawl practice is replayed on it, pages showing it refresh.
@@ -943,32 +949,35 @@ function mapChanged(t) {
 app.get('/api/admin/tournaments/:id/maps', apiAuth, apiJudge, (req, res) => {
   const t = boardTournament(req, res);
   if (!t) return;
-  res.json({ maps: (t.maps || []).map(publicMap), activeMap: (activeMap(t) || {}).id || null, defaultLayout: BoardRules.DEFAULT_LAYOUT });
+  res.json({ maps: (t.maps || []).map(publicMap), activeMap: activeMap(t).id, standard: STANDARD_MAP, turnLimits: BoardRules.TURN_LIMITS, sizeLimits: BoardRules.SIZE_LIMITS });
 });
 app.post('/api/admin/tournaments/:id/maps', apiAuth, apiJudge, (req, res) => {
   const t = boardTournament(req, res);
   if (!t) return;
   const name = lineText((req.body || {}).name, 40);
-  const { layout } = req.body || {};
-  const bad = checkMap(t, name, layout);
+  const { layout, width = BoardRules.W, height = BoardRules.H, maxTurns = BoardRules.MAX_TURNS } = req.body || {};
+  const game = { layout, width, height, maxTurns };
+  const bad = checkMap(t, name, game);
   if (bad) return fail(res, 400, bad);
-  const map = { id: 'map-' + db.id(), name, layout, createdAt: new Date().toISOString() };
+  const map = { id: 'map-' + db.id(), name, ...game, createdAt: new Date().toISOString() };
   (t.maps = t.maps || []).push(map);
   db.save();
   res.json({ map: publicMap(map) });
 });
-// Body: { name?, layout? }
+// Body: { name?, layout?, width?, height?, maxTurns? } (a new size comes with its new layout)
 app.put('/api/admin/tournaments/:id/maps/:mapId', apiAuth, apiJudge, (req, res) => {
   const t = boardTournament(req, res);
   if (!t) return;
   const map = (t.maps || []).find(m => m.id === req.params.mapId);
   if (!map) return fail(res, 404, 'Không tìm thấy bản đồ');
   const name = lineText((req.body || {}).name ?? map.name, 40);
-  const layout = (req.body || {}).layout ?? map.layout;
-  const bad = checkMap(t, name, layout, map);
+  const was = mapGame(map), body = req.body || {};
+  const game = Object.fromEntries(Object.keys(was).map(k => [k, body[k] ?? was[k]]));
+  const bad = checkMap(t, name, game, map);
   if (bad) return fail(res, 400, bad);
-  const moved = layout !== map.layout && t.activeMap === map.id;
-  Object.assign(map, { name, layout, updatedAt: new Date().toISOString() });
+  // the games of the map in play change: a new layout, size or move limit
+  const moved = t.activeMap === map.id && Object.keys(was).some(k => game[k] !== was[k]);
+  Object.assign(map, { name, ...game, updatedAt: new Date().toISOString() });
   if (moved) mapChanged(t);
   else { db.save(); io.to('users').emit('tournaments:changed'); }
   res.json({ map: publicMap(map) });
@@ -984,16 +993,22 @@ app.delete('/api/admin/tournaments/:id/maps/:mapId', apiAuth, apiJudge, (req, re
   else db.save();
   res.json({ ok: true });
 });
-// Body: { mapId } (null = the standard start)
+// Body: { mapId } (null = the standard start). The map played until now is discarded, to keep the
+// database small: every game played on it carries its own copy of the layout (replays, daily rounds).
 app.put('/api/admin/tournaments/:id/active-map', apiAuth, apiJudge, (req, res) => {
   const t = boardTournament(req, res);
   if (!t) return;
   const { mapId } = req.body || {};
   if (mapId && !(t.maps || []).some(m => m.id === mapId)) return fail(res, 404, 'Không tìm thấy bản đồ');
   if ((t.activeMap || null) === (mapId || null)) return res.json({ activeMap: mapId || null });
+  const old = t.activeMap;
   if (mapId) t.activeMap = mapId; else delete t.activeMap;
+  if (old) {
+    t.maps = (t.maps || []).filter(m => m.id !== old);
+    if (!t.maps.length) delete t.maps;
+  }
   mapChanged(t);
-  res.json({ activeMap: mapId || null });
+  res.json({ activeMap: mapId || null, discarded: old || null });
 });
 app.get('/api/admin/tournaments/:id/submissions', apiAuth, apiJudge, wrap(async (req, res) => {
   const subs = await withCode(db.data.submissions.filter(s => s.tournamentId === req.params.id),

@@ -257,7 +257,7 @@
           : t.startsAt ? esc(fmtDate(t.startsAt)) : '<span class="muted">–</span>';
         return `<tr>
           <td><span class="lines">${esc(t.name)}</span>${focusId && t.description ? `<br><small class="muted lines">${esc(t.description)}</small>` : ''}</td>
-          <td>${t.game === 'board' ? '♟️ cờ OTT' : '✊ oẳn tù tì'} · ${t.mode === 'campaign' ? '🗺️ chiến dịch' : '⚔️ hỗn chiến'}${t.daily ? `<br><span class="muted" style="font-size:16px">${scheduleCell(t, edit)} · ${edit ? `<select data-pairing="${t.id}" style="font-size:15px;padding:0 4px"><option value="rr" ${t.daily.pairing === 'rr' ? 'selected' : ''}>vòng tròn</option><option value="swiss" ${t.daily.pairing === 'swiss' ? 'selected' : ''}>Thụy Sĩ</option></select>` : t.daily.pairing === 'swiss' ? 'Thụy Sĩ' : 'vòng tròn'} · đã qua ${t.daily.days} vòng</span>` : ''}${t.access === 'invite' ? `<br><span class="muted" style="font-size:16px">🔒 ${t.members} đội</span>` : ''}${t.hidden ? '<br><span class="muted" style="font-size:16px">🙈 đang ẩn với người chơi</span>' : ''}</td>
+          <td>${t.game === 'board' ? '♟️ cờ OTT' : '✊ oẳn tù tì'} · ${t.mode === 'campaign' ? '🗺️ chiến dịch' : '⚔️ hỗn chiến'}${t.daily ? `<br><span class="muted" style="font-size:16px">${scheduleCell(t, edit)}<br>thể thức: ${edit ? `<select data-pairing="${t.id}" style="font-size:15px;padding:0 4px"><option value="rr" ${t.daily.pairing === 'rr' ? 'selected' : ''}>vòng tròn</option><option value="swiss" ${t.daily.pairing === 'swiss' ? 'selected' : ''}>Thụy Sĩ</option></select>` : t.daily.pairing === 'swiss' ? 'Thụy Sĩ' : 'vòng tròn'} · đã qua ${t.daily.days} vòng</span>` : ''}${t.access === 'invite' ? `<br><span class="muted" style="font-size:16px">🔒 ${t.members} đội</span>` : ''}${t.hidden ? '<br><span class="muted" style="font-size:16px">🙈 đang ẩn với người chơi</span>' : ''}</td>
           <td><span class="tag ${waiting ? 'pending' : t.status}">${waiting ? 'chưa mở' : STATUS_VI[t.status] || t.status}</span></td>
           <td>${startCell}</td>
           <td>${edit ? `<input type="datetime-local" data-dl="${t.id}" value="${toLocalInput(new Date(t.deadline))}" style="font-size:16px;padding:2px 6px">` : esc(fmtDate(t.deadline))}</td>
@@ -475,15 +475,15 @@
     }
 
     // ---------- board game maps ----------
-    // mapsOpen = { t, maps, activeMap, defaultLayout, editing: null | { id (null = a new map), name, cells, tool } }.
+    // mapsOpen = { t, maps, activeMap, standard, turnLimits, sizeLimits, editing: null | { id (null = a new
+    // map), name, width, height, cells, maxTurns, kind: 'R' | 'P' | 'S' | '#', team: 'white' | 'black' } }.
     // The map being drawn lives in `editing`, so a refresh of the list doesn't lose it; nothing is
     // sent until "Lưu". The grid is the real board (the side moving first starts bottom-left).
     let mapsOpen = null;
-    const MAP_TOOLS = [
-      ['R', 'búa (đi trước)'], ['P', 'bao (đi trước)'], ['S', 'kéo (đi trước)'],
-      ['r', 'búa (đi sau)'], ['p', 'bao (đi sau)'], ['s', 'kéo (đi sau)'],
-      ['#', 'tường'], ['.', 'ô trống'],
-    ];
+    // what a click places: a kind (two toggles: búa / bao / kéo / tường, and the team for a piece)
+    const MAP_KINDS = [['R', 'búa'], ['P', 'bao'], ['S', 'kéo'], ['#', 'tường']];
+    const MAP_TEAMS = [['white', 'đi trước'], ['black', 'đi sau']];
+    const mapTool = e => (e.kind === '#' ? '#' : e.team === 'white' ? e.kind : e.kind.toLowerCase());
     const mapsUrl = t => `/api/admin/tournaments/${encodeURIComponent(t.id)}`;
     // What changing the map being played does, for the judge's confirmation. An open brawl's
     // evaluation is rejudged right away: every team's newest bot replays its practice on the new map.
@@ -499,27 +499,28 @@
       if (!refresh) $('#mapsPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
     function startMap(id) {
-      const m = mapsOpen, map = id && m.maps.find(x => x.id === id);
-      m.editing = { id: map ? map.id : null, name: map ? map.name : '', cells: [...(map ? map.layout : m.defaultLayout)], tool: '#' };
+      const m = mapsOpen, map = (id && m.maps.find(x => x.id === id)) || m.standard;
+      m.editing = { id: id || null, name: id ? map.name : '', width: map.width, height: map.height, cells: [...map.layout], maxTurns: map.maxTurns, kind: '#', team: 'white' };
       renderMaps();
       $('#mapsPanel .map-editor').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
     function renderMaps() {
-      const { t, maps, activeMap, defaultLayout, editing } = mapsOpen;
+      const { t, maps, activeMap, standard, editing } = mapsOpen;
       const panel = $('#mapsPanel');
-      const card = (id, name, layout, extra) => `<div class="map-card ${activeMap === id ? 'on' : ''}">
-          ${boardMapSvg(layout, { size: 150 })}
-          <b class="lines">${esc(name)}</b>
-          <div class="row" style="gap:6px;justify-content:center">${activeMap === id
+      const card = (map, extra) => `<div class="map-card ${activeMap === map.id ? 'on' : ''}">
+          ${boardMapSvg(map, { size: 150 })}
+          <b class="lines">${esc(map.name)}</b>
+          <small class="muted">${map.width}×${map.height} · ⏱ tối đa ${map.maxTurns} nước</small>
+          <div class="row" style="gap:6px;justify-content:center">${activeMap === map.id
             ? '<span class="tag ok">✅ đang dùng</span>'
-            : `<button class="btn small yellow" data-mapuse="${id || ''}" title="các ván từ giờ bắt đầu từ bản đồ này">dùng</button>`}${extra}</div>
+            : `<button class="btn small yellow" data-mapuse="${map.id || ''}" title="các ván từ giờ bắt đầu từ bản đồ này">dùng</button>`}${extra}</div>
         </div>`;
       panel.innerHTML = `<section class="box">
         <div class="row" style="justify-content:space-between"><h3 class="lines" style="margin:0">Bản đồ · ${esc(t.name)}</h3><button class="btn small" id="closeMaps">đóng</button></div>
-        <p class="muted" style="font-size:17px;margin:4px 0 10px">Bản đồ đang dùng quyết định chỗ xuất phát của các quân (bên đi trước màu đỏ, đích là góc trên phải; bên đi sau màu xanh, đích là góc dưới trái) và các ô <b>tường</b> (ô đen, không quân nào đi vào được). Mỗi trận hai đội lần lượt cầm bên đi trước, nên bản đồ lệch vẫn công bằng giữa hai đội. Đổi bản đồ lúc nào cũng được: trận đang đấu giữ bản đồ cũ${t.daily ? ', vòng đấu hằng ngày đã bắt đầu giữ bản đồ của nó, và bot mới nhất của mỗi đội đấu tập lại trên bản đồ mới' : ''}.</p>
+        <p class="muted" style="font-size:17px;margin:4px 0 10px">Bản đồ đang dùng quyết định kích thước bàn cờ, chỗ xuất phát của các quân (bên đi trước màu xanh, đích là góc trên phải; bên đi sau màu đỏ, đích là góc dưới trái), các ô <b>tường</b> (ô đen, không quân nào đi vào được) và số nước tối đa mỗi ván. Mỗi trận hai đội lần lượt cầm bên đi trước, nên bản đồ lệch vẫn công bằng giữa hai đội. Khi chuyển sang bản đồ khác, bản đồ đang dùng bị <b>xóa</b> để tiết kiệm dung lượng (các trận đã đấu trên nó vẫn xem lại được). Đổi bản đồ lúc nào cũng được: trận đang đấu giữ bản đồ cũ${t.daily ? ', vòng đấu hằng ngày đã bắt đầu giữ bản đồ của nó, và bot mới nhất của mỗi đội đấu tập lại trên bản đồ mới' : ''}.</p>
         <div class="map-list">
-          ${card(null, 'Bàn cờ chuẩn', defaultLayout, '')}
-          ${maps.map(m => card(m.id, m.name, m.layout, `<button class="btn small" data-mapedit="${m.id}">✏️ sửa</button><button class="btn small" data-mapdel="${m.id}" title="xóa bản đồ">🗑</button>`)).join('')}
+          ${card(standard, '')}
+          ${maps.map(m => card(m, `<button class="btn small" data-mapedit="${m.id}">✏️ sửa</button><button class="btn small" data-mapdel="${m.id}" title="xóa bản đồ">🗑</button>`)).join('')}
         </div>
         ${editing ? mapEditor(editing) : '<button class="btn small" id="mapNew" style="margin-top:10px">➕ Tạo bản đồ mới</button>'}
       </section>`;
@@ -529,10 +530,12 @@
       $$('[data-mapedit]', panel).forEach(b => b.onclick = () => startMap(b.dataset.mapedit));
       $$('[data-mapuse]', panel).forEach(b => b.onclick = async () => {
         const id = b.dataset.mapuse || null;
-        if (!confirm(`Đổi bàn cờ đang đấu sang ${id ? `bản đồ "${maps.find(m => m.id === id).name}"` : 'bàn cờ chuẩn'}?${mapChangeNote(t)}`)) return;
+        const old = activeMap && maps.find(m => m.id === activeMap);
+        if (!confirm(`Đổi bàn cờ đang đấu sang ${id ? `bản đồ "${maps.find(m => m.id === id).name}"` : 'bàn cờ chuẩn'}?${mapChangeNote(t)}${old ? `\n\nBản đồ đang dùng "${old.name}" sẽ bị xóa hẳn (để tiết kiệm dung lượng), không dùng lại được. Các trận đã đấu trên nó vẫn xem lại được.` : ''}`)) return;
         try {
           await api(`${mapsUrl(t)}/active-map`, { method: 'PUT', body: { mapId: id } });
-          toast(`Từ giờ các ván bắt đầu từ ${id ? `bản đồ "${maps.find(m => m.id === id).name}"` : 'bàn cờ chuẩn'} 🗺️`);
+          toast(`Từ giờ các ván bắt đầu từ ${id ? `bản đồ "${maps.find(m => m.id === id).name}"` : 'bàn cờ chuẩn'} 🗺️${old ? ` · đã xóa bản đồ "${old.name}"` : ''}`);
+          if (old && mapsOpen.editing && mapsOpen.editing.id === old.id) mapsOpen.editing = null;
           showMaps(t, true);
         } catch (e) { toast(e.message, 'error'); }
       });
@@ -548,74 +551,125 @@
       });
       if (editing) bindMapEditor();
     }
+    // the two toggles: what a click places (búa / bao / kéo / tường), and for a piece, its team
+    function mapPalette(e) {
+      const piece = (kind, side) => `<svg viewBox="0 0 64 64" width="26" height="26">${boardPieceMarkup(kind, BOARD_SIDE_COLOR[side])}</svg>`;
+      const dot = side => `<span class="map-swatch" style="background:${BOARD_SIDE_COLOR[side]};border-radius:50%"></span>`;
+      return `<div class="map-palette">
+          <span class="map-toggle">${MAP_KINDS.map(([k, label]) => `<button class="btn small ${e.kind === k ? 'on' : ''}" data-kind="${k}">${k === '#' ? '<span class="map-swatch wall"></span>' : piece(k, e.team)} ${label}</button>`).join('')}</span>
+          <span class="map-toggle ${e.kind === '#' ? 'off' : ''}" title="${e.kind === '#' ? 'tường không thuộc bên nào' : 'bên của quân sẽ đặt'}">${MAP_TEAMS.map(([side, label]) => `<button class="btn small ${e.team === side ? 'on' : ''}" data-team="${side}">${dot(side)} ${label}</button>`).join('')}</span>
+        </div>`;
+    }
     function mapEditor(e) {
-      const swatch = c => (c === '#' ? '<span class="map-swatch wall"></span>' : c === '.' ? '<span class="map-swatch"></span>'
-        : `<svg viewBox="0 0 64 64" width="26" height="26">${boardPieceMarkup(c.toUpperCase(), BOARD_SIDE_COLOR[c === c.toUpperCase() ? 'white' : 'black'])}</svg>`);
+      const [lo, hi] = mapsOpen.sizeLimits;
       return `<div class="map-editor box" style="margin-top:14px">
         <div class="row" style="justify-content:space-between"><h3 class="lines" style="margin:0">${e.id ? `Sửa bản đồ: ${esc(mapsOpen.maps.find(m => m.id === e.id).name)}` : 'Tạo bản đồ mới'}</h3><button class="btn small" id="meClose">đóng</button></div>
-        <label style="display:block;margin:8px 0"><span>tên bản đồ</span><input id="meName" maxlength="40" value="${esc(e.name)}" placeholder="Mê cung" style="width:100%;max-width:420px"></label>
-        <div class="map-palette">${MAP_TOOLS.map(([c, label]) => `<button class="btn small ${e.tool === c ? 'on' : ''}" data-tool="${c}">${swatch(c)} ${label}</button>`).join('')}</div>
+        <div class="row" style="gap:12px;margin:8px 0;align-items:flex-end">
+          <label style="flex:1;min-width:200px;max-width:420px;margin:0"><span>tên bản đồ</span><input id="meName" maxlength="40" value="${esc(e.name)}" placeholder="Mê cung" style="width:100%"></label>
+          <label style="margin:0" title="số cột (${lo}–${hi})"><span>chiều rộng</span><input id="meWidth" type="number" min="${lo}" max="${hi}" step="1" value="${e.width}" style="width:90px"></label>
+          <label style="margin:0" title="số hàng (${lo}–${hi})"><span>chiều cao</span><input id="meHeight" type="number" min="${lo}" max="${hi}" step="1" value="${e.height}" style="width:90px"></label>
+          <label style="margin:0" title="tính cả hai bên; hết số nước này mà chưa ai thắng thì hòa"><span>số nước tối đa mỗi ván</span><input id="meTurns" type="number" min="${mapsOpen.turnLimits[0]}" max="${mapsOpen.turnLimits[1]}" step="1" value="${e.maxTurns}" style="width:140px"></label>
+        </div>
+        ${mapPalette(e)}
         <div class="row" style="align-items:flex-start;gap:18px;margin-top:10px">
           <div id="meGrid" class="map-grid"></div>
           <div style="flex:1;min-width:220px">
-            <p class="muted" style="font-size:17px;margin:0 0 8px">Chọn một loại ô ở trên rồi bấm (hoặc kéo) trên bàn cờ để đặt. Bấm vào ô đã là loại đang chọn thì ô đó thành trống. Số hiệu <code>pid</code> của các quân mỗi bên được đánh theo thứ tự đọc từ phía bên đó (hàng nhà trước, từ trái sang phải).</p>
+            <p class="muted" style="font-size:17px;margin:0 0 8px">Chọn loại ô (búa, bao, kéo hoặc tường) và bên (đi trước hoặc đi sau), rồi bấm (hoặc kéo) trên bàn cờ để đặt. Bấm vào ô đã là loại đang chọn thì ô đó thành trống. Đổi kích thước thì quân bên đi trước (và tường) giữ chỗ tính từ góc dưới trái, quân bên đi sau tính từ góc trên phải; ô nào ra ngoài bàn thì bị bỏ. Số hiệu <code>pid</code> của các quân mỗi bên được đánh theo thứ tự đọc từ phía bên đó (hàng nhà trước, từ trái sang phải).</p>
             <p id="meCount" style="margin:0 0 6px"></p>
             <p id="meProblem" style="margin:0;color:var(--red)"></p>
             <div class="row" style="gap:8px;margin-top:12px">
               <button class="btn red" id="meSave">Lưu 💾</button>
-              <button class="btn small" id="meDefault" title="đặt lại như bàn cờ chuẩn (chưa lưu)">nạp bàn cờ chuẩn</button>
+              <button class="btn small" id="meDefault" title="đặt lại như bàn cờ chuẩn 9×9 (chưa lưu)">nạp bàn cờ chuẩn</button>
               <button class="btn small" id="meClear" title="xóa mọi quân và tường (chưa lưu)">xóa hết</button>
             </div>
           </div>
         </div>
       </div>`;
     }
+    // The cells of a w x h board resized to nw x nh: the side moving first and the walls keep their
+    // place from the bottom-left corner, the other side from the top-right one (its own corner).
+    function resizeCells(cells, w, h, nw, nh) {
+      const out = Array(nw * nh).fill('.');
+      const put = (x, y, c) => { if (x >= 0 && x < nw && y >= 0 && y < nh && out[y * nw + x] === '.') out[y * nw + x] = c; };
+      cells.forEach((c, i) => { if (c !== '.' && !/[rps]/.test(c)) put(i % w, Math.floor(i / w), c); });
+      cells.forEach((c, i) => { if (/[rps]/.test(c)) put(i % w + nw - w, Math.floor(i / w) + nh - h, c); });
+      return out;
+    }
     function bindMapEditor() {
       const m = mapsOpen, e = m.editing;
+      const [lo, hi] = m.sizeLimits;
       const draw = () => {
         const layout = e.cells.join('');
-        $('#meGrid').innerHTML = boardMapSvg(layout, { size: 380 });
+        $('#meGrid').innerHTML = boardMapSvg({ layout, width: e.width, height: e.height }, { size: 380 });
         const n = re => e.cells.filter(c => re.test(c)).length;
-        $('#meCount').innerHTML = `<span style="color:${BOARD_SIDE_COLOR.white}">bên đi trước: ${n(/[RPS]/)} quân</span> · <span style="color:${BOARD_SIDE_COLOR.black}">bên đi sau: ${n(/[rps]/)} quân</span> · tường: ${n(/#/)} ô`;
-        const why = BoardRules.layoutProblem(layout);
+        $('#meCount').innerHTML = `${e.width}×${e.height} ô · <span style="color:${BOARD_SIDE_COLOR.white}">bên đi trước: ${n(/[RPS]/)} quân</span> · <span style="color:${BOARD_SIDE_COLOR.black}">bên đi sau: ${n(/[rps]/)} quân</span> · tường: ${n(/#/)} ô`;
+        const why = BoardRules.layoutProblem(layout, e.width, e.height) || BoardRules.turnsProblem(e.maxTurns);
         $('#meProblem').textContent = why ? `⚠️ ${why.charAt(0).toUpperCase()}${why.slice(1)}` : '';
         $('#meSave').disabled = !!why;
       };
       draw();
       $('#meName').oninput = () => { e.name = $('#meName').value; };
-      $$('[data-tool]').forEach(b => b.onclick = () => {
-        e.tool = b.dataset.tool;
-        $$('[data-tool]').forEach(x => x.classList.toggle('on', x === b));
-      });
+      $('#meTurns').oninput = () => { e.maxTurns = Number($('#meTurns').value); draw(); };
+      // a new size applies as soon as both numbers are in range
+      const resize = () => {
+        const nw = Number($('#meWidth').value), nh = Number($('#meHeight').value);
+        if (![nw, nh].every(v => Number.isInteger(v) && v >= lo && v <= hi)) {
+          $('#meProblem').textContent = `⚠️ Chiều rộng và chiều cao phải là số nguyên từ ${lo} đến ${hi}`;
+          $('#meSave').disabled = true;
+          return;
+        }
+        if (nw === e.width && nh === e.height) return draw();
+        e.cells = resizeCells(e.cells, e.width, e.height, nw, nh);
+        e.width = nw;
+        e.height = nh;
+        draw();
+      };
+      $('#meWidth').oninput = $('#meHeight').oninput = resize;
+      // the two toggles: changing either redraws the palette (the pieces take the team's colour)
+      const pick = () => {
+        $('#mapsPanel .map-palette').outerHTML = mapPalette(e);
+        bindPalette();
+      };
+      const bindPalette = () => {
+        $$('[data-kind]').forEach(b => b.onclick = () => { e.kind = b.dataset.kind; pick(); });
+        $$('[data-team]').forEach(b => b.onclick = () => { e.team = b.dataset.team; if (e.kind === '#') e.kind = 'R'; pick(); });
+      };
+      bindPalette();
       // painting: the first square of a stroke decides whether it places the tool or clears (that
       // square already held it); dragging then does the same to every square it crosses
       let stroke = null;
       const grid = $('#meGrid');
       const cellAt = ev => {
         const r = grid.querySelector('svg').getBoundingClientRect();
-        const x = Math.floor((ev.clientX - r.left) / r.width * BoardRules.W), row = Math.floor((ev.clientY - r.top) / r.height * BoardRules.H);
-        return x < 0 || x >= BoardRules.W || row < 0 || row >= BoardRules.H ? -1 : (BoardRules.H - 1 - row) * BoardRules.W + x;
+        const x = Math.floor((ev.clientX - r.left) / r.width * e.width), row = Math.floor((ev.clientY - r.top) / r.height * e.height);
+        return x < 0 || x >= e.width || row < 0 || row >= e.height ? -1 : (e.height - 1 - row) * e.width + x;
       };
       const paint = ev => {
         const i = cellAt(ev);
         if (i < 0) return;
-        if (stroke === null) stroke = e.cells[i] === e.tool ? '.' : e.tool;
+        if (stroke === null) stroke = e.cells[i] === mapTool(e) ? '.' : mapTool(e);
         if (e.cells[i] !== stroke) { e.cells[i] = stroke; draw(); }
       };
       grid.onpointerdown = ev => { ev.preventDefault(); grid.setPointerCapture(ev.pointerId); stroke = null; paint(ev); };
       grid.onpointermove = ev => { if (stroke !== null) paint(ev); };
       grid.onpointerup = grid.onpointercancel = () => { stroke = null; };
-      $('#meDefault').onclick = () => { e.cells = [...m.defaultLayout]; draw(); };
+      $('#meDefault').onclick = () => {
+        Object.assign(e, { cells: [...m.standard.layout], width: m.standard.width, height: m.standard.height });
+        $('#meWidth').value = e.width;
+        $('#meHeight').value = e.height;
+        draw();
+      };
       $('#meClear').onclick = () => { e.cells = e.cells.map(() => '.'); draw(); };
       $('#meClose').onclick = () => { m.editing = null; renderMaps(); };
       $('#meSave').onclick = async () => {
         const name = e.name.trim();
         if (!name) { $('#meName').focus(); return toast('Hãy đặt tên cho bản đồ', 'error'); }
-        // the map being played: a new layout changes the games from now on, so ask first
-        const playing = e.id && e.id === m.activeMap && m.maps.find(x => x.id === e.id).layout !== e.cells.join('');
-        if (playing && !confirm(`Bản đồ "${name}" đang được dùng. Lưu bố cục mới cho nó?${mapChangeNote(m.t)}`)) return;
+        const body = { name, layout: e.cells.join(''), width: e.width, height: e.height, maxTurns: e.maxTurns };
+        // the map being played: new games from now on, so ask first
+        const was = e.id && m.maps.find(x => x.id === e.id);
+        const playing = was && e.id === m.activeMap && ['layout', 'width', 'height', 'maxTurns'].some(k => was[k] !== body[k]);
+        if (playing && !confirm(`Bản đồ "${name}" đang được dùng. Lưu thay đổi (bố cục, kích thước, số nước tối đa) cho nó?${mapChangeNote(m.t)}`)) return;
         try {
-          const body = { name, layout: e.cells.join('') };
           if (e.id) await api(`${mapsUrl(m.t)}/maps/${encodeURIComponent(e.id)}`, { method: 'PUT', body });
           else await api(`${mapsUrl(m.t)}/maps`, { method: 'POST', body });
           toast(e.id ? 'Đã lưu bản đồ 🗺️' : 'Đã tạo bản đồ 🗺️ Bấm "dùng" để các ván bắt đầu từ bản đồ này.');

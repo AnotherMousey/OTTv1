@@ -8,7 +8,7 @@ const os = require('os');
 const db = require('./db');
 const grader = require('./grader');
 const { runMatch } = require('./grader/match');
-const { layoutOf } = require('./grader/board');
+const { mapOf } = require('./grader/board');
 const { avatarOf } = require('./auth');
 const campaign = require('./campaign');
 const { isInviteOnly, canPlay } = require('./access');
@@ -103,7 +103,7 @@ class TournamentManager {
     if (day) {
       await db.deleteMatches(t.id, daily.dayMatches(t, day).map(m => m.name));
       day.pairing = item.pairing;
-      delete day.layout; // played on the map active now
+      delete day.map; // played on the map active now
       day.status = 'running';
       day.live = true;
       day.publishAt = new Date().toISOString(); // published as soon as it is done
@@ -142,12 +142,12 @@ class TournamentManager {
       this.io.to('users').emit('tournaments:changed'); // the next match time moved on
     }
     day.pairing = day.pairing || daily.pairingOf(t); // fixed for the day, even if the judge changes it meanwhile
-    if (day.layout === undefined) day.layout = layoutOf(t); // the map too (null = the standard start)
+    if (day.map === undefined) day.map = mapOf(t); // the map too ({ layout, maxTurns }; null = the standard start)
     if (day.pairing === 'swiss') await this.runSwissDay(t, day);
     else {
       const played = new Set(daily.dayMatches(t, day).map(m => m.name));
       const jobs = daily.pairsOf(day).filter(j => !played.has(j.name));
-      await pool(jobs, PARALLEL_MATCHES, job => this.playMatch(t, { number: day.number, day: true, layout: day.layout }, job, 0));
+      await pool(jobs, PARALLEL_MATCHES, job => this.playMatch(t, { number: day.number, day: true, map: day.map }, job, 0));
     }
     day.status = 'done';
     day.finishedAt = new Date().toISOString();
@@ -172,7 +172,7 @@ class TournamentManager {
       }
       const played = new Set(daily.dayMatches(t, day).map(m => m.name));
       const jobs = day.pairs[r].filter(p => !played.has(p.name)).map(p => ({ A: entry(p.a), B: entry(p.b), name: p.name, dayRound: r }));
-      await pool(jobs, PARALLEL_MATCHES, job => this.playMatch(t, { number: day.number, day: true, layout: day.layout }, job, 0));
+      await pool(jobs, PARALLEL_MATCHES, job => this.playMatch(t, { number: day.number, day: true, map: day.map }, job, 0));
     }
   }
 
@@ -324,8 +324,8 @@ class TournamentManager {
   async playMatch(t, round, { A, B, name, dayRound }, pace = MATCH_PACE_MS) {
     const sub = id => db.data.submissions.find(s => s.id === id);
     const started = Date.now();
-    const layout = round.layout !== undefined ? round.layout : layoutOf(t);
-    const [res] = await Promise.all([runMatch(sub(A.submissionId), sub(B.submissionId), grader.ensureBuilt, { layout }).then(r => ({ ...r, durationMs: Date.now() - started })), sleep(pace)]);
+    const map = round.map !== undefined ? round.map : mapOf(t);
+    const [res] = await Promise.all([runMatch(sub(A.submissionId), sub(B.submissionId), grader.ensureBuilt, { map }).then(r => ({ ...r, durationMs: Date.now() - started })), sleep(pace)]);
     // match ids count up per tournament; the matches from before ids existed are numbered 1..k by
     // when they were played (see the judge's match list), so new ids start after them
     t.matchSeq = (t.matchSeq ?? Object.keys(db.data.matches[t.id] || {}).length) + 1;

@@ -20,6 +20,7 @@ class State {
     public List<Piece> ally = new ArrayList<>();      // your pieces
     public List<Piece> opponent = new ArrayList<>();  // the enemy's pieces
     public List<Cell> walls = new ArrayList<>();      // squares no piece can enter (the map; often none)
+    public int width = 9, height = 9;                 // the board's size (x = 1..width, y = 1..height)
     public int maxTurn;                               // a draw after this many moves (both sides)
     public int currentTurn;                           // moves already played (both sides)
 }
@@ -40,8 +41,8 @@ public class Main {
         return at;
     }
 
-    // "<k> <x y> * k" starting at p[at]
-    static void readWalls(String[] p, int at, List<Cell> out) {
+    // "<k> <x y> * k" starting at p[at]; returns the index after it
+    static int readWalls(String[] p, int at, List<Cell> out) {
         int k = Integer.parseInt(p[at++]);
         for (int i = 0; i < k; i++) {
             Cell c = new Cell();
@@ -50,6 +51,7 @@ public class Main {
             out.add(c);
             at += 2;
         }
+        return at;
     }
 
     public static void main(String[] args) throws Exception {
@@ -64,12 +66,13 @@ public class Main {
             line = line.trim();
             if (line.equals("END")) break;
             if (!line.startsWith("STATE ")) continue;
-            // "STATE <currentTurn> <maxTurn> <ally pieces> <opponent pieces> <walls>"
+            // "STATE <currentTurn> <maxTurn> <ally pieces> <opponent pieces> <walls> <width> <height>"
             String[] p = line.split("\s+");
             State s = new State();
             s.currentTurn = Integer.parseInt(p[1]);
             s.maxTurn = Integer.parseInt(p[2]);
-            readWalls(p, readPieces(p, readPieces(p, 3, s.ally), s.opponent), s.walls);
+            int at = readWalls(p, readPieces(p, readPieces(p, 3, s.ally), s.opponent), s.walls);
+            if (at + 1 < p.length) { s.width = Integer.parseInt(p[at]); s.height = Integer.parseInt(p[at + 1]); }
             int[] m = bot.play(s);
             String reply = m == null || m.length != 2 ? "X" : m[0] + " " + m[1];
             out.print("\nMOVE " + reply + "\n");

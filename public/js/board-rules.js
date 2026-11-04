@@ -1,26 +1,31 @@
 // Rules of the board game ("Cờ OTT", after OTTv2), shared by the grader (require) and the
-// replay page (<script>). A 9 x 9 grid; each side has 9 pieces: búa (R), bao (P), kéo (S).
+// replay page (<script>). A grid, 9 x 9 by default; each side has 9 pieces: búa (R), bao (P), kéo (S).
 //   - A piece moves one square in any of the 8 directions.
 //   - It can't move onto its own piece, or onto an enemy piece of the same kind (blocked).
 //   - Moving onto an enemy it beats (R > S > P > R) captures it; moving onto one that beats it
 //     loses the attacker (the defender stays put).
 //   - A side wins by reaching the enemy's home corner, or by eliminating every enemy piece.
 //   - After MAX_TURNS moves (both sides counted, skipped turns too) without a winner: a draw.
-//   - A map (the judge's, per tournament) may change where the pieces start and add walls: squares
-//     no piece can enter.
-// Coordinates: x = column 0..W-1 (a..i), y = row 0..H-1 (1..9). White starts bottom-left and
-// heads for the top-right corner; black starts top-right and heads for (0, 0).
+//   - A map (the judge's, per tournament) may set the board's size, where the pieces start, walls
+//     (squares no piece can enter) and its own move limit instead of MAX_TURNS.
+// Coordinates: x = column 0..W-1 (a, b, ...), y = row 0..H-1 (1, 2, ...), W x H = the game's size
+// (g.W, g.H). White starts bottom-left and heads for the top-right corner; black starts top-right
+// and heads for (0, 0).
 (function (root) {
-  const W = 9, H = 9;
+  const W = 9, H = 9; // the standard board
   const MAX_TURNS = 1000;
+  const TURN_LIMITS = [10, 5000]; // the move limit a map may set
+  const SIZE_LIMITS = [4, 15];    // the width and height a map may have
   const BEATS = { R: 'S', S: 'P', P: 'R' };
   // White's start (black's is the same rotated by 180°, so both sides see the same position).
   const WHITE_START = [[1, 0, 'R'], [2, 0, 'P'], [3, 0, 'S'], [1, 1, 'P'], [2, 1, 'S'], [3, 1, 'R'], [1, 2, 'S'], [2, 2, 'R'], [3, 2, 'P']];
-  const GOAL = { white: [W - 1, H - 1], black: [0, 0] };
+  // Each side's goal on a w x h board: the corner the other side starts in.
+  const goals = (w = W, h = H) => ({ white: [w - 1, h - 1], black: [0, 0] });
+  const GOAL = goals();
   const other = side => (side === 'white' ? 'black' : 'white');
   const square = (x, y) => String.fromCharCode(97 + x) + (y + 1);
 
-  // A map is a layout: W * H characters, row y = 0 first, 'R' 'P' 'S' = white's pieces,
+  // A map is a layout: w * h characters (its width and height), row y = 0 first, 'R' 'P' 'S' = white's pieces,
   // 'r' 'p' 's' = black's, '#' = a wall, '.' = empty. null = the standard start (DEFAULT_LAYOUT).
   const DEFAULT_LAYOUT = (() => {
     const cells = Array(W * H).fill('.');
@@ -31,22 +36,24 @@
     return cells.join('');
   })();
 
-  // Why a layout can't be played, or null if it is fine.
-  function layoutProblem(layout) {
-    if (typeof layout !== 'string' || layout.length !== W * H || /[^RPSrps#.]/.test(layout)) return `bản đồ phải gồm ${W * H} ô, mỗi ô là R P S (bên đi trước), r p s (bên đi sau), # (tường) hoặc . (trống)`;
+  // Why a w x h layout can't be played, or null if it is fine.
+  function layoutProblem(layout, w = W, h = H) {
+    const [lo, hi] = SIZE_LIMITS;
+    if (![w, h].every(n => Number.isInteger(n) && n >= lo && n <= hi)) return `chiều rộng và chiều cao phải là số nguyên từ ${lo} đến ${hi}`;
+    if (typeof layout !== 'string' || layout.length !== w * h || /[^RPSrps#.]/.test(layout)) return `bản đồ phải gồm ${w * h} ô, mỗi ô là R P S (bên đi trước), r p s (bên đi sau), # (tường) hoặc . (trống)`;
     if (!/[RPS]/.test(layout)) return 'bên đi trước cần ít nhất một quân';
     if (!/[rps]/.test(layout)) return 'bên đi sau cần ít nhất một quân';
-    const at = ([x, y]) => layout[y * W + x];
-    if (at(GOAL.white) === '#' || at(GOAL.black) === '#') return 'không được đặt tường ở hai góc đích';
-    if (/[RPS]/.test(at(GOAL.white))) return 'quân bên đi trước không được đứng sẵn ở đích của mình (góc trên phải)';
-    if (/[rps]/.test(at(GOAL.black))) return 'quân bên đi sau không được đứng sẵn ở đích của mình (góc dưới trái)';
+    const at = ([x, y]) => layout[y * w + x], goal = goals(w, h);
+    if (at(goal.white) === '#' || at(goal.black) === '#') return 'không được đặt tường ở hai góc đích';
+    if (/[RPS]/.test(at(goal.white))) return 'quân bên đi trước không được đứng sẵn ở đích của mình (góc trên phải)';
+    if (/[rps]/.test(at(goal.black))) return 'quân bên đi sau không được đứng sẵn ở đích của mình (góc dưới trái)';
     return null;
   }
 
   // board[y][x] = null | { side, kind, id }; wall[y][x] = true on a wall. Each side numbers its
   // pieces in reading order from its own side (bottom row first, left to right; black's view is
   // rotated 180°): ids w0, w1... and b0, b1..., so pid = number + 1.
-  function initialBoard(layout = DEFAULT_LAYOUT) {
+  function initialBoard(layout = DEFAULT_LAYOUT, W = 9, H = 9) {
     const board = Array.from({ length: H }, () => Array(W).fill(null));
     const wall = Array.from({ length: H }, () => Array(W).fill(false));
     let w = 0, b = 0;
@@ -59,8 +66,17 @@
     return { board, wall };
   }
 
-  function newGame(layout) {
-    return { ...initialBoard(layout || DEFAULT_LAYOUT), toMove: 'white', turn: 0, winner: null, reason: null };
+  // Why a map's move limit can't be used, or null if it is fine.
+  function turnsProblem(n) {
+    return Number.isInteger(n) && n >= TURN_LIMITS[0] && n <= TURN_LIMITS[1] ? null : `số nước tối đa phải là số nguyên từ ${TURN_LIMITS[0]} đến ${TURN_LIMITS[1]}`;
+  }
+
+  // map = { layout, maxTurns, width, height } (anything carrying them, e.g. a recorded game), or
+  // null / no layout for the standard game. g.W x g.H = the board's size.
+  function newGame(map) {
+    const custom = map && map.layout;
+    const w = custom ? map.width || W : W, h = custom ? map.height || H : H;
+    return { ...initialBoard(custom || DEFAULT_LAYOUT, w, h), W: w, H: h, maxTurns: (map && map.maxTurns) || MAX_TURNS, toMove: 'white', turn: 0, winner: null, reason: null };
   }
 
   const count = (board, side) => board.reduce((n, row) => n + row.filter(c => c && c.side === side).length, 0);
@@ -69,7 +85,7 @@
   function problem(g, side, move) {
     if (!Array.isArray(move) || move.length !== 4 || !move.every(Number.isInteger)) return 'nước đi phải gồm 4 số nguyên x1 y1 x2 y2';
     const [x1, y1, x2, y2] = move;
-    const inside = (x, y) => x >= 0 && x < W && y >= 0 && y < H;
+    const inside = (x, y) => x >= 0 && x < g.W && y >= 0 && y < g.H;
     if (!inside(x1, y1) || !inside(x2, y2)) return 'ô nằm ngoài bàn cờ';
     const piece = g.board[y1][x1];
     if (!piece || piece.side !== side) return 'ô xuất phát không có quân của bạn';
@@ -84,7 +100,7 @@
 
   function legalMoves(g, side = g.toMove) {
     const out = [];
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    for (let y = 0; y < g.H; y++) for (let x = 0; x < g.W; x++) {
       const p = g.board[y][x];
       if (!p || p.side !== side) continue;
       for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
@@ -108,7 +124,7 @@
       if (!target || BEATS[piece.kind] === target.kind) {
         g.board[y2][x2] = piece;
         if (target) ev.result = 'capture';
-        const goal = GOAL[side];
+        const goal = goals(g.W, g.H)[side];
         if (x2 === goal[0] && y2 === goal[1]) {
           ev.result = 'goal';
           g.winner = side;
@@ -122,7 +138,7 @@
     }
     g.turn++;
     g.toMove = other(side);
-    if (!g.winner && g.turn >= MAX_TURNS) { g.winner = 'draw'; g.reason = 'limit-draw'; }
+    if (!g.winner && g.turn >= g.maxTurns) { g.winner = 'draw'; g.reason = 'limit-draw'; }
     return ev;
   }
 
@@ -136,6 +152,7 @@
   // starts bottom-left and heads for the top-right corner). Uppercase = mine, lowercase = enemy,
   // '#' = wall, '.' = empty; row y = 0 first. Moves the bot returns are mapped back with fromView.
   function view(g, side) {
+    const { W, H } = g;
     let s = '';
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const [rx, ry] = side === 'white' ? [x, y] : [W - 1 - x, H - 1 - y];
@@ -144,12 +161,13 @@
     }
     return s;
   }
-  const fromView = (side, [x1, y1, x2, y2]) => (side === 'white' ? [x1, y1, x2, y2] : [W - 1 - x1, H - 1 - y1, W - 1 - x2, H - 1 - y2]);
+  const fromView = (g, side, [x1, y1, x2, y2]) => (side === 'white' ? [x1, y1, x2, y2] : [g.W - 1 - x1, g.H - 1 - y1, g.W - 1 - x2, g.H - 1 - y2]);
 
   // The game state a bot gets, in its own view: { ally, opponent, walls } with each piece as
   // { pid, type, x, y } and each wall as { x, y }. pid = 1, 2, ..., fixed for the whole game (each
-  // side numbers its own pieces); x, y = 1..9, (1, 1) = bottom-left (the board itself counts from 0).
+  // side numbers its own pieces); x = 1..W, y = 1..H, (1, 1) = bottom-left (the board itself counts from 0).
   function pieces(g, side) {
+    const { W, H } = g;
     const out = { ally: [], opponent: [], walls: [] };
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const [rx, ry] = side === 'white' ? [x, y] : [W - 1 - x, H - 1 - y];
@@ -172,12 +190,12 @@
     const p = pieces(g, side).ally.find(q => q.pid === pid);
     if (!p) return { error: `không có quân nào của bạn mang số ${pid}` };
     const [dx, dy] = DIRS[dir];
-    const move = fromView(side, [p.x - 1, p.y - 1, p.x - 1 + dx, p.y - 1 + dy]);
+    const move = fromView(g, side, [p.x - 1, p.y - 1, p.x - 1 + dx, p.y - 1 + dy]);
     const why = problem(g, side, move);
     return why ? { error: why } : { move };
   }
 
-  const api = { W, H, MAX_TURNS, BEATS, GOAL, DIRS, DEFAULT_LAYOUT, other, square, layoutProblem, newGame, initialBoard, count, problem, legalMoves, apply, forfeit, view, fromView, pieces, fromAnswer };
+  const api = { W, H, MAX_TURNS, TURN_LIMITS, SIZE_LIMITS, BEATS, GOAL, DIRS, goals, DEFAULT_LAYOUT, other, square, layoutProblem, turnsProblem, newGame, initialBoard, count, problem, legalMoves, apply, forfeit, view, fromView, pieces, fromAnswer };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.BoardRules = api;
 })(typeof window !== 'undefined' ? window : globalThis);

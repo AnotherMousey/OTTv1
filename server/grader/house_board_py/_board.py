@@ -3,22 +3,32 @@ import time
 
 # The game state (gameState.ally / .opponent: pieces with .pid .Type .x .y, x and y from 1) is turned
 # into a flat board `cells`: cell i = (x, y) counted from 0, i = y * W + x, "R" "P" "S" = mine, "r" "p" "s" = enemy,
-# "." = empty, "#" = a wall (the map's: no piece can enter it). I start bottom-left and win on the top-right corner; the enemy wins on (0, 0).
+# "." = empty, "#" = a wall (the map's: no piece can enter it). The board is W x H (gameState.width /
+# .height, 9 x 9 by default). I start bottom-left and win on the top-right corner; the enemy wins on (0, 0).
 # A move is (from cell, to cell); to_move turns it into the answer (pid, direction).
 BEATS = {"R": "S", "S": "P", "P": "R"}     # kind -> the kind it captures
 BEATEN_BY = {"S": "R", "P": "S", "R": "P"}  # kind -> the kind that captures it
 WIN = 100000
 W = H = 9
-NEIGH = [[(x + dx) + (y + dy) * W
-          for dx in (-1, 0, 1) for dy in (-1, 0, 1)
-          if (dx or dy) and 0 <= x + dx < W and 0 <= y + dy < H]
-         for y in range(H) for x in range(W)]
+NEIGH = []  # cell -> the cells next to it (8 directions), for a W x H board: see resize
 PID = {}  # cell -> the pid of my piece on it
 # (dx, dy) -> direction number of the answer
 DIRECTION = {(-1, 1): 1, (0, 1): 2, (1, 1): 3, (1, 0): 4, (1, -1): 5, (0, -1): 6, (-1, -1): 7, (-1, 0): 8}
 
 
+def resize(width, height):
+    global W, H, NEIGH
+    W, H = width, height
+    NEIGH = [[(x + dx) + (y + dy) * W
+              for dx in (-1, 0, 1) for dy in (-1, 0, 1)
+              if (dx or dy) and 0 <= x + dx < W and 0 <= y + dy < H]
+             for y in range(H) for x in range(W)]
+    PATHS.clear()  # distances belong to a board size
+
+
 def setup(state):
+    if not NEIGH or (state.width, state.height) != (W, H):
+        resize(state.width, state.height)
     cells = ["."] * (W * H)
     PID.clear()
     for p in state.ally:

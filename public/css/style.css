@@ -509,3 +509,7 @@ table.match-list td.score { font-family: 'Pangolin', cursive; }
 .map-swatch { display: inline-block; width: 22px; height: 22px; border: 2px solid #2b2b2b; border-radius: 4px; background: #f4f0e2; }
 .map-swatch.wall { background: #2b2b2b; }
 .map-grid { flex: none; max-width: 100%; touch-action: none; cursor: crosshair; user-select: none; }
+
+.map-palette { gap: 14px; }
+.map-toggle { display: inline-flex; flex-wrap: wrap; gap: 6px; padding: 4px; border: 2px dashed #ccc; border-radius: 10px; }
+.map-toggle.off { opacity: .45; }

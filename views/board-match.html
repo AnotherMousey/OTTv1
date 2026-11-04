@@ -60,17 +60,25 @@
     const R = BoardRules;
     const COL = { A: '#e2433f', B: '#3a7bd5' }, LIGHT = { A: '#ff9b97', B: '#9cc7ff' };
     // Point of view. Your own match is shown from your side: the board as your bot saw it (your
-    // pieces start bottom-left, coordinates 1-9 as in gameState), so in the game where you move
+    // pieces start bottom-left, coordinates from 1 as in gameState), so in the game where you move
     // second it is turned 180°. Anyone else sees the real board: white starts bottom-left.
     let mine = null;      // 'A' | 'B': the viewer's team in this match, if any
     let myView = false;   // showing it from the viewer's side (= the viewer played in it)
     const flipped = () => myView && replay.teamOf.black === mine;
     // a real square -> the coordinates the viewer's bot saw (1-based)
-    const botXY = (x, y) => (replay.teamOf.white === mine ? [x + 1, y + 1] : [R.W - x, R.H - y]);
-    // board geometry inside the 900 x 530 scene
-    const C = 52, X0 = 216, Y0 = 16;
-    const px = x => X0 + (flipped() ? R.W - 1 - x : x) * C;
-    const py = y => Y0 + (flipped() ? y : R.H - 1 - y) * C; // y = 0 is the bottom row (unless flipped)
+    const botXY = (x, y) => (replay.teamOf.white === mine ? [x + 1, y + 1] : [W - x, H - y]);
+    // board geometry inside the 900 x 530 scene: the game's W x H board fits a 468 x 468 square,
+    // C = a square's side (52 on the standard 9 x 9 board; pieces and flags are drawn for 52, see S)
+    let W = 9, H = 9, C = 52, X0 = 216, Y0 = 16;
+    const S = () => C / 52;
+    function fitBoard() {
+      ({ W, H } = replay);
+      C = Math.floor(468 / Math.max(W, H));
+      X0 = 216 + (468 - W * C) / 2;
+      Y0 = 16 + (468 - H * C) / 2;
+    }
+    const px = x => X0 + (flipped() ? W - 1 - x : x) * C;
+    const py = y => Y0 + (flipped() ? y : H - 1 - y) * C; // y = 0 is the bottom row (unless flipped)
     const trim = (s, n) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
 
     let M = null, AV = { A: null, B: null };
@@ -86,7 +94,7 @@
       return out;
     }
     function buildReplay(game) {
-      const g = R.newGame(game.layout); // the map it was played on (none: the standard start)
+      const g = R.newGame(game); // the map it was played on (its layout, size and move limit; none: the standard game)
       const states = [snapshot(g.board)], events = [];
       game.moves.forEach((move, k) => {
         const side = g.toMove;
@@ -96,15 +104,15 @@
         states.push(snapshot(g.board));
       });
       const teamOf = { white: game.white, black: game.white === 'A' ? 'B' : 'A' };
-      return { states, events, teamOf, N: game.moves.length, wall: g.wall };
+      return { states, events, teamOf, N: game.moves.length, wall: g.wall, W: g.W, H: g.H };
     }
 
     // ---------- scene ----------
     function pieceMarkup(id, p) {
-      return `<g class="bpiece" id="pc-${id}"><g transform="translate(3 2) scale(.72)">${boardPieceMarkup(p.kind, COL[replay.teamOf[p.side]])}</g></g>`;
+      return `<g class="bpiece" id="pc-${id}"><g transform="scale(${S()}) translate(3 2) scale(.72)">${boardPieceMarkup(p.kind, COL[replay.teamOf[p.side]])}</g></g>`;
     }
     function flag(x, y, color) {
-      return `<g transform="translate(${px(x) + 10} ${py(y) + 6})" opacity=".9">
+      return `<g transform="translate(${px(x)} ${py(y)}) scale(${S()}) translate(10 6)" opacity=".9">
         <path d="M6 40 L6 4" stroke="#2b2b2b" stroke-width="3.5" stroke-linecap="round"/>
         <path d="M7 5 Q20 1 31 7 Q22 13 7 18 Z" fill="${color}" stroke="#2b2b2b" stroke-width="2.5" stroke-linejoin="round"/>
       </g>`;
@@ -121,15 +129,15 @@
     }
     function buildScene() {
       const cells = [], lines = [], labels = [];
-      for (let y = 0; y < R.H; y++) for (let x = 0; x < R.W; x++) {
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
         cells.push(`<rect x="${px(x)}" y="${py(y)}" width="${C}" height="${C}" fill="${replay.wall[y][x] ? '#2b2b2b' : (x + y) % 2 ? '#fffdf3' : '#f4f0e2'}"/>`);
       }
-      for (let k = 0; k <= R.W; k++) lines.push(`<path d="M${X0 + k * C} ${Y0} L${X0 + k * C} ${Y0 + R.H * C}"/>`);
-      for (let k = 0; k <= R.H; k++) lines.push(`<path d="M${X0} ${Y0 + k * C} L${X0 + R.W * C} ${Y0 + k * C}"/>`);
+      for (let k = 0; k <= W; k++) lines.push(`<path d="M${X0 + k * C} ${Y0} L${X0 + k * C} ${Y0 + H * C}"/>`);
+      for (let k = 0; k <= H; k++) lines.push(`<path d="M${X0} ${Y0 + k * C} L${X0 + W * C} ${Y0 + k * C}"/>`);
       // your view: x and y as your bot saw them; standard view: square names a1..i9
-      for (let x = 0; x < R.W; x++) labels.push(`<text x="${px(x) + C / 2}" y="${Y0 + R.H * C + 22}" text-anchor="middle" font-size="16" fill="#8d8d8d">${myView ? 'x=' + botXY(x, 0)[0] : String.fromCharCode(97 + x)}</text>`);
-      for (let y = 0; y < R.H; y++) labels.push(`<text x="${X0 - 20}" y="${py(y) + C / 2 + 6}" text-anchor="middle" font-size="16" fill="#8d8d8d">${myView ? botXY(0, y)[1] : y + 1}</text>`);
-      const goalW = R.GOAL.white, goalB = R.GOAL.black;
+      for (let x = 0; x < W; x++) labels.push(`<text x="${px(x) + C / 2}" y="${Y0 + H * C + 22}" text-anchor="middle" font-size="16" fill="#8d8d8d">${myView ? 'x=' + botXY(x, 0)[0] : String.fromCharCode(97 + x)}</text>`);
+      for (let y = 0; y < H; y++) labels.push(`<text x="${X0 - 20}" y="${py(y) + C / 2 + 6}" text-anchor="middle" font-size="16" fill="#8d8d8d">${myView ? botXY(0, y)[1] : y + 1}</text>`);
+      const { white: goalW, black: goalB } = R.goals(W, H);
       $('#scene').innerHTML = `
         <defs>
           <filter id="wobble" x="-5%" y="-5%" width="110%" height="110%">
@@ -146,7 +154,7 @@
         ${flag(goalW[0], goalW[1], LIGHT[replay.teamOf.white])}
         ${flag(goalB[0], goalB[1], LIGHT[replay.teamOf.black])}
         <g filter="url(#wobble)" stroke="#2b2b2b" stroke-width="3" stroke-linecap="round" fill="none">${lines.join('')}
-          <rect x="${X0 - 4}" y="${Y0 - 4}" width="${R.W * C + 8}" height="${R.H * C + 8}" stroke-width="5" rx="6"/></g>
+          <rect x="${X0 - 4}" y="${Y0 - 4}" width="${W * C + 8}" height="${H * C + 8}" stroke-width="5" rx="6"/></g>
         ${labels.join('')}
         <g id="pieces">${Object.entries(replay.states[0]).map(([id, p]) => pieceMarkup(id, p)).join('')}</g>
         <path id="arrow" d="" stroke="#2b2b2b" stroke-width="4" stroke-linecap="round" fill="none" marker-end="url(#arrowhead)" opacity="0"/>
@@ -159,7 +167,7 @@
     // On a phone, show only the board (the scorecards below still count the pieces).
     function fitScene() {
       const narrow = window.innerWidth < 600;
-      $('#scene').setAttribute('viewBox', narrow ? `${X0 - 34} ${Y0 - 8} ${R.W * C + 46} ${R.H * C + 42}` : '0 0 900 530');
+      $('#scene').setAttribute('viewBox', narrow ? `${X0 - 34} ${Y0 - 8} ${W * C + 46} ${H * C + 42}` : '0 0 900 530');
     }
     window.addEventListener('resize', () => { if (replay) fitScene(); });
 
@@ -354,6 +362,7 @@
       stop();
       G = g;
       replay = buildReplay(M.games[G]);
+      fitBoard();
       ply = 0;
       $('#scrub').max = replay.N;
       renderTabs();

@@ -1,8 +1,9 @@
 // Board game matches ("Cờ OTT", rules in public/js/board-rules.js).
 // Every game starts each bot as a fresh process, and waits until it says READY (see bot.js) before
 // its clock starts. The bot is asked for a move on its own turns:
-//   grader -> bot : "STATE <currentTurn> <maxTurn> <n> <pid type x y> * n <m> <pid type x y> * m <k> <x y> * k"
-//                   (its n pieces, the enemy's m, then the map's k walls, from the bot's own side: see R.pieces)
+//   grader -> bot : "STATE <currentTurn> <maxTurn> <n> <pid type x y> * n <m> <pid type x y> * m <k> <x y> * k <width> <height>"
+//                   (its n pieces, the enemy's m, the map's k walls, from the bot's own side (see
+//                   R.pieces), then the board's size)
 //   bot -> grader : "MOVE <pid> <direction 1-8>"
 // The harnesses turn this into play(gameState) -> (pid, direction).
 // Time per move, as in Battlecode (which counts bytecodes): the limit is on the bot's computation.
@@ -13,7 +14,7 @@
 // An illegal move, too much CPU or no answer in time skips that turn (a late answer is thrown away).
 // A bot that crashes, or misses HUNG_TURNS turns in a row (stuck), loses the game.
 // A match is 2 games with the sides swapped (white moves first): win = 3, draw = 1, loss = 0 per game.
-// Every game of a match starts from the same layout: the tournament's active map (see layoutOf).
+// Every game of a match is played on the same map: the tournament's active one (see mapOf).
 const Bot = require('./bot');
 const { MOVE_CPU_MS, FIRST_MOVE_TIMEOUT_MS } = require('./languages');
 const R = require('../../public/js/board-rules');
@@ -27,17 +28,18 @@ const GAME_CPU_MS = +process.env.GAME_CPU_MS || 180000;
 const overCpu = (bot, first) => (bot.cpu !== null && bot.cpu > (first ? FIRST_MOVE_TIMEOUT_MS : MOVE_CPU_MS) ? bot.cpu : null);
 const MAX_SCORE = GAMES * 3; // best possible match score
 
-// The layout games of tournament t start from: the map the judge made active (t.maps, t.activeMap),
-// or null for the standard start.
-function layoutOf(t) {
+// The map games of tournament t are played on: { layout, maxTurns, width, height } of the one the
+// judge made active (t.maps, t.activeMap), or null for the standard game (9 x 9, R.MAX_TURNS moves).
+function mapOf(t) {
   const map = t && t.activeMap && (t.maps || []).find(m => m.id === t.activeMap);
-  return map ? map.layout : null;
+  return map ? { layout: map.layout, maxTurns: map.maxTurns || R.MAX_TURNS, width: map.width || R.W, height: map.height || R.H } : null;
 }
+const newGame = map => R.newGame(map);
 
 function request(g, side) {
   const { ally, opponent, walls } = R.pieces(g, side);
   const list = ps => [ps.length, ...ps.map(p => `${p.pid} ${p.type} ${p.x} ${p.y}`)].join(' ');
-  return `STATE ${g.turn} ${R.MAX_TURNS} ${list(ally)} ${list(opponent)} ${[walls.length, ...walls.map(w => `${w.x} ${w.y}`)].join(' ')}`;
+  return `STATE ${g.turn} ${g.maxTurns} ${list(ally)} ${list(opponent)} ${[walls.length, ...walls.map(w => `${w.x} ${w.y}`)].join(' ')} ${g.W} ${g.H}`;
 }
 
 // "pid direction" -> { move } on the real board, or { error }.
@@ -60,8 +62,8 @@ function crashLine(bot) {
 // that move (shown in the replay): the CPU ms it used (a number, null if unknown) for a legal move,
 // or why the turn was lost: ['timeout', wall ms] | ['cpu', limit ms] | ['invalid', answer, why].
 // end = { side, why } when a bot lost the game by crashing or hanging; issues = { white, black }.
-async function playGame(bots, layout) {
-  const g = R.newGame(layout);
+async function playGame(bots, map) {
+  const g = newGame(map);
   const moves = [];
   const verdicts = [];
   let end = null;
@@ -118,8 +120,8 @@ async function playGame(bots, layout) {
 }
 
 // games: how many games; aWhite: whether A takes white (moves first) in the first one;
-// layout: the map (null = the standard start), kept on each game for the replay.
-async function runMatch(subA, subB, ensureBuilt, { games = GAMES, aWhite = true, layout = null } = {}) {
+// map: { layout, maxTurns, width, height } (null = the standard game), kept on each game for the replay.
+async function runMatch(subA, subB, ensureBuilt, { games = GAMES, aWhite = true, map = null } = {}) {
   const built = await Promise.all([subA, subB].map(s => ensureBuilt(s).then(() => null, e => 'biên dịch thất bại: ' + e.message)));
   const record = [];
   const issues = { A: null, B: null };
@@ -133,7 +135,7 @@ async function runMatch(subA, subB, ensureBuilt, { games = GAMES, aWhite = true,
     }
     let game;
     try {
-      game = await playGame({ [sideOf.A]: bots.A, [sideOf.B]: bots.B }, layout);
+      game = await playGame({ [sideOf.A]: bots.A, [sideOf.B]: bots.B }, map);
     } finally {
       bots.A.stop();
       bots.B.stop();
@@ -142,7 +144,7 @@ async function runMatch(subA, subB, ensureBuilt, { games = GAMES, aWhite = true,
     scoreA += winner === 'A' ? 3 : winner === 'draw' ? 1 : 0;
     scoreB += winner === 'B' ? 3 : winner === 'draw' ? 1 : 0;
     for (const who of ['A', 'B']) if (!issues[who] && game.issues[sideOf[who]]) issues[who] = `Ván ${k + 1}, ${game.issues[sideOf[who]].charAt(0).toLowerCase()}${game.issues[sideOf[who]].slice(1)}`;
-    record.push({ white, ...(layout ? { layout } : {}), moves: game.moves, verdicts: game.verdicts, winner, reason: game.reason, ...(game.end ? { end: game.end } : {}) });
+    record.push({ white, ...(map ? { layout: map.layout, maxTurns: map.maxTurns, width: map.width, height: map.height } : {}), moves: game.moves, verdicts: game.verdicts, winner, reason: game.reason, ...(game.end ? { end: game.end } : {}) });
   }
   return {
     games: record, scoreA, scoreB,
@@ -152,10 +154,10 @@ async function runMatch(subA, subB, ensureBuilt, { games = GAMES, aWhite = true,
 }
 
 // A few moves against a random mover, to make sure the bot answers with legal moves.
-async function smokeTest(sub, describe, layout) {
+async function smokeTest(sub, describe, map) {
   const bot = new Bot(sub);
   bot.start();
-  const g = R.newGame(layout);
+  const g = newGame(map);
   try {
     for (let i = 0; i < 5; i++) {
       const raw = await bot.ask(request(g, 'white'), i === 0 ? FIRST_MOVE_TIMEOUT_MS : MOVE_WALL_MS);
@@ -182,10 +184,10 @@ async function smokeTest(sub, describe, layout) {
 function describe(g) {
   const { ally } = R.pieces(g, 'white');
   const v = R.view(g, 'white');
-  const rows = [`Quân của bạn lúc đó (pid Type x y): ${ally.map(p => `${p.pid} ${p.type} ${p.x} ${p.y}`).join(' · ')}`, `Bàn cờ (hàng trên cùng là y = ${R.H}):`];
-  for (let y = R.H - 1; y >= 0; y--) rows.push(`${y + 1} ${v.slice(y * R.W, (y + 1) * R.W).split('').join(' ')}`);
-  rows.push('  ' + Array.from({ length: R.W }, (_, x) => x + 1).join(' '));
+  const rows = [`Quân của bạn lúc đó (pid Type x y): ${ally.map(p => `${p.pid} ${p.type} ${p.x} ${p.y}`).join(' · ')}`, `Bàn cờ (hàng trên cùng là y = ${g.H}):`];
+  for (let y = g.H - 1; y >= 0; y--) rows.push(`${String(y + 1).padStart(2)} ${v.slice(y * g.W, (y + 1) * g.W).split('').join(' ')}`);
+  rows.push('   ' + Array.from({ length: g.W }, (_, x) => x + 1).join(' '));
   return rows.join('\n');
 }
 
-module.exports = { GAME_CPU_MS, layoutOf, runMatch, smokeTest: (sub, layout) => smokeTest(sub, describe, layout), GAMES, MAX_SCORE, MAX_TURNS: R.MAX_TURNS };
+module.exports = { GAME_CPU_MS, mapOf, runMatch, smokeTest: (sub, map) => smokeTest(sub, describe, map), GAMES, MAX_SCORE, MAX_TURNS: R.MAX_TURNS };

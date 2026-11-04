@@ -6,7 +6,7 @@ const os = require('os');
 const db = require('../db');
 const { HOUSE_BOTS, houseBots, defaultRunnable } = require('./house');
 const { runMatch } = require('./match');
-const { layoutOf } = require('./board');
+const { mapOf } = require('./board');
 
 // practice matches at the same time, across all submissions (default: one per CPU)
 const PARALLEL = +process.env.PRACTICE_PARALLEL || os.cpus().length;
@@ -113,7 +113,8 @@ async function saveReplay(sub, house, r) {
 const RULES = { board: 'cpu-180s-per-game' };
 function rulesOf(t) {
   const rules = RULES[gameOf(t)] || null;
-  return rules && layoutOf(t) ? `${rules} map:${layoutOf(t)}` : rules;
+  const map = mapOf(t);
+  return rules && map ? `${rules} map:${map.width}x${map.height}:${map.layout} turns:${map.maxTurns}` : rules;
 }
 
 const running = new Map();
@@ -128,7 +129,7 @@ function evaluate(sub, ensureBuilt, { topUp = false } = {}) {
   const all = botsFor(tournamentOf(sub));
   const opponents = isCampaign(sub) && sub.target ? all.filter(h => h.id === sub.target) : all;
   const play = async (house, opts) => {
-    const r = await runMatch(sub, house.custom, ensureBuilt, { ...opts, layout: layoutOf(tournamentOf(sub)) });
+    const r = await runMatch(sub, house.custom, ensureBuilt, { ...opts, map: mapOf(tournamentOf(sub)) });
     return { ...r, issue: r.issues.A };
   };
   const old = sub.practice;

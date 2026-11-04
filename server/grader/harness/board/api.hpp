@@ -21,6 +21,7 @@ struct State {
     std::vector<Piece> ally;      // your pieces
     std::vector<Piece> opponent;  // the enemy's pieces
     std::vector<Cell> walls;      // squares no piece can enter (the tournament's map; often none)
+    int width, height;            // the board's size (x = 1..width, y = 1..height; 9 x 9 by default)
     int maxTurn;                  // the game is a draw after this many moves (both sides)
     int currentTurn;              // moves already played in this game (both sides)
 };
