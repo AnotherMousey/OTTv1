@@ -18,7 +18,7 @@
   const W = 9, H = 9; // the standard board
   const MAX_TURNS = 1000;
   const TURN_LIMITS = [10, 5000]; // the move limit a map may set
-  const SIZE_LIMITS = [4, 15];    // the width and height a map may have
+  const SIZE_LIMITS = [4, 25];    // the width and height a map may have
   const BEATS = { R: 'S', S: 'P', P: 'R' };
   // White's start (black's is the same rotated by 180°, so both sides see the same position).
   const WHITE_START = [[1, 0, 'R'], [2, 0, 'P'], [3, 0, 'S'], [1, 1, 'P'], [2, 1, 'S'], [3, 1, 'R'], [1, 2, 'S'], [2, 2, 'R'], [3, 2, 'P']];

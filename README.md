@@ -114,7 +114,7 @@ Brawl, campaign, invite-only and hidden tournaments work the same way for both.
   Rules live in [board-rules.js](public/js/board-rules.js), shared by the grader and the replay page.
 
   **Maps:** on a Cờ OTT tournament's page (**⚙️ quản lý** → **🗺️ bản đồ**) the judge can draw maps: the
-  board's **size** (width and height, 4–15 each; the standard board is 9×9), where each side's pieces start (any number per side, anywhere), **walls**, squares no piece can enter
+  board's **size** (width and height, 4–25 each; the standard board is 9×9), where each side's pieces start (any number per side, anywhere), **walls**, squares no piece can enter
   (black on the board), each side's **goal squares** (flags in the side's colour; by default the corner the
   other side starts in), whether a side wins by **reaching any one** of its goal squares or by **holding all
   of them at once** (a toggle next to the board), and the map's **move limit** (`maxTurn`, 10–5000; the standard board: 1000). The judge marks one map as active (or the standard start), and can create, edit,

@@ -564,7 +564,7 @@
       const dot = side => `<span class="map-swatch" style="background:${BOARD_SIDE_COLOR[side]};border-radius:50%"></span>`;
       const goal = side => `<svg viewBox="0 0 22 22" width="22" height="22" style="border:2px solid #2b2b2b;border-radius:4px;background:${BOARD_GOAL_TINT[side]}">${boardGoalFlag(1, 1, BOARD_SIDE_COLOR[side])}</svg>`;
       return `<div class="map-palette">
-          <span class="map-toggle">${MAP_KINDS.map(([k, label]) => `<button class="btn small ${e.kind === k ? 'on' : ''}" data-kind="${k}">${k === '#' ? '<span class="map-swatch wall"></span>' : k === 'G' ? goal(e.team) : piece(k, e.team)} ${label}</button>`).join('')}</span>
+          <span class="map-toggle">${MAP_KINDS.map(([k, label]) => `${k === '#' ? '<span style="flex-basis:100%;margin-top:-6px"></span>' : ''}<button class="btn small ${e.kind === k ? 'on' : ''}" data-kind="${k}">${k === '#' ? '<span class="map-swatch wall"></span>' : k === 'G' ? goal(e.team) : piece(k, e.team)} ${label}</button>`).join('')}</span>
           <span class="map-toggle ${e.kind === '#' ? 'off' : ''}" title="${e.kind === '#' ? 'tường không thuộc bên nào' : e.kind === 'G' ? 'bên được thắng khi chiếm ô đích này' : 'bên của quân sẽ đặt'}">${MAP_TEAMS.map(([side, label]) => `<button class="btn small ${e.team === side ? 'on' : ''}" data-team="${side}">${dot(side)} ${label}</button>`).join('')}</span>
         </div>`;
     }
@@ -582,9 +582,8 @@
           <div class="map-grid-wrap"><div id="meGrid" class="map-grid"></div></div>
           <div>
             ${mapPalette(e)}
-            <div style="margin-top:12px"><span class="muted" style="font-size:17px">thắng bằng ô đích khi:</span>
+            <div style="margin-top:12px"><span class="muted" style="font-size:17px">điều kiện thắng:</span>
               <span class="map-toggle" style="margin-top:4px">${MAP_GOAL_MODES.map(([mode, label, tip]) => `<button class="btn small ${e.goalMode === mode ? 'on' : ''}" data-goalmode="${mode}" title="${tip}">🏁 ${label}</button>`).join('')}</span></div>
-            <p class="muted" style="font-size:17px;margin:12px 0 0">Ô đích là một lớp riêng: một ô có thể vừa là ô đích vừa có quân (quân địch đứng canh). Bấm chuột phải vào một ô (hoặc giữ chuột phải và kéo) để xóa ô đó về ô trống (cả quân, tường lẫn ô đích).</p>
             <p id="meCount" style="margin:8px 0 6px"></p>
             <p id="meProblem" style="margin:0;color:var(--red)"></p>
             <div class="row" style="gap:8px;margin-top:12px">
@@ -634,7 +633,7 @@
         $('#meGrid').innerHTML = boardMapSvg({ layout, width: e.width, height: e.height, goals }, { cell: MAP_CELL });
         fitPage();
         const n = re => e.cells.filter(c => re.test(c)).length, ng = c => e.goals.filter(x => x === c).length;
-        $('#meCount').innerHTML = `${e.width}×${e.height} ô · <span style="color:${BOARD_SIDE_COLOR.white}">bên đi trước: ${n(/[RPS]/)} quân, ${ng('w')} ô đích</span> · <span style="color:${BOARD_SIDE_COLOR.black}">bên đi sau: ${n(/[rps]/)} quân, ${ng('b')} ô đích</span> · tường: ${n(/#/)} ô`;
+        $('#meCount').innerHTML = `${e.width}×${e.height} ô<br><span style="color:${BOARD_SIDE_COLOR.white}">bên đi trước: ${n(/[RPS]/)} quân, ${ng('w')} ô đích</span><br><span style="color:${BOARD_SIDE_COLOR.black}">bên đi sau: ${n(/[rps]/)} quân, ${ng('b')} ô đích</span><br>tường: ${n(/#/)} ô`;
         const why = BoardRules.layoutProblem(layout, e.width, e.height, goals, e.goalMode) || BoardRules.turnsProblem(e.maxTurns);
         $('#meProblem').textContent = why ? `⚠️ ${why.charAt(0).toUpperCase()}${why.slice(1)}` : '';
         $('#meSave').disabled = !!why;
