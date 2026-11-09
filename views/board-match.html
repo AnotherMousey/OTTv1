@@ -94,7 +94,7 @@
       return out;
     }
     function buildReplay(game) {
-      const g = R.newGame(game); // the map it was played on (its layout, size and move limit; none: the standard game)
+      const g = R.newGame(game); // the map it was played on (its layout, size, goals and move limit; none: the standard game)
       const states = [snapshot(g.board)], events = [];
       game.moves.forEach((move, k) => {
         const side = g.toMove;
@@ -104,7 +104,7 @@
         states.push(snapshot(g.board));
       });
       const teamOf = { white: game.white, black: game.white === 'A' ? 'B' : 'A' };
-      return { states, events, teamOf, N: game.moves.length, wall: g.wall, W: g.W, H: g.H };
+      return { states, events, teamOf, N: game.moves.length, wall: g.wall, goal: g.goal, goalMode: g.goalMode, W: g.W, H: g.H };
     }
 
     // ---------- scene ----------
@@ -120,7 +120,11 @@
     function playerSide(team, cx) {
       const right = cx > 450;
       const side = replay.teamOf.white === team ? 'white' : 'black';
-      const note = `${side === 'white' ? 'đi trước' : 'đi sau'} · đích ${(side === 'white') !== flipped() ? '↗' : '↙'}`;
+      // the standard goal (the far corner) as an arrow; goals the map chose as how many flags there are
+      const goal = replay.goal[side], corner = side === 'white' ? [W - 1, H - 1] : [0, 0];
+      const standard = goal.length === 1 && goal[0][0] === corner[0] && goal[0][1] === corner[1];
+      const aim = standard ? ((side === 'white') !== flipped() ? '↗' : '↙') : replay.goalMode === 'all' ? `🏁 chiếm cả ${goal.length} ô` : `🏁 ${goal.length} ô`;
+      const note = `${side === 'white' ? 'đi trước' : 'đi sau'} · đích ${aim}`;
       return `
         <text x="${cx}" y="128" text-anchor="middle" font-size="25" fill="${COL[team]}">${esc(trim(M['team' + team], 14))}</text>
         <text x="${cx}" y="152" text-anchor="middle" font-size="16" fill="#8d8d8d">${note}</text>
@@ -137,7 +141,6 @@
       // your view: x and y as your bot saw them; standard view: square names a1..i9
       for (let x = 0; x < W; x++) labels.push(`<text x="${px(x) + C / 2}" y="${Y0 + H * C + 22}" text-anchor="middle" font-size="16" fill="#8d8d8d">${myView ? 'x=' + botXY(x, 0)[0] : String.fromCharCode(97 + x)}</text>`);
       for (let y = 0; y < H; y++) labels.push(`<text x="${X0 - 20}" y="${py(y) + C / 2 + 6}" text-anchor="middle" font-size="16" fill="#8d8d8d">${myView ? botXY(0, y)[1] : y + 1}</text>`);
-      const { white: goalW, black: goalB } = R.goals(W, H);
       $('#scene').innerHTML = `
         <defs>
           <filter id="wobble" x="-5%" y="-5%" width="110%" height="110%">
@@ -151,8 +154,7 @@
         ${cells.join('')}
         <rect class="hl" id="hlFrom" width="${C}" height="${C}" fill="#ffd84d" opacity="0"/>
         <rect class="hl" id="hlTo" width="${C}" height="${C}" fill="#ffd84d" opacity="0"/>
-        ${flag(goalW[0], goalW[1], LIGHT[replay.teamOf.white])}
-        ${flag(goalB[0], goalB[1], LIGHT[replay.teamOf.black])}
+        ${['white', 'black'].map(side => replay.goal[side].map(([x, y]) => flag(x, y, LIGHT[replay.teamOf[side]])).join('')).join('')}
         <g filter="url(#wobble)" stroke="#2b2b2b" stroke-width="3" stroke-linecap="round" fill="none">${lines.join('')}
           <rect x="${X0 - 4}" y="${Y0 - 4}" width="${W * C + 8}" height="${H * C + 8}" stroke-width="5" rx="6"/></g>
         ${labels.join('')}
@@ -277,7 +279,7 @@
       const name = BOARD_KIND_NAME[ev.piece];
       if (ev.result === 'capture') return `${who}: ${name} ${BOARD_VERB[ev.piece]} ${BOARD_KIND_NAME[ev.target]} của ${foe}! (${path}) 💥`;
       if (ev.result === 'bounce') return `${who} cho ${name} lao vào ${BOARD_KIND_NAME[ev.target]} của ${foe}… và mất quân! (${path}) 🙈`;
-      if (ev.result === 'goal') return `${who}: ${name} chạm góc đích! (${path}) 🏁`;
+      if (ev.result === 'goal') return `${who}: ${name} ${replay.goalMode === 'all' ? 'chiếm nốt ô đích cuối cùng' : 'chạm ô đích'}! (${path}) 🏁`;
       return `${who} đi ${name} ${path}`;
     }
 

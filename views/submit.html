@@ -138,7 +138,7 @@ public class Bot {
       $('.submit-grid').style.setProperty('--side', `${side}px`);
       $('main').style.maxWidth = `${CODE_WIDTH + 24 + side + 44}px`; // + the gap and the page's padding
       box.innerHTML = `<h3 style="margin-top:0">Bản đồ: ${esc(map.name)}</h3>
-        <p class="muted" style="font-size:16px;margin-top:-6px">Bàn cờ <b>${map.width}×${map.height}</b> · tối đa <b>${map.maxTurns} nước</b> mỗi ván. Bên đi trước màu xanh (đích là góc trên phải), bên đi sau màu đỏ (đích là góc dưới trái), ô đen là tường. Ván bạn đi sau, bot của bạn thấy bàn cờ xoay 180° nên vẫn xuất phát ở phía dưới trái. Trọng tài có thể đổi bản đồ trong lúc giải diễn ra.</p>
+        <p class="muted" style="font-size:16px;margin-top:-6px">Bàn cờ <b>${map.width}×${map.height}</b> · tối đa <b>${map.maxTurns} nước</b> mỗi ván. Bên đi trước màu xanh, bên đi sau màu đỏ; ô có cờ là ô đích của bên cùng màu (${map.goalMode === 'all' ? '<b>phải chiếm tất cả ô đích của mình cùng lúc</b>' : '<b>chạm 1 ô đích</b>'} là thắng), ô đen là tường. Ván bạn đi sau, bot của bạn thấy bàn cờ xoay 180° nên vẫn xuất phát ở phía dưới trái. Trọng tài có thể đổi bản đồ trong lúc giải diễn ra.</p>
         <div class="map-view">${boardMapSvg(map, { cell: MAP_CELL })}</div>`;
     }
     const commonRules = () => isBoard() ? boardRules(TURNS, COOLDOWN) : `

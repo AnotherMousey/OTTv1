@@ -1,7 +1,7 @@
 // Grader harness for Java board bots. Your Bot.java must define:
 //   public class Bot { public int[] play(State gameState) }   // returns {pid, direction}
-// Coordinates are 1-9, from your own side: (1, 1) is bottom-left, y = 1 is your home row, and you win
-// by reaching the top-right corner. Directions: 1 up-left, 2 up, 3 up-right, 4 right,
+// Coordinates are 1..width / 1..height, from your own side: (1, 1) is bottom-left, y = 1 is your home
+// row, and you win by reaching your goal squares (the top-right corner unless the map says otherwise). Directions: 1 up-left, 2 up, 3 up-right, 4 right,
 // 5 down-right, 6 down, 7 down-left, 8 left (up = toward your goal row).
 import java.io.*;
 import java.util.*;
@@ -21,6 +21,9 @@ class State {
     public List<Piece> opponent = new ArrayList<>();  // the enemy's pieces
     public List<Cell> walls = new ArrayList<>();      // squares no piece can enter (the map; often none)
     public int width = 9, height = 9;                 // the board's size (x = 1..width, y = 1..height)
+    public List<Cell> goals = new ArrayList<>();      // your goal squares (by default only the top-right corner)
+    public List<Cell> enemyGoals = new ArrayList<>(); // the enemy's goal squares (by default only (1, 1))
+    public int goalMode;                              // 0 = reaching any one of your goals wins, 1 = standing on all of them at once
     public int maxTurn;                               // a draw after this many moves (both sides)
     public int currentTurn;                           // moves already played (both sides)
 }
@@ -66,13 +69,23 @@ public class Main {
             line = line.trim();
             if (line.equals("END")) break;
             if (!line.startsWith("STATE ")) continue;
-            // "STATE <currentTurn> <maxTurn> <ally pieces> <opponent pieces> <walls> <width> <height>"
+            // "STATE <currentTurn> <maxTurn> <ally pieces> <opponent pieces> <walls> <width> <height>
+            //  <goalMode> <my goals> <enemy goals>"
             String[] p = line.split("\s+");
             State s = new State();
             s.currentTurn = Integer.parseInt(p[1]);
             s.maxTurn = Integer.parseInt(p[2]);
             int at = readWalls(p, readPieces(p, readPieces(p, 3, s.ally), s.opponent), s.walls);
-            if (at + 1 < p.length) { s.width = Integer.parseInt(p[at]); s.height = Integer.parseInt(p[at + 1]); }
+            if (at + 1 < p.length) { s.width = Integer.parseInt(p[at]); s.height = Integer.parseInt(p[at + 1]); at += 2; }
+            if (at < p.length) {
+                s.goalMode = Integer.parseInt(p[at]);
+                readWalls(p, readWalls(p, at + 1, s.goals), s.enemyGoals);
+            } else {  // the standard corners
+                Cell g = new Cell(), e = new Cell();
+                g.x = s.width; g.y = s.height; e.x = 1; e.y = 1;
+                s.goals.add(g);
+                s.enemyGoals.add(e);
+            }
             int[] m = bot.play(s);
             String reply = m == null || m.length != 2 ? "X" : m[0] + " " + m[1];
             out.print("\nMOVE " + reply + "\n");

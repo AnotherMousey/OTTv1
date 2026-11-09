@@ -4,10 +4,13 @@
 //   - It can't move onto its own piece, or onto an enemy piece of the same kind (blocked).
 //   - Moving onto an enemy it beats (R > S > P > R) captures it; moving onto one that beats it
 //     loses the attacker (the defender stays put).
-//   - A side wins by reaching the enemy's home corner, or by eliminating every enemy piece.
+//   - A side wins by reaching its goal (the enemy's home corner, or the goal squares the map gives
+//     it: by default any one of them, or all of them at once when the map says so), or by
+//     eliminating every enemy piece.
 //   - After MAX_TURNS moves (both sides counted, skipped turns too) without a winner: a draw.
 //   - A map (the judge's, per tournament) may set the board's size, where the pieces start, walls
-//     (squares no piece can enter) and its own move limit instead of MAX_TURNS.
+//     (squares no piece can enter), each side's goal squares, whether one of them or all of them
+//     must be taken (goalMode), and its own move limit instead of MAX_TURNS.
 // Coordinates: x = column 0..W-1 (a, b, ...), y = row 0..H-1 (1, 2, ...), W x H = the game's size
 // (g.W, g.H). White starts bottom-left and heads for the top-right corner; black starts top-right
 // and heads for (0, 0).
@@ -19,9 +22,19 @@
   const BEATS = { R: 'S', S: 'P', P: 'R' };
   // White's start (black's is the same rotated by 180°, so both sides see the same position).
   const WHITE_START = [[1, 0, 'R'], [2, 0, 'P'], [3, 0, 'S'], [1, 1, 'P'], [2, 1, 'S'], [3, 1, 'R'], [1, 2, 'S'], [2, 2, 'R'], [3, 2, 'P']];
-  // Each side's goal on a w x h board: the corner the other side starts in.
-  const goals = (w = W, h = H) => ({ white: [w - 1, h - 1], black: [0, 0] });
-  const GOAL = goals();
+  // A map's goals: w * h characters like its layout, 'w' = a goal square of white (the side moving
+  // first), 'b' = one of black's, '.' = neither. null = the standard goals: the corner the other side
+  // starts in (white heads for the top-right corner, black for (0, 0)).
+  const defaultGoals = (w = W, h = H) => Array.from({ length: w * h }, (_, i) => (i === w * h - 1 ? 'w' : i === 0 ? 'b' : '.')).join('');
+  // goalMode: 'any' = a side wins as soon as one of its pieces steps onto one of its goal squares,
+  // 'all' = when its pieces stand on every one of its goal squares at once.
+  const GOAL_MODES = ['any', 'all'];
+  // Each side's goal squares ([[x, y], ...]) from a goals string (null: the standard corners).
+  function goalSquares(goals, w = W, h = H) {
+    const g = goals || defaultGoals(w, h), out = { white: [], black: [] };
+    for (let i = 0; i < w * h; i++) if (g[i] === 'w' || g[i] === 'b') out[g[i] === 'w' ? 'white' : 'black'].push([i % w, Math.floor(i / w)]);
+    return out;
+  }
   const other = side => (side === 'white' ? 'black' : 'white');
   const square = (x, y) => String.fromCharCode(97 + x) + (y + 1);
 
@@ -36,17 +49,25 @@
     return cells.join('');
   })();
 
-  // Why a w x h layout can't be played, or null if it is fine.
-  function layoutProblem(layout, w = W, h = H) {
+  // Why a w x h layout (with its goals, null = the standard corners, and goal mode) can't be played,
+  // or null if it is fine.
+  function layoutProblem(layout, w = W, h = H, goals = null, goalMode = 'any') {
     const [lo, hi] = SIZE_LIMITS;
     if (![w, h].every(n => Number.isInteger(n) && n >= lo && n <= hi)) return `chiều rộng và chiều cao phải là số nguyên từ ${lo} đến ${hi}`;
     if (typeof layout !== 'string' || layout.length !== w * h || /[^RPSrps#.]/.test(layout)) return `bản đồ phải gồm ${w * h} ô, mỗi ô là R P S (bên đi trước), r p s (bên đi sau), # (tường) hoặc . (trống)`;
     if (!/[RPS]/.test(layout)) return 'bên đi trước cần ít nhất một quân';
     if (!/[rps]/.test(layout)) return 'bên đi sau cần ít nhất một quân';
-    const at = ([x, y]) => layout[y * w + x], goal = goals(w, h);
-    if (at(goal.white) === '#' || at(goal.black) === '#') return 'không được đặt tường ở hai góc đích';
-    if (/[RPS]/.test(at(goal.white))) return 'quân bên đi trước không được đứng sẵn ở đích của mình (góc trên phải)';
-    if (/[rps]/.test(at(goal.black))) return 'quân bên đi sau không được đứng sẵn ở đích của mình (góc dưới trái)';
+    if (goals !== null && (typeof goals !== 'string' || goals.length !== w * h || /[^wb.]/.test(goals))) return `ô đích phải gồm ${w * h} ô, mỗi ô là w (đích bên đi trước), b (đích bên đi sau) hoặc . (không)`;
+    if (!GOAL_MODES.includes(goalMode)) return 'cách thắng bằng ô đích phải là "chạm 1 ô" hoặc "chiếm tất cả"';
+    const g = goals || defaultGoals(w, h), at = ([x, y]) => layout[y * w + x], sq = goalSquares(g, w, h);
+    const name = { white: 'bên đi trước', black: 'bên đi sau' }, own = { white: /[RPS]/, black: /[rps]/ };
+    for (const side of ['white', 'black']) {
+      if (!sq[side].length) return `${name[side]} cần ít nhất một ô đích`;
+      if (sq[side].some(c => at(c) === '#')) return `không được đặt tường lên ô đích của ${name[side]}`;
+      if (sq[side].some(c => own[side].test(at(c)))) return `quân ${name[side]} không được đứng sẵn trên ô đích của mình`;
+      const n = (layout.match(side === 'white' ? /[RPS]/g : /[rps]/g) || []).length;
+      if (goalMode === 'all' && sq[side].length > n) return `${name[side]} có ${sq[side].length} ô đích nhưng chỉ có ${n} quân, không bao giờ chiếm hết được`;
+    }
     return null;
   }
 
@@ -71,12 +92,21 @@
     return Number.isInteger(n) && n >= TURN_LIMITS[0] && n <= TURN_LIMITS[1] ? null : `số nước tối đa phải là số nguyên từ ${TURN_LIMITS[0]} đến ${TURN_LIMITS[1]}`;
   }
 
-  // map = { layout, maxTurns, width, height } (anything carrying them, e.g. a recorded game), or
-  // null / no layout for the standard game. g.W x g.H = the board's size.
+  // map = { layout, maxTurns, width, height, goals, goalMode } (anything carrying them, e.g. a recorded
+  // game), or null / no layout for the standard game. g.W x g.H = the board's size; g.goal = each
+  // side's goal squares ([[x, y], ...]), g.goalMode = 'any' | 'all'.
   function newGame(map) {
     const custom = map && map.layout;
     const w = custom ? map.width || W : W, h = custom ? map.height || H : H;
-    return { ...initialBoard(custom || DEFAULT_LAYOUT, w, h), W: w, H: h, maxTurns: (map && map.maxTurns) || MAX_TURNS, toMove: 'white', turn: 0, winner: null, reason: null };
+    const goal = goalSquares(custom ? map.goals || null : null, w, h);
+    return { ...initialBoard(custom || DEFAULT_LAYOUT, w, h), W: w, H: h, goal, goalMode: (custom && map.goalMode) || 'any', maxTurns: (map && map.maxTurns) || MAX_TURNS, toMove: 'white', turn: 0, winner: null, reason: null };
+  }
+
+  // Has `side` reached its goal, its last move having ended on (x, y)?
+  function reached(g, side, x, y) {
+    const goal = g.goal[side];
+    if (!goal.some(([gx, gy]) => gx === x && gy === y)) return false;
+    return g.goalMode !== 'all' || goal.every(([gx, gy]) => g.board[gy][gx] && g.board[gy][gx].side === side);
   }
 
   const count = (board, side) => board.reduce((n, row) => n + row.filter(c => c && c.side === side).length, 0);
@@ -124,8 +154,7 @@
       if (!target || BEATS[piece.kind] === target.kind) {
         g.board[y2][x2] = piece;
         if (target) ev.result = 'capture';
-        const goal = goals(g.W, g.H)[side];
-        if (x2 === goal[0] && y2 === goal[1]) {
+        if (reached(g, side, x2, y2)) {
           ev.result = 'goal';
           g.winner = side;
           g.reason = 'goal';
@@ -163,12 +192,15 @@
   }
   const fromView = (g, side, [x1, y1, x2, y2]) => (side === 'white' ? [x1, y1, x2, y2] : [g.W - 1 - x1, g.H - 1 - y1, g.W - 1 - x2, g.H - 1 - y2]);
 
-  // The game state a bot gets, in its own view: { ally, opponent, walls } with each piece as
-  // { pid, type, x, y } and each wall as { x, y }. pid = 1, 2, ..., fixed for the whole game (each
-  // side numbers its own pieces); x = 1..W, y = 1..H, (1, 1) = bottom-left (the board itself counts from 0).
+  // The game state a bot gets, in its own view: { ally, opponent, walls, goals, enemyGoals } with each
+  // piece as { pid, type, x, y } and each square as { x, y } (goals = its own goal squares,
+  // enemyGoals = the enemy's). pid = 1, 2, ..., fixed for the whole game (each side numbers its own
+  // pieces); x = 1..W, y = 1..H, (1, 1) = bottom-left (the board itself counts from 0).
   function pieces(g, side) {
     const { W, H } = g;
-    const out = { ally: [], opponent: [], walls: [] };
+    const mine = ([x, y]) => (side === 'white' ? { x: x + 1, y: y + 1 } : { x: W - x, y: H - y });
+    const byPlace = (a, b) => a.y - b.y || a.x - b.x;
+    const out = { ally: [], opponent: [], walls: [], goals: g.goal[side].map(mine).sort(byPlace), enemyGoals: g.goal[other(side)].map(mine).sort(byPlace) };
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const [rx, ry] = side === 'white' ? [x, y] : [W - 1 - x, H - 1 - y];
       const c = g.board[ry][rx];
@@ -195,7 +227,7 @@
     return why ? { error: why } : { move };
   }
 
-  const api = { W, H, MAX_TURNS, TURN_LIMITS, SIZE_LIMITS, BEATS, GOAL, DIRS, goals, DEFAULT_LAYOUT, other, square, layoutProblem, turnsProblem, newGame, initialBoard, count, problem, legalMoves, apply, forfeit, view, fromView, pieces, fromAnswer };
+  const api = { W, H, MAX_TURNS, TURN_LIMITS, SIZE_LIMITS, BEATS, DIRS, GOAL_MODES, defaultGoals, goalSquares, reached, DEFAULT_LAYOUT, other, square, layoutProblem, turnsProblem, newGame, initialBoard, count, problem, legalMoves, apply, forfeit, view, fromView, pieces, fromAnswer };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.BoardRules = api;
 })(typeof window !== 'undefined' ? window : globalThis);

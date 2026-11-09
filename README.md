@@ -115,19 +115,22 @@ Brawl, campaign, invite-only and hidden tournaments work the same way for both.
 
   **Maps:** on a Cờ OTT tournament's page (**⚙️ quản lý** → **🗺️ bản đồ**) the judge can draw maps: the
   board's **size** (width and height, 4–15 each; the standard board is 9×9), where each side's pieces start (any number per side, anywhere), **walls**, squares no piece can enter
-  (black on the board), and the map's **move limit** (`maxTurn`, 10–5000; the standard board: 1000). The judge marks one map as active (or the standard start), and can create, edit,
+  (black on the board), each side's **goal squares** (flags in the side's colour; by default the corner the
+  other side starts in), whether a side wins by **reaching any one** of its goal squares or by **holding all
+  of them at once** (a toggle next to the board), and the map's **move limit** (`maxTurn`, 10–5000; the standard board: 1000). The judge marks one map as active (or the standard start), and can create, edit,
   switch or delete maps at any time. Switching to another map deletes the one in use, to keep the
   database small (replays keep their own copy of the layout). A match plays both games on the map active when it starts. A daily
   round keeps the map it started with, and a rejudged round uses the map active when it replays. In a
-  brawl, switching maps replays every team's practice on the new map. The goals stay the two corners.
+  brawl, switching maps replays every team's practice on the new map.
   Players always see the map in play (the standard one too) at the top of the rules on the submit page, and each replay shows the map it was
   played on.
 
   Bots always see the board from their own side (black's view is rotated 180°): you start
-  bottom-left at `(1, 1)`, your goal is the top-right corner `(width, height)` (`(9, 9)` on the standard board), and the enemy's goal is `(1, 1)`.
+  bottom-left at `(1, 1)`; unless the map chooses other goal squares, your goal is the top-right corner `(width, height)` (`(9, 9)` on the standard board), and the enemy's goal is `(1, 1)`.
   Every turn the bot gets `gameState`: `ally` (its pieces), `opponent` (the enemy's), `walls` (the
   map's walls, each with `x` and `y`; usually none), `width` and `height` (the board's size, 9×9 unless
-  the map says otherwise), `maxTurn` (the map's move limit, 1000 on the
+  the map says otherwise), `goals` and `enemyGoals` (its goal squares and the enemy's, each with `x` and `y`),
+  `goalMode` (0 = reaching one goal square wins, 1 = holding all of them at once), `maxTurn` (the map's move limit, 1000 on the
   standard board) and `currentTurn` (moves played
   so far, both sides). Each piece has `pid` (1, 2, …, numbered in reading order from its own side, kept for
   the whole game), `Type` (`'R'`, `'P'` or `'S'`), `x` (1–`width`) and `y` (1–`height`). The bot returns
@@ -137,7 +140,7 @@ Brawl, campaign, invite-only and hidden tournaments work the same way for both.
   | Language | Signature |
   |---|---|
   | Python | `def play(gameState) -> (pid, direction)` |
-  | C++17 | `std::pair<int, int> play(const State& gameState)` (`struct Piece { int pid; char Type; int x, y; }`, `struct Cell { int x, y; }` and `struct State { std::vector<Piece> ally, opponent; std::vector<Cell> walls; int maxTurn, currentTurn; }` are provided) |
+  | C++17 | `std::pair<int, int> play(const State& gameState)` (`struct Piece { int pid; char Type; int x, y; }`, `struct Cell { int x, y; }` and `struct State { std::vector<Piece> ally, opponent; std::vector<Cell> walls, goals, enemyGoals; int width, height, goalMode, maxTurn, currentTurn; }` are provided) |
   | Java | `public int[] play(State gameState)` returning `{pid, direction}` (`Piece`, `Cell` and `State` with `List<Piece>` / `List<Cell>` fields are provided) |
 
   The same player-code restrictions apply. Each game starts the bot as a fresh process. Protocol:

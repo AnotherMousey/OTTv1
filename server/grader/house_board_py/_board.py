@@ -4,7 +4,9 @@ import time
 # The game state (gameState.ally / .opponent: pieces with .pid .Type .x .y, x and y from 1) is turned
 # into a flat board `cells`: cell i = (x, y) counted from 0, i = y * W + x, "R" "P" "S" = mine, "r" "p" "s" = enemy,
 # "." = empty, "#" = a wall (the map's: no piece can enter it). The board is W x H (gameState.width /
-# .height, 9 x 9 by default). I start bottom-left and win on the top-right corner; the enemy wins on (0, 0).
+# .height, 9 x 9 by default). I start bottom-left. GOALS[True] / GOALS[False] = my goal cells / the enemy's
+# (gameState.goals / .enemyGoals: the top-right corner and (0, 0) unless the map says otherwise); with
+# ALL_GOALS (gameState.goalMode == 1) a side wins only when its pieces stand on all of its goals at once.
 # A move is (from cell, to cell); to_move turns it into the answer (pid, direction).
 BEATS = {"R": "S", "S": "P", "P": "R"}     # kind -> the kind it captures
 BEATEN_BY = {"S": "R", "P": "S", "R": "P"}  # kind -> the kind that captures it
@@ -12,6 +14,8 @@ WIN = 100000
 W = H = 9
 NEIGH = []  # cell -> the cells next to it (8 directions), for a W x H board: see resize
 PID = {}  # cell -> the pid of my piece on it
+GOALS = {True: frozenset(), False: frozenset()}
+ALL_GOALS = False
 # (dx, dy) -> direction number of the answer
 DIRECTION = {(-1, 1): 1, (0, 1): 2, (1, 1): 3, (1, 0): 4, (1, -1): 5, (0, -1): 6, (-1, -1): 7, (-1, 0): 8}
 
@@ -27,8 +31,12 @@ def resize(width, height):
 
 
 def setup(state):
+    global ALL_GOALS
     if not NEIGH or (state.width, state.height) != (W, H):
         resize(state.width, state.height)
+    GOALS[True] = frozenset((g.y - 1) * W + g.x - 1 for g in state.goals)
+    GOALS[False] = frozenset((g.y - 1) * W + g.x - 1 for g in state.enemyGoals)
+    ALL_GOALS = state.goalMode == 1
     cells = ["."] * (W * H)
     PID.clear()
     for p in state.ally:
@@ -39,23 +47,24 @@ def setup(state):
     for w in state.walls:
         cells[(w.y - 1) * W + w.x - 1] = "#"
     walls = frozenset(i for i, c in enumerate(cells) if c == "#")
-    if PATHS.get("walls") != walls:
+    if PATHS.get("walls") != walls or PATHS.get("goals") != (GOALS[True], GOALS[False]):
         measure(walls)
     return cells
 
 
 # Distances count real steps around the walls (a piece moves one square in 8 directions), not a
-# straight line. They only change with the walls, so they are worked out once per game:
-#   PATHS[True] / PATHS[False] = steps from every cell to my goal / the enemy's goal,
+# straight line. They only change with the walls (and goals), so they are worked out once per game:
+#   PATHS[True] / PATHS[False] = steps from every cell to my nearest goal / the enemy's nearest goal,
 #   PATHS["far"][me] = one more than the longest of those: what a walled-in cell counts as.
 PATHS = {}
 
 
-def flood(start, walls):
-    # steps from `start` to every cell (None = no way there)
+def flood(starts, walls):
+    # steps from the nearest of `starts` (cells) to every cell (None = no way there)
     d = [None] * (W * H)
-    d[start] = 0
-    queue = [start]
+    for s in starts:
+        d[s] = 0
+    queue = list(starts)
     for i in queue:
         for j in NEIGH[i]:
             if d[j] is None and j not in walls:
@@ -67,10 +76,11 @@ def flood(start, walls):
 def measure(walls):
     PATHS.clear()
     PATHS["walls"] = walls
+    PATHS["goals"] = (GOALS[True], GOALS[False])
     PATHS["far"] = {}
     PATHS["from"] = {}  # cell -> flood from it, filled in as steps() needs them
     for me in (True, False):
-        d = flood(goal(me), walls)
+        d = flood(GOALS[me], walls)
         far = max(v for v in d if v is not None) + 1
         PATHS[me] = [far if v is None else v for v in d]
         PATHS["far"][me] = far
@@ -79,17 +89,13 @@ def measure(walls):
 def steps(a, b):
     # steps from cell a to cell b around the walls (99 = no way through)
     if a not in PATHS["from"]:
-        PATHS["from"][a] = flood(a, PATHS["walls"])
+        PATHS["from"][a] = flood([a], PATHS["walls"])
     d = PATHS["from"][a][b]
     return 99 if d is None else d
 
 
 def mine(c, me=True):
     return c.isupper() if me else c.islower()
-
-
-def goal(me=True):
-    return W * H - 1 if me else 0
 
 
 def xy(i):
@@ -102,7 +108,7 @@ def to_move(m):
 
 
 def dist(i, me=True):
-    # steps from cell i to the goal (mine, or the enemy's), around the walls
+    # steps from cell i to the nearest goal (mine, or the enemy's), around the walls
     return PATHS[me][i]
 
 
@@ -140,7 +146,10 @@ def suicide(cells, m):
 
 
 def wins(cells, m, me=True):
-    return m[1] == goal(me) and not suicide(cells, m)
+    if m[1] not in GOALS[me] or suicide(cells, m):
+        return False
+    # all goals at once: every other goal already holds one of my pieces (not the one moving off it)
+    return not ALL_GOALS or all(g == m[1] or (g != m[0] and cells[g] not in ".#" and mine(cells[g], me)) for g in GOALS[me])
 
 
 def threatened(cells, j, me=True):
@@ -189,6 +198,10 @@ def evaluate(cells):
     score += 30 * (near_foe - near_me)
     score += 2 * (sum_foe / n_foe - sum_me / n_me)
     score += (adv_me - adv_foe) / 2
+    if ALL_GOALS:
+        # every goal must be held at once: each one held counts on its own
+        held = lambda me: sum(1 for g in GOALS[me] if cells[g] not in ".#" and mine(cells[g], me))
+        score += 60 * (held(True) - held(False))
     return score
 
 

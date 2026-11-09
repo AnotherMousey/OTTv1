@@ -1,9 +1,11 @@
 // Board game matches ("Cờ OTT", rules in public/js/board-rules.js).
 // Every game starts each bot as a fresh process, and waits until it says READY (see bot.js) before
 // its clock starts. The bot is asked for a move on its own turns:
-//   grader -> bot : "STATE <currentTurn> <maxTurn> <n> <pid type x y> * n <m> <pid type x y> * m <k> <x y> * k <width> <height>"
+//   grader -> bot : "STATE <currentTurn> <maxTurn> <n> <pid type x y> * n <m> <pid type x y> * m <k> <x y> * k <width> <height>
+//                    <goalMode> <a> <x y> * a <b> <x y> * b"
 //                   (its n pieces, the enemy's m, the map's k walls, from the bot's own side (see
-//                   R.pieces), then the board's size)
+//                   R.pieces), the board's size, then 0 = reaching one goal square wins / 1 = taking all
+//                   of them at once wins, its a goal squares and the enemy's b)
 //   bot -> grader : "MOVE <pid> <direction 1-8>"
 // The harnesses turn this into play(gameState) -> (pid, direction).
 // Time per move, as in Battlecode (which counts bytecodes): the limit is on the bot's computation.
@@ -28,18 +30,21 @@ const GAME_CPU_MS = +process.env.GAME_CPU_MS || 180000;
 const overCpu = (bot, first) => (bot.cpu !== null && bot.cpu > (first ? FIRST_MOVE_TIMEOUT_MS : MOVE_CPU_MS) ? bot.cpu : null);
 const MAX_SCORE = GAMES * 3; // best possible match score
 
-// The map games of tournament t are played on: { layout, maxTurns, width, height } of the one the
-// judge made active (t.maps, t.activeMap), or null for the standard game (9 x 9, R.MAX_TURNS moves).
+// The map games of tournament t are played on: { layout, maxTurns, width, height, goals, goalMode } of
+// the one the judge made active (t.maps, t.activeMap), or null for the standard game (9 x 9, R.MAX_TURNS moves).
+// goals null = the standard corners; goalMode 'any' (one goal square wins) or 'all'.
 function mapOf(t) {
   const map = t && t.activeMap && (t.maps || []).find(m => m.id === t.activeMap);
-  return map ? { layout: map.layout, maxTurns: map.maxTurns || R.MAX_TURNS, width: map.width || R.W, height: map.height || R.H } : null;
+  return map ? mapFields(map) : null;
 }
+const mapFields = m => ({ layout: m.layout, maxTurns: m.maxTurns || R.MAX_TURNS, width: m.width || R.W, height: m.height || R.H, goals: m.goals || null, goalMode: m.goalMode || 'any' });
 const newGame = map => R.newGame(map);
 
 function request(g, side) {
-  const { ally, opponent, walls } = R.pieces(g, side);
+  const { ally, opponent, walls, goals, enemyGoals } = R.pieces(g, side);
   const list = ps => [ps.length, ...ps.map(p => `${p.pid} ${p.type} ${p.x} ${p.y}`)].join(' ');
-  return `STATE ${g.turn} ${g.maxTurns} ${list(ally)} ${list(opponent)} ${[walls.length, ...walls.map(w => `${w.x} ${w.y}`)].join(' ')} ${g.W} ${g.H}`;
+  const squares = cs => [cs.length, ...cs.map(c => `${c.x} ${c.y}`)].join(' ');
+  return `STATE ${g.turn} ${g.maxTurns} ${list(ally)} ${list(opponent)} ${squares(walls)} ${g.W} ${g.H} ${g.goalMode === 'all' ? 1 : 0} ${squares(goals)} ${squares(enemyGoals)}`;
 }
 
 // "pid direction" -> { move } on the real board, or { error }.
@@ -120,7 +125,7 @@ async function playGame(bots, map) {
 }
 
 // games: how many games; aWhite: whether A takes white (moves first) in the first one;
-// map: { layout, maxTurns, width, height } (null = the standard game), kept on each game for the replay.
+// map: { layout, maxTurns, width, height, goals, goalMode } (null = the standard game), kept on each game for the replay.
 async function runMatch(subA, subB, ensureBuilt, { games = GAMES, aWhite = true, map = null } = {}) {
   const built = await Promise.all([subA, subB].map(s => ensureBuilt(s).then(() => null, e => 'biên dịch thất bại: ' + e.message)));
   const record = [];
@@ -144,7 +149,7 @@ async function runMatch(subA, subB, ensureBuilt, { games = GAMES, aWhite = true,
     scoreA += winner === 'A' ? 3 : winner === 'draw' ? 1 : 0;
     scoreB += winner === 'B' ? 3 : winner === 'draw' ? 1 : 0;
     for (const who of ['A', 'B']) if (!issues[who] && game.issues[sideOf[who]]) issues[who] = `Ván ${k + 1}, ${game.issues[sideOf[who]].charAt(0).toLowerCase()}${game.issues[sideOf[who]].slice(1)}`;
-    record.push({ white, ...(map ? { layout: map.layout, maxTurns: map.maxTurns, width: map.width, height: map.height } : {}), moves: game.moves, verdicts: game.verdicts, winner, reason: game.reason, ...(game.end ? { end: game.end } : {}) });
+    record.push({ white, ...(map ? mapFields(map) : {}), moves: game.moves, verdicts: game.verdicts, winner, reason: game.reason, ...(game.end ? { end: game.end } : {}) });
   }
   return {
     games: record, scoreA, scoreB,
@@ -180,13 +185,15 @@ async function smokeTest(sub, describe, map) {
 }
 
 // What the bot saw (white's view), for error messages: its pieces, then the board drawn top row
-// first (uppercase = its own pieces, lowercase = the enemy's, # = a wall).
+// first (uppercase = its own pieces, lowercase = the enemy's, # = a wall), and its goal squares.
 function describe(g) {
   const { ally } = R.pieces(g, 'white');
   const v = R.view(g, 'white');
   const rows = [`Quân của bạn lúc đó (pid Type x y): ${ally.map(p => `${p.pid} ${p.type} ${p.x} ${p.y}`).join(' · ')}`, `Bàn cờ (hàng trên cùng là y = ${g.H}):`];
   for (let y = g.H - 1; y >= 0; y--) rows.push(`${String(y + 1).padStart(2)} ${v.slice(y * g.W, (y + 1) * g.W).split('').join(' ')}`);
   rows.push('   ' + Array.from({ length: g.W }, (_, x) => x + 1).join(' '));
+  const { goals } = R.pieces(g, 'white');
+  rows.push(`Ô đích của bạn (x y): ${goals.map(c => `${c.x} ${c.y}`).join(' · ')}${g.goalMode === 'all' ? ' (phải chiếm tất cả cùng lúc)' : ''}`);
   return rows.join('\n');
 }
 

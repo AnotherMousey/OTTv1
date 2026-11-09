@@ -912,16 +912,23 @@ app.put('/api/admin/tournaments/:id/limits/:botId', apiAuth, apiJudge, (req, res
   botChanged(t);
   res.json({ maxSubs: n });
 });
-// Board game maps, per tournament: t.maps = [{ id, name, layout, maxTurns, createdAt, updatedAt }]
-// (layout: see board-rules.js, width x height squares; maxTurns: the move limit of its games) and
+// Board game maps, per tournament: t.maps = [{ id, name, layout, width, height, maxTurns, goals, goalMode, createdAt, updatedAt }]
+// (layout: see board-rules.js, width x height squares; maxTurns: the move limit of its games; goals:
+// each side's goal squares, see board-rules.js, null = the two corners; goalMode: 'any' = one goal
+// square wins, 'all' = all of a side's goal squares at once) and
 // t.activeMap, the id of the one games are played on (none: the standard 9 x 9 start, BoardRules.MAX_TURNS moves).
 // Switching to another map discards the one in use (see active-map below).
 // The judge can change them at any time; a daily round keeps the map it started with (see
 // tournament.js), and a brawl's practice is replayed on the new one.
 // the map in play, the standard one included (id null)
-const STANDARD_MAP = { id: null, name: 'Bàn cờ chuẩn', layout: BoardRules.DEFAULT_LAYOUT, width: BoardRules.W, height: BoardRules.H, maxTurns: BoardRules.MAX_TURNS };
+const STANDARD_MAP = { id: null, name: 'Bàn cờ chuẩn', layout: BoardRules.DEFAULT_LAYOUT, width: BoardRules.W, height: BoardRules.H, maxTurns: BoardRules.MAX_TURNS, goals: BoardRules.defaultGoals(), goalMode: 'any' };
 // a map's playing fields, with the defaults of maps made before they existed
-const mapGame = m => ({ layout: m.layout, width: m.width || BoardRules.W, height: m.height || BoardRules.H, maxTurns: m.maxTurns || BoardRules.MAX_TURNS });
+const mapGame = m => {
+  const width = m.width || BoardRules.W, height = m.height || BoardRules.H;
+  return { layout: m.layout, width, height, maxTurns: m.maxTurns || BoardRules.MAX_TURNS, goals: m.goals || BoardRules.defaultGoals(width, height), goalMode: m.goalMode || 'any' };
+};
+// as kept in t.maps: the standard corners as goals null (so maps that keep them play exactly as before)
+const storedGame = g => ({ ...g, goals: !g.goals || g.goals === BoardRules.defaultGoals(g.width, g.height) ? null : g.goals });
 const activeMap = t => {
   const m = t.activeMap && (t.maps || []).find(x => x.id === t.activeMap);
   return m ? { id: m.id, name: m.name, ...mapGame(m) } : STANDARD_MAP;
@@ -933,10 +940,10 @@ function boardTournament(req, res) {
   if (gameOf(t) !== 'board') { fail(res, 400, 'Chỉ giải cờ OTT mới có bản đồ'); return null; }
   return t;
 }
-function checkMap(t, name, { layout, width, height, maxTurns }, except = null) {
+function checkMap(t, name, { layout, width, height, maxTurns, goals, goalMode }, except = null) {
   if (!name) return 'Hãy đặt tên cho bản đồ';
   if ((t.maps || []).some(m => m !== except && m.name.toLowerCase() === name.toLowerCase())) return 'Đã có bản đồ tên này';
-  const why = BoardRules.layoutProblem(layout, width, height) || BoardRules.turnsProblem(maxTurns);
+  const why = BoardRules.layoutProblem(layout, width, height, goals ?? null, goalMode) || BoardRules.turnsProblem(maxTurns);
   return why ? `Bản đồ không hợp lệ: ${why}` : null;
 }
 // The map games start from changed: brawl practice is replayed on it, pages showing it refresh.
@@ -955,16 +962,17 @@ app.post('/api/admin/tournaments/:id/maps', apiAuth, apiJudge, (req, res) => {
   const t = boardTournament(req, res);
   if (!t) return;
   const name = lineText((req.body || {}).name, 40);
-  const { layout, width = BoardRules.W, height = BoardRules.H, maxTurns = BoardRules.MAX_TURNS } = req.body || {};
-  const game = { layout, width, height, maxTurns };
+  const { layout, width = BoardRules.W, height = BoardRules.H, maxTurns = BoardRules.MAX_TURNS, goals = null, goalMode = 'any' } = req.body || {};
+  const game = { layout, width, height, maxTurns, goals, goalMode };
   const bad = checkMap(t, name, game);
   if (bad) return fail(res, 400, bad);
-  const map = { id: 'map-' + db.id(), name, ...game, createdAt: new Date().toISOString() };
+  const map = { id: 'map-' + db.id(), name, ...storedGame(game), createdAt: new Date().toISOString() };
   (t.maps = t.maps || []).push(map);
   db.save();
   res.json({ map: publicMap(map) });
 });
-// Body: { name?, layout?, width?, height?, maxTurns? } (a new size comes with its new layout)
+// Body: { name?, layout?, width?, height?, maxTurns?, goals?, goalMode? } (a new size comes with its
+// new layout, and its new goals unless the map has the standard corners)
 app.put('/api/admin/tournaments/:id/maps/:mapId', apiAuth, apiJudge, (req, res) => {
   const t = boardTournament(req, res);
   if (!t) return;
@@ -973,11 +981,12 @@ app.put('/api/admin/tournaments/:id/maps/:mapId', apiAuth, apiJudge, (req, res) 
   const name = lineText((req.body || {}).name ?? map.name, 40);
   const was = mapGame(map), body = req.body || {};
   const game = Object.fromEntries(Object.keys(was).map(k => [k, body[k] ?? was[k]]));
+  if (body.goals == null && !map.goals) game.goals = BoardRules.defaultGoals(game.width, game.height);
   const bad = checkMap(t, name, game, map);
   if (bad) return fail(res, 400, bad);
-  // the games of the map in play change: a new layout, size or move limit
+  // the games of the map in play change: a new layout, size, move limit or goals
   const moved = t.activeMap === map.id && Object.keys(was).some(k => game[k] !== was[k]);
-  Object.assign(map, { name, ...game, updatedAt: new Date().toISOString() });
+  Object.assign(map, { name, ...storedGame(game), updatedAt: new Date().toISOString() });
   if (moved) mapChanged(t);
   else { db.save(); io.to('users').emit('tournaments:changed'); }
   res.json({ map: publicMap(map) });

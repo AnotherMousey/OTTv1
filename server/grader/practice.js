@@ -114,7 +114,10 @@ const RULES = { board: 'cpu-180s-per-game' };
 function rulesOf(t) {
   const rules = RULES[gameOf(t)] || null;
   const map = mapOf(t);
-  return rules && map ? `${rules} map:${map.width}x${map.height}:${map.layout} turns:${map.maxTurns}` : rules;
+  if (!rules || !map) return rules;
+  // (a map with the standard goals keeps the key it had before goals could be chosen)
+  const goals = map.goals || map.goalMode !== 'any' ? ` goals:${map.goalMode}:${map.goals || ''}` : '';
+  return `${rules} map:${map.width}x${map.height}:${map.layout} turns:${map.maxTurns}${goals}`;
 }
 
 const running = new Map();
