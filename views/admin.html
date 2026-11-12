@@ -228,21 +228,21 @@
         <input type="time" data-daily="${t.id}" value="${d.time || '21:00'}" class="${cycle ? 'hidden' : ''}" style="${box}">
         <span class="cycle-box ${cycle ? '' : 'hidden'}"><input type="number" data-cycle="${t.id}" value="${d.cycleHours || 24}" min="0.25" max="720" step="0.25" style="${box};width:70px"> giờ, tính từ lúc bắt đầu</span></span>`;
     }
-    // A brawl's showdown ("quyết đấu"): from the time the judge picks, as long as they pick; every
-    // interval in it, each team's newest bot plays the sparring bots and its evaluation becomes that
-    // run's total (win * 550 + pieces left * 25 per game). In words, or (edit) the three boxes.
+    // A brawl's showdown ("quyết đấu"): from the time the judge picks, as long as they pick, a round
+    // between the teams every interval instead of the regular schedule; the evaluation is then the
+    // points (3 / 1 / 0) of its rounds. In words, or (edit) the three boxes.
     const showdownEndOf = d => new Date(Date.parse(d.showdownAt) + d.showdownMinutes * 60000).toISOString();
     const fmtMinutes = m => (m % 60 ? (m >= 60 ? `${Math.floor(m / 60)} giờ ${m % 60} phút` : `${m} phút`) : `${m / 60} giờ`);
     function showdownCell(t, edit) {
       const d = t.daily, at = d.showdownAt;
-      const now = d.showdown ? ` <b>(đang diễn ra${d.showdownRun ? ` · lượt ${d.showdownRun.number}: ${d.showdownRun.played}/${d.showdownRun.total} trận` : ''})</b>` : '';
-      const every = at ? ` · mỗi ${fmtMinutes(d.showdownEveryMinutes)} một lượt` : '';
+      const now = d.showdown ? ` <b>(đang diễn ra${d.showdownNextAt ? ` · vòng sau lúc ${esc(fmtDate(d.showdownNextAt))}` : ''})</b>` : '';
+      const every = at ? ` · mỗi ${fmtMinutes(d.showdownEveryMinutes)} một vòng` : '';
       if (!edit) return at ? `⚔️ quyết đấu: ${esc(fmtDate(at))} → ${esc(fmtDate(showdownEndOf(d)))}${every}${now}` : '⚔️ quyết đấu: không có';
       const box = 'font-size:15px;padding:0 4px';
       const minutes = d.showdownMinutes || 300, everyMin = d.showdownEveryMinutes || 60;
-      return `<span title="cứ mỗi khoảng, bot mới nhất của mỗi đội đấu với các bot đấu tập; điểm đánh giá = thắng × 550 + số quân còn lại × 25 (mỗi ván) của lượt gần nhất">⚔️ quyết đấu: <input type="datetime-local" data-showdown="${t.id}" value="${at ? toLocalInput(new Date(at)) : ''}" style="${box}">
+      return `<span title="trong lúc quyết đấu, cứ mỗi khoảng là một vòng đấu giữa các đội (thay cho lịch thường), công bố ngay khi đấu xong (trừ vòng cuối); không đấu với bot đấu tập; điểm đánh giá = điểm thắng 3 · hòa 1 · thua 0 của các vòng quyết đấu">⚔️ quyết đấu: <input type="datetime-local" data-showdown="${t.id}" value="${at ? toLocalInput(new Date(at)) : ''}" style="${box}">
         dài <input type="number" data-sdlen="${t.id}" value="${+(minutes / 60).toFixed(2)}" min="0.25" max="72" step="0.25" style="${box};width:64px"> giờ,
-        mỗi <input type="number" data-sdevery="${t.id}" value="${everyMin}" min="5" max="1440" step="5" style="${box};width:64px"> phút một lượt
+        mỗi <input type="number" data-sdevery="${t.id}" value="${everyMin}" min="5" max="1440" step="5" style="${box};width:64px"> phút một vòng
         ${at ? ` → đến ${esc(fmtDate(showdownEndOf(d)))}${now} <button class="btn small" data-noshowdown="${t.id}" title="bỏ quyết đấu">✕</button>` : ' <small>(bỏ trống giờ = không có)</small>'}</span>`;
     }
 
@@ -337,9 +337,9 @@
         if (off || !at) return patch(id, { showdownAt: '' }, 'Đã bỏ quyết đấu').then(loadTournaments);
         const minutes = Math.round(hours * 60);
         if (!(minutes >= 15 && minutes <= 72 * 60)) return toast('Quyết đấu phải dài từ 0.25 đến 72 giờ', 'error');
-        if (!(Number.isInteger(every) && every >= 5 && every <= 1440)) return toast('Mỗi lượt cách nhau từ 5 đến 1440 phút (số nguyên)', 'error');
+        if (!(Number.isInteger(every) && every >= 5 && every <= 1440)) return toast('Mỗi vòng cách nhau từ 5 đến 1440 phút (số nguyên)', 'error');
         patch(id, { showdownAt: new Date(at).toISOString(), showdownMinutes: minutes, showdownEveryMinutes: every },
-          `Quyết đấu ⚔️ ${fmtMinutes(minutes)}, mỗi ${fmtMinutes(every)} một lượt`).then(loadTournaments);
+          `Quyết đấu ⚔️ ${fmtMinutes(minutes)}, mỗi ${fmtMinutes(every)} một vòng`).then(loadTournaments);
       };
       $$('[data-showdown]').forEach(inp => onDone(inp, () => saveShowdown(inp.dataset.showdown)));
       $$('[data-sdlen]').forEach(inp => onDone(inp, () => saveShowdown(inp.dataset.sdlen)));

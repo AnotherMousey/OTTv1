@@ -337,11 +337,11 @@ public class Bot {
       if (!mine) return;
       const det = d.details && d.details.userId === ME.id ? d.details : null;
       $('#pdetail').innerHTML = det ? practiceDetailHtml(det, d.maxScore, tid) : '';
-      const pct = mine.total ? Math.round((100 * mine.total) / d.maxTotal) : 0;
+      const pct = mine.total && d.maxTotal ? Math.round((100 * mine.total) / d.maxTotal) : 0;
       $('#pmine').innerHTML = `
         <div class="team">${avatarSvg(mine.avatar, 40)}<span>${esc(mine.teamName)}</span></div>
-        <div class="pts">${mine.total === null ? '–' : mine.total}<small class="muted" style="font-size:18px">/${d.maxTotal}</small> ${statusText(mine)}</div>
-        ${d.showdown ? `<div class="tag" title="cứ mỗi ${d.showdownEveryMinutes} phút, bot mới nhất của bạn đấu với các bot đấu tập; điểm là của lượt gần nhất (mỗi ván: thắng × 550 + số quân còn lại × 25)">⚔️ quyết đấu${d.showdownLast ? ` · điểm lượt ${d.showdownLast.number}` : ''}${d.showdownRun ? ` · lượt ${d.showdownRun.number} đang đấu ${d.showdownRun.played}/${d.showdownRun.total}` : ''}${d.showdownNextAt ? ` · lượt sau lúc ${esc(fmtDate(d.showdownNextAt))}` : ''} · kết thúc ${esc(fmtDate(new Date(d.showdownEnd).toISOString()))}</div>` : ''}
+        <div class="pts">${mine.total === null ? '–' : mine.total}${d.maxTotal !== null ? `<small class="muted" style="font-size:18px">/${d.maxTotal}</small>` : ''} ${statusText(mine)}</div>
+        ${d.showdown ? `<div class="tag" title="cứ mỗi ${d.showdownEveryMinutes} phút một vòng đấu giữa các đội; điểm là điểm thắng 3 · hòa 1 · thua 0 của bạn trong các vòng quyết đấu; bot mới nộp đấu tập với bot đấu tập sau khi quyết đấu kết thúc">⚔️ quyết đấu${d.showdownNextAt ? ` · vòng sau lúc ${esc(fmtDate(d.showdownNextAt))}` : ''} · kết thúc ${esc(fmtDate(new Date(d.showdownEnd).toISOString()))}</div>` : ''}
         <div class="pbar" style="flex:1;min-width:120px"><div style="width:${pct}%"></div></div>
         <a class="btn yellow" href="/tournament/${encodeURIComponent(tid)}/live">📊 Xem bảng xếp hạng</a>`;
     }

@@ -21,7 +21,7 @@
 const db = require('./db');
 const { avatarOf } = require('./auth');
 const { canPlay } = require('./access');
-const { botsFor, inShowdown, showdownEnd, showdownMatchMax, showdownTeam, showdownMinutesOf, showdownEveryOf, nextShowdownRun } = require('./grader/practice');
+const { botsFor, inShowdown, showdownEnd, showdownMinutesOf, showdownEveryOf } = require('./grader/practice');
 const { MAX_SCORE } = require('./grader/board');
 const { TURNS } = require('./grader/match');
 
@@ -37,16 +37,28 @@ const pairingOf = t => (t.pairing === 'swiss' ? 'swiss' : 'rr');
 const swissRounds = n => (n < 2 ? 0 : Math.ceil(Math.log2(n)));
 const gameOf = t => (t.game === 'board' ? 'board' : 'rps');
 // The most a bot can score in practice: every match against every sparring bot won outright.
-// (during the showdown: every game won with no piece lost)
-const evalMax = t => botsFor(t).length * (inShowdown(t) ? showdownMatchMax(t) : gameOf(t) === 'board' ? MAX_SCORE : TURNS * 3);
+// (none during the showdown: the evaluation is then the points of its rounds)
+const evalMax = t => (inShowdown(t) ? null : botsFor(t).length * (gameOf(t) === 'board' ? MAX_SCORE : TURNS * 3));
 const validTime = v => typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
 // A cycle the judge may pick, in hours: 15 minutes to 30 days.
 const MIN_CYCLE_HOURS = 0.25, MAX_CYCLE_HOURS = 30 * 24;
 const validCycle = h => typeof h === 'number' && Number.isFinite(h) && h >= MIN_CYCLE_HOURS && h <= MAX_CYCLE_HOURS;
 const cycleHoursOf = t => (t.cycleMinutes ? t.cycleMinutes / 60 : null);
 
-// Match times in [from, to] (ms timestamps), oldest first.
+// Match times in [from, to] (ms timestamps), oldest first: the regular schedule, except inside the
+// showdown ("quyết đấu") window, where a round starts at its start and then every
+// t.showdownEveryMinutes instead. (Only rounds from when the judge set the showdown, give or take 5
+// minutes: setting one that started earlier doesn't fire its past rounds.)
 function slotsBetween(t, from, to) {
+  const regular = regularSlots(t, from, to);
+  if (!t.showdownAt) return regular;
+  const start = Date.parse(t.showdownAt), end = showdownEnd(t), every = showdownEveryOf(t) * 60000;
+  const since = Math.max(from, Date.parse(t.showdownSince || t.showdownAt) - 5 * 60000);
+  const showdown = [];
+  for (let k = Math.max(0, Math.ceil((since - start) / every)), s; (s = start + k * every) < end && s <= to && showdown.length < 4000; k++) showdown.push(s);
+  return [...regular.filter(s => s < start || s >= end), ...showdown].sort((a, b) => a - b);
+}
+function regularSlots(t, from, to) {
   if (t.cycleMinutes) {
     const start = Date.parse(t.startsAt || t.createdAt), every = t.cycleMinutes * 60000;
     const out = [];
@@ -82,8 +94,8 @@ function nextSlot(t, now) {
 }
 
 // How long a day starting at `now` keeps its results hidden. During the showdown ("quyết đấu") a day
-// is published as soon as its matches end, except the showdown's last one (no other day starts before
-// the showdown ends, or the tournament does), which waits the usual PUBLISH_DELAY_MS.
+// is published as soon as its matches end, except the showdown's last one (no other round of it starts
+// before it ends, or the tournament does), which waits the usual PUBLISH_DELAY_MS.
 function publishDelay(t, now) {
   if (!inShowdown(t, now)) return PUBLISH_DELAY_MS;
   const next = nextSlot(t, now);
@@ -187,6 +199,9 @@ function standings(t) {
   };
   const published = (t.days || []).filter(shown);
   const last = published[published.length - 1];
+  // the showdown's rounds (marked with the showdownAt they were played under, see tournament.js)
+  const sdDay = day => !!t.showdownAt && day.showdown === t.showdownAt;
+  const sdAdd = (day, r, p) => { if (sdDay(day)) r.sdPoints = (r.sdPoints || 0) + p; };
   for (const day of published) {
     for (const e of day.entries) {
       const r = row(e.userId, e.teamName);
@@ -198,6 +213,7 @@ function standings(t) {
     for (const b of day.byes || []) {
       const r = row(b.userId, (day.entries.find(e => e.userId === b.userId) || {}).teamName || '?');
       r.points += POINTS.win;
+      sdAdd(day, r, POINTS.win);
       r.byes = (r.byes || 0) + 1;
       r.byDay[day.number] = (r.byDay[day.number] || 0) + POINTS.win;
       if (day === last) r.lastDay += POINTS.win;
@@ -206,6 +222,7 @@ function standings(t) {
       const a = row(m.userA, m.teamA), b = row(m.userB, m.teamB);
       const [pa, pb] = m.winner === 'A' ? [POINTS.win, POINTS.loss] : m.winner === 'B' ? [POINTS.loss, POINTS.win] : [POINTS.draw, POINTS.draw];
       a.points += pa; b.points += pb;
+      sdAdd(day, a, pa); sdAdd(day, b, pb);
       a.byDay[day.number] = (a.byDay[day.number] || 0) + pa;
       b.byDay[day.number] = (b.byDay[day.number] || 0) + pb;
       a.score += m.scoreA; b.score += m.scoreB;
@@ -230,32 +247,27 @@ function standings(t) {
     r.evalStatus = p ? p.status : 'queued';
     if (p && (p.status === 'done' || p.status === 'stopped')) r.eval = p.total;
   }
-  // showdown: the evaluation is the team's total in the last finished showdown run instead
+  // showdown: the evaluation is the points (3 / 1 / 0) a team took in its published rounds instead
   if (inShowdown(t)) {
     for (const r of rows.values()) {
-      const sd = showdownTeam(t, r.userId);
-      r.eval = sd ? sd.total : null;
-      r.evalStatus = sd ? 'done' : t.showdownRun && t.showdownRun.teams[r.userId] ? 'showdown-running' : 'showdown-wait';
+      r.eval = r.sdPoints || 0;
+      r.evalStatus = 'done';
     }
   }
+  for (const r of rows.values()) delete r.sdPoints;
   const list = [...rows.values()].sort((x, y) =>
     y.points - x.points || (y.eval ?? -1) - (x.eval ?? -1) || y.w - x.w || y.score - x.score || x.teamName.localeCompare(y.teamName));
   list.forEach((r, i) => { r.rank = i + 1; });
   return list;
 }
 
-// The showdown as the pages show it: its window, interval, the run being played and the next one.
+// The showdown as the pages show it: its window and interval, and when its next round starts.
 function showdownInfo(t, now = Date.now()) {
   if (!t.showdownAt) return { showdownAt: null, showdown: false };
-  const run = t.showdownRun, last = t.showdownLast;
-  const progress = r => {
-    const all = Object.values(r.teams).flatMap(x => x.results || []);
-    return { number: r.number, at: r.at, played: all.filter(x => x.status === 'done' || x.status === 'error').length, total: all.length };
-  };
+  const next = nextSlot(t, Math.max(now, Date.parse(t.showdownAt) - 1));
   return {
     showdownAt: t.showdownAt, showdownMinutes: showdownMinutesOf(t), showdownEveryMinutes: showdownEveryOf(t), showdown: inShowdown(t, now),
-    showdownNextAt: nextShowdownRun(t, now), showdownRun: run ? progress(run) : null,
-    showdownLast: last ? { number: last.number, at: last.at, finishedAt: last.finishedAt } : null,
+    showdownNextAt: next && Date.parse(next) < showdownEnd(t) ? next : null,
   };
 }
 

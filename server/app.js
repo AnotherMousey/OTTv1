@@ -91,8 +91,7 @@ async function withCode(subs, extra = () => ({})) {
 }
 const gameOf = grader.practice.gameOf;
 // Points one match is worth at most (RPS: 3 per turn; board game: 3 per game).
-// During a showdown ("quyết đấu"), a match counts win * 550 + pieces * 25 per game instead.
-const maxMatchScore = t => (grader.practice.inShowdown(t) ? grader.practice.showdownMatchMax(t) : gameOf(t) === 'board' ? boardGame.MAX_SCORE : TURNS * 3);
+const maxMatchScore = t => (gameOf(t) === 'board' ? boardGame.MAX_SCORE : TURNS * 3);
 
 function publicTournament(t, user) {
   const subs = db.data.submissions.filter(s => s.tournamentId === t.id);
@@ -330,7 +329,9 @@ app.get('/api/tournaments/:id/practice', apiAuth, (req, res) => {
     return res.json({ mode: 'campaign', board: campaign.board(t), details: campaign.details(t, want), serverNow: Date.now() });
   }
   const userIds = [...new Set(db.data.submissions.filter(s => s.tournamentId === t.id && canPlay(t, s.userId)).map(s => s.userId))];
+  // showdown ("quyết đấu"): a team's score is the points (3 / 1 / 0) it took in the showdown's rounds
   const showdown = grader.practice.inShowdown(t);
+  const sdPoints = showdown ? new Map(daily.standings(t).map(r => [r.userId, r.eval || 0])) : null;
   const rows = userIds.map(uid => {
     const u = findUser(uid);
     if (!u) return null;
@@ -345,7 +346,7 @@ app.get('/api/tournaments/:id/practice', apiAuth, (req, res) => {
       status: !s ? 'no-bot' : p ? p.status : 'queued',
       total: p ? p.total : null,
       played: p ? p.results.filter(r => r.status === 'done').length : 0,
-      ...(showdown ? showdownRow(t, uid) : {}),
+      ...(showdown ? { status: 'done', total: sdPoints.get(uid) || 0 } : {}),
     };
   }).filter(Boolean);
   rows.sort((a, b) => (b.total ?? -1) - (a.total ?? -1) || a.teamName.localeCompare(b.teamName));
@@ -358,21 +359,7 @@ app.get('/api/tournaments/:id/practice', apiAuth, (req, res) => {
     const s = grader.activeSubmission(t.id, want);
     const u = findUser(want);
     const replays = db.data.matches[grader.practice.replayKey(t.id)] || {};
-    const sd = showdown && grader.practice.showdownTeam(t, want);
-    const sdSub = sd && db.data.submissions.find(x => x.id === sd.submissionId);
-    if (sdSub && u) {
-      // showdown: the team's results in the last finished run (no replays)
-      details = {
-        userId: want, teamName: u.teamName, submissionId: sdSub.id, language: sdSub.language, submittedAt: sdSub.createdAt,
-        status: 'done', total: sd.total, showdownRun: t.showdownLast.number,
-        results: sd.results.map(({ bot, name, status, score, botScore, winner, issue }) => ({ bot, name: (house.find(h => h.id === bot) || { name }).name, desc: (house.find(h => h.id === bot) || {}).desc || '', status, score, botScore, winner, issue, replay: false })),
-      };
-    } else if (showdown && s && u) {
-      details = {
-        userId: want, teamName: u.teamName, submissionId: s.id, language: s.language, submittedAt: s.createdAt, status: 'queued', total: 0,
-        results: house.map(h => ({ bot: h.id, name: h.name, desc: h.desc || '', status: 'queued' })),
-      };
-    } else if (s && u) {
+    if (s && u) {
       details = {
         userId: want,
         teamName: u.teamName,
@@ -380,7 +367,7 @@ app.get('/api/tournaments/:id/practice', apiAuth, (req, res) => {
         language: s.language,
         submittedAt: s.createdAt,
         status: s.practice ? s.practice.status : 'queued',
-        total: s.practice ? s.practice.total : 0,
+        total: showdown ? sdPoints.get(want) || 0 : s.practice ? s.practice.total : 0,
         results: (s.practice ? s.practice.results : house.map(h => ({ bot: h.id, name: h.name, status: 'queued' })))
           // names come from the current bot list, so renamed bots show their new name on old results
           .map(({ bot, name, status, score, botScore, winner, issue }) => ({ bot, name: (house.find(h => h.id === bot) || { name }).name, desc: (house.find(h => h.id === bot) || {}).desc || '', status, score, botScore, winner, issue,
@@ -390,15 +377,8 @@ app.get('/api/tournaments/:id/practice', apiAuth, (req, res) => {
   } else if (req.query.user) {
     return fail(res, 403, 'Không được xem điểm của đội khác 🤫');
   }
-  res.json({ rows, details, turns: TURNS, ...daily.showdownInfo(t), showdownEnd: grader.practice.showdownEnd(t), maxScore: maxMatchScore(t), houseCount: house.length, maxTotal: house.length * maxMatchScore(t), serverNow: Date.now() });
+  res.json({ rows, details, turns: TURNS, ...daily.showdownInfo(t), showdownEnd: grader.practice.showdownEnd(t), maxScore: maxMatchScore(t), houseCount: house.length, maxTotal: showdown ? null : house.length * maxMatchScore(t), serverNow: Date.now() });
 });
-
-// A team's row on the practice board during the showdown: its total in the last finished run.
-function showdownRow(t, uid) {
-  const sd = grader.practice.showdownTeam(t, uid);
-  if (sd) return { status: 'done', total: sd.total, played: sd.results.filter(r => r.status === 'done').length };
-  return { status: t.showdownRun && t.showdownRun.teams[uid] ? 'showdown-running' : 'showdown-wait', total: null, played: 0 };
-}
 
 // Replay of a practice match: your own (the judge: anyone's) against one sparring bot.
 app.get('/api/tournaments/:id/practice/:bot', apiAuth, wrap(async (req, res) => {
@@ -639,9 +619,9 @@ app.patch('/api/admin/tournaments/:id', apiAuth, apiJudge, (req, res) => {
     if (showdown === null) delete t.showdownAt; else if (showdown !== undefined) t.showdownAt = new Date(showdown).toISOString();
     if (showdownMinutes !== undefined) t.showdownMinutes = showdownMinutes;
     if (showdownEveryMinutes !== undefined) t.showdownEveryMinutes = showdownEveryMinutes;
+    t.showdownSince = new Date().toISOString(); // only rounds from now on: none fires retroactively
     // a new schedule starts over: runs played under the old one no longer count
-    if (t.showdownRun) t.showdownRun.cancelled = true;
-    delete t.showdownRun;
+    delete t.showdownRun; // (the sparring-bot runs of an earlier version)
     delete t.showdownLast;
     manager.broadcast(t);
   }
