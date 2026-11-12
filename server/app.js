@@ -792,6 +792,34 @@ app.post('/api/admin/tournaments/:id/keys', apiAuth, apiJudge, (req, res) => {
   db.save();
   res.json({ keys: publicKeys(t), created: made.map(k => k.key) });
 });
+// Keys the judge brings (e.g. a CSV exported from another tournament): body { keys: [{ key, kind }] }.
+// They start unused here. Keys this tournament already has are skipped; nothing is added if any key
+// is malformed (12 letters / digits, case-sensitive, like the generated ones).
+const MAX_KEYS_PER_IMPORT = 5000;
+const KEY_PATTERN = /^[A-Za-z0-9]{12}$/;
+app.post('/api/admin/tournaments/:id/keys/import', apiAuth, apiJudge, (req, res) => {
+  const t = findTournament(req.params.id);
+  if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
+  if (!daily.isDaily(t)) return fail(res, 400, 'Chỉ giải hỗn chiến mới có quyết đấu');
+  const list = (req.body || {}).keys;
+  if (!Array.isArray(list) || !list.length) return fail(res, 400, 'Tệp không có mã nào');
+  if (list.length > MAX_KEYS_PER_IMPORT) return fail(res, 400, `Mỗi lần nhập tối đa ${MAX_KEYS_PER_IMPORT} mã`);
+  const bad = list.map((k, i) => [i, k]).filter(([, k]) => !k || typeof k.key !== 'string' || !KEY_PATTERN.test(normalizeKey(k.key)) || !['once', 'permanent'].includes(k.kind));
+  if (bad.length) return fail(res, 400, `${bad.length} mã không hợp lệ (mã phải gồm đúng 12 chữ cái hoặc chữ số), ví dụ: ${bad.slice(0, 3).map(([i, k]) => `dòng ${(k && k.line) || i + 1}: "${String((k && k.key) || '').slice(0, 20)}"`).join(', ')}`);
+  const taken = new Set((t.showdownKeys || []).map(k => k.key));
+  const now = new Date().toISOString();
+  const added = [];
+  let skipped = 0;
+  for (const { key, kind } of list) {
+    const k = normalizeKey(key);
+    if (taken.has(k)) { skipped++; continue; }
+    taken.add(k);
+    added.push({ key: k, kind, createdAt: now, uses: 0 });
+  }
+  t.showdownKeys = [...(t.showdownKeys || []), ...added];
+  db.save();
+  res.json({ keys: publicKeys(t), added: added.length, skipped });
+});
 app.delete('/api/admin/tournaments/:id/keys/:key', apiAuth, apiJudge, (req, res) => {
   const t = findTournament(req.params.id);
   if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');

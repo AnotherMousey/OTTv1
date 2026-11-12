@@ -456,6 +456,45 @@
     let keysOpen = null;
     const KEY_KIND = { once: 'dùng 1 lần', permanent: 'dùng mãi' };
     const keyState = k => (k.kind === 'once' ? (k.usedBy ? `đã dùng · ${k.usedBy.teamName} · ${fmtDate(k.usedAt)}` : 'chưa dùng') : `đã dùng ${k.uses} lần`);
+    // A CSV's rows (comma, semicolon or tab separated, as Excel saves it; quoted cells may hold the separator).
+    function parseCsv(text) {
+      text = text.replace(/^﻿/, '');
+      const first = text.split(/\r?\n/, 1)[0];
+      const sep = [',', ';', '\t'].reduce((best, s) => (first.split(s).length > first.split(best).length ? s : best), ',');
+      const rows = [];
+      let row = [], cell = '', quoted = false;
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (quoted) {
+          if (c === '"' && text[i + 1] === '"') { cell += '"'; i++; } else if (c === '"') quoted = false; else cell += c;
+        } else if (c === '"') quoted = true;
+        else if (c === sep) { row.push(cell); cell = ''; }
+        else if (c === '\n' || c === '\r') {
+          if (c === '\r' && text[i + 1] === '\n') i++;
+          row.push(cell); rows.push(row); row = []; cell = '';
+        } else cell += c;
+      }
+      if (cell || row.length) { row.push(cell); rows.push(row); }
+      return rows.map(r => r.map(x => x.trim())).filter(r => r.some(Boolean));
+    }
+    // [{ key, kind, line }] from a CSV: the key column is "ma" / "mã" / "key" / "code" if there is a
+    // header row (else the first column); the type column "loai" / "loại" / "kind" / "type" if there is
+    // one ("dùng mãi", "permanent"... = permanent, anything else = one-time), else `kind` for every key.
+    function keysFromCsv(text, kind) {
+      const rows = parseCsv(text);
+      if (!rows.length) return [];
+      const fold = x => x.normalize('NFD').replace(/\p{M}/gu, '').replace(/[đĐ]/g, 'd').toLowerCase().replace(/[^a-z]/g, '');
+      const head = rows[0].map(fold);
+      const keyCol = head.findIndex(h => ['ma', 'key', 'code', 'makey'].includes(h));
+      const kindCol = head.findIndex(h => ['loai', 'kind', 'type'].includes(h));
+      const hasHeader = keyCol >= 0 || kindCol >= 0;
+      const kc = keyCol >= 0 ? keyCol : 0;
+      return rows.slice(hasHeader ? 1 : 0).map((r, i) => {
+        const raw = kindCol >= 0 ? fold(r[kindCol] || '') : '';
+        const k = kindCol >= 0 && raw ? (/mai|permanent|vinhvien|forever|unlimited/.test(raw) ? 'permanent' : 'once') : kind;
+        return { key: r[kc] || '', kind: k, line: i + (hasHeader ? 2 : 1) };
+      }).filter(x => x.key);
+    }
     async function showKeys(t) {
       keysOpen = { t, keys: [], filter: '' };
       try { keysOpen.keys = (await api(`/api/admin/tournaments/${encodeURIComponent(t.id)}/keys`)).keys; } catch (e) { toast(e.message, 'error'); }
@@ -476,6 +515,7 @@
           <label style="margin:0"><span>loại</span><select id="keyKind"><option value="once">🎟️ dùng 1 lần</option><option value="permanent">♾️ dùng mãi</option></select></label>
           <button class="btn red" id="keyGen">Tạo mã 🔑</button>
           <button class="btn yellow" id="keyCsv" ${shown.length ? '' : 'disabled'}>⬇️ Xuất CSV (${shown.length} mã)</button>
+          <label class="btn" style="margin:0" title="thêm mã từ tệp CSV (ví dụ tệp xuất từ giải khác): cột &quot;ma&quot; (hoặc cột đầu tiên), cột &quot;loai&quot; nếu có; không có cột loại thì dùng loại đang chọn bên cạnh">📥 Nhập CSV<input type="file" id="keyImport" accept=".csv,text/csv,.txt" class="hidden"></label>
         </div>
         <div class="row" style="gap:10px;margin:12px 0 8px">
           <select id="keyFilter"><option value="">mọi mã (${k.keys.length})</option><option value="unused">dùng 1 lần, chưa dùng (${unused})</option><option value="used">dùng 1 lần, đã dùng</option><option value="once">dùng 1 lần</option><option value="permanent">dùng mãi</option></select>
@@ -496,6 +536,22 @@
           toast(`Đã tạo ${count} mã ${KEY_KIND[kind]} 🔑`);
           renderKeys();
         } catch (e) { toast(e.message, 'error'); }
+      };
+      // keys from a CSV file: the exported one, or the judge's own list (one key per line works too)
+      $('#keyImport').onchange = async e => {
+        const f = e.target.files[0];
+        e.target.value = '';
+        if (!f) return;
+        let keys;
+        try { keys = keysFromCsv(await f.text(), $('#keyKind').value); } catch (err) { return toast(err.message, 'error'); }
+        if (!keys.length) return toast('Không tìm thấy mã nào trong tệp', 'error');
+        if (!confirm(`Thêm ${keys.length} mã từ tệp "${f.name}"? (${keys.filter(x => x.kind === 'once').length} mã dùng 1 lần, ${keys.filter(x => x.kind === 'permanent').length} mã dùng mãi; mã đã có trong giải được bỏ qua, mọi mã đều bắt đầu ở trạng thái chưa dùng.)`)) return;
+        try {
+          const res = await api(`/api/admin/tournaments/${encodeURIComponent(t.id)}/keys/import`, { method: 'POST', body: { keys } });
+          k.keys = res.keys;
+          toast(`Đã thêm ${res.added} mã 📥${res.skipped ? ` · bỏ qua ${res.skipped} mã đã có` : ''}`);
+          renderKeys();
+        } catch (err) { toast(err.message, 'error'); }
       };
       // the keys listed (the filter applies), as a CSV file Excel opens with its accents (UTF-8 BOM)
       $('#keyCsv').onclick = () => {
