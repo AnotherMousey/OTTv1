@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
@@ -90,7 +91,8 @@ async function withCode(subs, extra = () => ({})) {
 }
 const gameOf = grader.practice.gameOf;
 // Points one match is worth at most (RPS: 3 per turn; board game: 3 per game).
-const maxMatchScore = t => (gameOf(t) === 'board' ? boardGame.MAX_SCORE : TURNS * 3);
+// During a showdown ("quyết đấu"), a match counts win * 550 + pieces * 25 per game instead.
+const maxMatchScore = t => (grader.practice.inShowdown(t) ? grader.practice.showdownMatchMax(t) : gameOf(t) === 'board' ? boardGame.MAX_SCORE : TURNS * 3);
 
 function publicTournament(t, user) {
   const subs = db.data.submissions.filter(s => s.tournamentId === t.id);
@@ -111,7 +113,7 @@ function publicTournament(t, user) {
     description: t.description || '',
     deadline: t.deadline,
     startsAt: t.startsAt || null,
-    ...(daily.isDaily(t) ? { daily: { time: t.dailyTime || null, cycleHours: daily.cycleHoursOf(t), pairing: daily.pairingOf(t), nextAt: t.status === 'open' ? daily.nextSlot(t, Date.now()) : null, frozen: t.status === 'open' ? daily.frozen(t) : null, days: (t.days || []).filter(d => d.status === 'published').length, played: (t.days || []).length, list: (t.days || []).map(d => ({ number: d.number, at: d.startedAt, pairing: d.pairing || null, status: d.status, live: !!d.live })), queue: (t.rejudgeQueue || []).map(q => q.day), publishDelayMs: daily.PUBLISH_DELAY_MS } } : {}),
+    ...(daily.isDaily(t) ? { daily: { time: t.dailyTime || null, cycleHours: daily.cycleHoursOf(t), pairing: daily.pairingOf(t), showdownAt: t.showdownAt || null, showdown: grader.practice.inShowdown(t), nextAt: t.status === 'open' ? daily.nextSlot(t, Date.now()) : null, frozen: t.status === 'open' ? daily.frozen(t) : null, days: (t.days || []).filter(d => d.status === 'published').length, played: (t.days || []).length, list: (t.days || []).map(d => ({ number: d.number, at: d.startedAt, pairing: d.pairing || null, status: d.status, live: !!d.live })), queue: (t.rejudgeQueue || []).map(q => q.day), publishDelayMs: daily.PUBLISH_DELAY_MS } } : {}),
     status: t.status,
     createdAt: t.createdAt || t.startsAt || t.deadline,
     teamsReady: t.entries ? t.entries.length : ready.size,
@@ -267,6 +269,15 @@ app.post('/api/tournaments/:id/submissions', apiAuth, wrap(async (req, res) => {
   const frozen = daily.isDaily(t) && daily.frozen(t);
   if (frozen) return fail(res, 400, `Vòng ${frozen.day} đang thi đấu: tạm khóa nộp bài đến khi công bố kết quả.`);
   const { language, code, target } = req.body || {};
+  // showdown: a key the judge handed out is needed (checked here, used up once the code is stored)
+  let showdownKey = null;
+  if (daily.isDaily(t) && grader.practice.inShowdown(t)) {
+    const want = normalizeKey((req.body || {}).key);
+    if (!want) return fail(res, 403, 'Đang quyết đấu: cần nhập mã quyết đấu (12 ký tự, do trọng tài phát) để nộp bài 🔑');
+    showdownKey = (t.showdownKeys || []).find(k => k.key === want);
+    if (!showdownKey) return fail(res, 403, 'Mã quyết đấu không đúng 🔑');
+    if (showdownKey.kind === 'once' && showdownKey.usedBy) return fail(res, 403, 'Mã quyết đấu này đã được dùng rồi 🔑');
+  }
   if (!grader.LANGS[language]) return fail(res, 400, 'Hãy chọn ngôn ngữ: cpp, java hoặc python');
   // Campaign: each submission is aimed at one sparring bot.
   const isCampaign = t.mode === 'campaign';
@@ -283,10 +294,18 @@ app.post('/api/tournaments/:id/submissions', apiAuth, wrap(async (req, res) => {
   if (waitMs > 0) return fail(res, 429, `Chậm lại chút! Đợi ${Math.ceil(waitMs / 1000)} giây nữa rồi nộp tiếp nhé.`);
   const sub = { id: db.id(), tournamentId: t.id, userId: req.user.id, language, ...(gameOf(t) === 'board' ? { game: 'board' } : {}), ...(isCampaign ? { target } : {}), status: 'pending', message: '', createdAt: new Date().toISOString() };
   db.data.submissions.push(sub); // listed right away, so a second request counts as "busy"
+  // a one-time key is taken right away too, so no other request can use it meanwhile
+  const keyBefore = showdownKey && { uses: showdownKey.uses, usedBy: showdownKey.usedBy, usedAt: showdownKey.usedAt };
+  if (showdownKey) {
+    showdownKey.uses = (showdownKey.uses || 0) + 1;
+    if (showdownKey.kind === 'once') Object.assign(showdownKey, { usedBy: req.user.id, usedAt: sub.createdAt });
+    sub.showdownKey = showdownKey.key;
+  }
   try {
     await db.putCode(sub, code);
   } catch (e) {
     db.data.submissions = db.data.submissions.filter(s => s !== sub);
+    if (showdownKey) Object.assign(showdownKey, keyBefore);
     throw e;
   }
   db.save();
@@ -323,7 +342,7 @@ app.get('/api/tournaments/:id/practice', apiAuth, (req, res) => {
       avatar: auth.avatarOf(u),
       language: s ? s.language : null,
       status: !s ? 'no-bot' : p ? p.status : 'queued',
-      total: p ? p.total : null,
+      total: p ? grader.practice.evalOf(p, t) : null,
       played: p ? p.results.filter(r => r.status === 'done').length : 0,
     };
   }).filter(Boolean);
@@ -345,9 +364,11 @@ app.get('/api/tournaments/:id/practice', apiAuth, (req, res) => {
         language: s.language,
         submittedAt: s.createdAt,
         status: s.practice ? s.practice.status : 'queued',
-        total: s.practice ? s.practice.total : 0,
+        total: s.practice ? grader.practice.evalOf(s.practice, t) : 0,
         results: (s.practice ? s.practice.results : house.map(h => ({ bot: h.id, name: h.name, status: 'queued' })))
-          // names come from the current bot list, so renamed bots show their new name on old results
+          // names come from the current bot list, so renamed bots show their new name on old results;
+          // during a showdown the scores are the showdown ones
+          .map(r => ({ ...r, ...(r.status === 'done' ? grader.practice.scoreOf(r, t) : {}) }))
           .map(({ bot, name, status, score, botScore, winner, issue }) => ({ bot, name: (house.find(h => h.id === bot) || { name }).name, desc: (house.find(h => h.id === bot) || {}).desc || '', status, score, botScore, winner, issue,
             replay: (replays[grader.practice.replayName(want, bot)] || {}).submissionId === s.id })),
       };
@@ -355,7 +376,7 @@ app.get('/api/tournaments/:id/practice', apiAuth, (req, res) => {
   } else if (req.query.user) {
     return fail(res, 403, 'Không được xem điểm của đội khác 🤫');
   }
-  res.json({ rows, details, turns: TURNS, maxScore: maxMatchScore(t), houseCount: house.length, maxTotal: house.length * maxMatchScore(t), serverNow: Date.now() });
+  res.json({ rows, details, turns: TURNS, showdown: grader.practice.inShowdown(t), showdownAt: t.showdownAt || null, showdownEnd: grader.practice.showdownEnd(t), maxScore: maxMatchScore(t), houseCount: house.length, maxTotal: house.length * maxMatchScore(t), serverNow: Date.now() });
 });
 
 // Replay of a practice match: your own (the judge: anyone's) against one sparring bot.
@@ -538,7 +559,7 @@ app.post('/api/admin/tournaments', apiAuth, apiJudge, (req, res) => {
 app.patch('/api/admin/tournaments/:id', apiAuth, apiJudge, (req, res) => {
   const t = findTournament(req.params.id);
   if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
-  const { name, deadline, startsAt, description, access, hidden, dailyTime, cycleHours, tzOffset, pairing } = req.body || {};
+  const { name, deadline, startsAt, description, access, hidden, dailyTime, cycleHours, tzOffset, pairing, showdownAt } = req.body || {};
   // hiding / showing, the name and the description can change at any time; everything else only before the tournament starts
   const anyTime = Object.keys(req.body || {}).every(k => ['hidden', 'name', 'description'].includes(k));
   if (t.status !== 'open' && !anyTime) return fail(res, 400, 'Chỉ sửa được giải đấu chưa bắt đầu');
@@ -549,6 +570,13 @@ app.patch('/api/admin/tournaments/:id', apiAuth, apiJudge, (req, res) => {
     if (!daily.isDaily(t)) return fail(res, 400, 'Chỉ giải hỗn chiến mới có lịch thi đấu');
     if (dailyTime !== undefined) return fail(res, 400, 'Chọn một trong hai: giờ thi đấu hằng ngày hoặc chu kỳ');
     if (!daily.validCycle(cycleHours)) return fail(res, 400, CYCLE_ERROR);
+  }
+  // showdown ("quyết đấu"): when its 5 hours start, or '' / null for none
+  let showdown;
+  if (showdownAt !== undefined) {
+    if (!daily.isDaily(t)) return fail(res, 400, 'Chỉ giải hỗn chiến mới có quyết đấu');
+    showdown = showdownAt ? Date.parse(showdownAt) : null;
+    if (showdown !== null && !Number.isFinite(showdown)) return fail(res, 400, 'Giờ quyết đấu không hợp lệ');
   }
   if (pairing !== undefined) {
     if (!daily.isDaily(t) || !['rr', 'swiss'].includes(pairing)) return fail(res, 400, 'Thể thức phải là vòng tròn (rr) hoặc Thụy Sĩ (swiss)');
@@ -578,6 +606,10 @@ app.patch('/api/admin/tournaments/:id', apiAuth, apiJudge, (req, res) => {
   }
   if (name !== undefined) t.name = lineText(name, 80);
   if (description !== undefined) t.description = lineText(description, 500);
+  if (showdown !== undefined) {
+    if (showdown === null) delete t.showdownAt; else t.showdownAt = new Date(showdown).toISOString();
+    grader.replayStalePractice(t); // bots evaluated before showdown scores were recorded play again
+  }
   if (access !== undefined) {
     t.access = access;
     if (access === 'invite' && !t.members) t.members = [];
@@ -653,6 +685,61 @@ app.delete('/api/admin/tournaments/:id/announcements/:aid', apiAuth, apiJudge, (
   io.to('users').emit('tournaments:changed');
   res.json({ announcements: publicAnnouncements(t) });
 });
+// ---------- showdown keys ("mã quyết đấu") ----------
+// While a brawl's showdown lasts, every submission needs a key the judge handed out. t.showdownKeys =
+// [{ key, kind: 'once' | 'permanent', createdAt, uses, usedBy, usedAt }]: a 'once' key works for one
+// submission (usedBy / usedAt: who used it and when), a 'permanent' one for any number (uses counts them).
+const KEY_LENGTH = 12;
+// case-sensitive; no 0/O/o, 1/I/l: easy to type from a printout
+const KEY_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+const MAX_KEYS_PER_REQUEST = 1000;
+// (only the spaces around a pasted key are dropped: the case must match exactly)
+const normalizeKey = k => String(k || '').trim();
+function newKey(taken) {
+  for (;;) {
+    let k = '';
+    for (let i = 0; i < KEY_LENGTH; i++) k += KEY_ALPHABET[crypto.randomInt(KEY_ALPHABET.length)];
+    if (!taken.has(k)) return k;
+  }
+}
+const publicKeys = t => (t.showdownKeys || []).map(k => {
+  const u = k.usedBy && findUser(k.usedBy);
+  return { key: k.key, kind: k.kind, createdAt: k.createdAt, uses: k.uses || 0, usedAt: k.usedAt || null, usedBy: k.usedBy ? { userId: k.usedBy, teamName: u ? u.teamName : '?', username: u ? u.username : '' } : null };
+});
+app.get('/api/admin/tournaments/:id/keys', apiAuth, apiJudge, (req, res) => {
+  const t = findTournament(req.params.id);
+  if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
+  res.json({ keys: publicKeys(t) });
+});
+app.post('/api/admin/tournaments/:id/keys', apiAuth, apiJudge, (req, res) => {
+  const t = findTournament(req.params.id);
+  if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
+  if (!daily.isDaily(t)) return fail(res, 400, 'Chỉ giải hỗn chiến mới có quyết đấu');
+  const { count, kind } = req.body || {};
+  if (!Number.isInteger(count) || count < 1 || count > MAX_KEYS_PER_REQUEST) return fail(res, 400, `Số mã phải là số nguyên từ 1 đến ${MAX_KEYS_PER_REQUEST}`);
+  if (!['once', 'permanent'].includes(kind)) return fail(res, 400, 'Loại mã phải là once (dùng 1 lần) hoặc permanent (dùng mãi)');
+  const taken = new Set((t.showdownKeys || []).map(k => k.key));
+  const now = new Date().toISOString();
+  const made = [];
+  for (let i = 0; i < count; i++) {
+    const key = newKey(taken);
+    taken.add(key);
+    made.push({ key, kind, createdAt: now, uses: 0 });
+  }
+  t.showdownKeys = [...(t.showdownKeys || []), ...made];
+  db.save();
+  res.json({ keys: publicKeys(t), created: made.map(k => k.key) });
+});
+app.delete('/api/admin/tournaments/:id/keys/:key', apiAuth, apiJudge, (req, res) => {
+  const t = findTournament(req.params.id);
+  if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
+  const key = normalizeKey(req.params.key);
+  t.showdownKeys = (t.showdownKeys || []).filter(k => k.key !== key);
+  if (!t.showdownKeys.length) delete t.showdownKeys;
+  db.save();
+  res.json({ keys: publicKeys(t) });
+});
+
 // Stop live updates to players who were watching a tournament they may no longer see.
 async function kickWatchers(t) {
   for (const s of await io.in('t:' + t.id).fetchSockets()) {

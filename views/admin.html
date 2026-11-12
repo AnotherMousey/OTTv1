@@ -76,6 +76,7 @@
     <div id="subsPanel" class="hidden" style="margin-top:20px"></div>
     <div id="rejudgePanel" class="hidden" style="margin-top:20px"></div>
     <div id="mapsPanel" class="hidden" style="margin-top:20px"></div>
+    <div id="keysPanel" class="hidden" style="margin-top:20px"></div>
 
     <div id="accountsArea">
     <div class="squiggle"></div>
@@ -227,6 +228,17 @@
         <input type="time" data-daily="${t.id}" value="${d.time || '21:00'}" class="${cycle ? 'hidden' : ''}" style="${box}">
         <span class="cycle-box ${cycle ? '' : 'hidden'}"><input type="number" data-cycle="${t.id}" value="${d.cycleHours || 24}" min="0.25" max="720" step="0.25" style="${box};width:70px"> giờ, tính từ lúc bắt đầu</span></span>`;
     }
+    // A brawl's showdown ("quyết đấu"): 5 hours from the time the judge picks, during which the
+    // evaluation counts win * 550 + pieces left * 25 per game. In words, or (edit) a time box.
+    const SHOWDOWN_HOURS = 5;
+    function showdownCell(t, edit) {
+      const at = t.daily.showdownAt;
+      const end = at ? new Date(Date.parse(at) + SHOWDOWN_HOURS * 3600e3) : null;
+      const now = t.daily.showdown ? ' <b>(đang diễn ra)</b>' : '';
+      if (!edit) return at ? `⚔️ quyết đấu: ${esc(fmtDate(at))} → ${esc(fmtDate(end.toISOString()))}${now}` : '⚔️ quyết đấu: không có';
+      const box = 'font-size:15px;padding:0 4px';
+      return `<span title="${SHOWDOWN_HOURS} giờ; trong lúc quyết đấu, điểm đánh giá = thắng × 550 + số quân còn lại × 25 (mỗi ván)">⚔️ quyết đấu: <input type="datetime-local" data-showdown="${t.id}" value="${at ? toLocalInput(new Date(at)) : ''}" style="${box}">${at ? ` → ${esc(fmtDate(end.toISOString()))}${now} <button class="btn small" data-noshowdown="${t.id}" title="bỏ quyết đấu">✕</button>` : ' <small>(bỏ trống = không có)</small>'}</span>`;
+    }
 
     let startTimer = null;
     let allTournaments = [];
@@ -257,7 +269,7 @@
           : t.startsAt ? esc(fmtDate(t.startsAt)) : '<span class="muted">–</span>';
         return `<tr>
           <td><span class="lines">${esc(t.name)}</span>${focusId && t.description ? `<br><small class="muted lines">${esc(t.description)}</small>` : ''}</td>
-          <td>${t.game === 'board' ? '♟️ cờ OTT' : '✊ oẳn tù tì'} · ${t.mode === 'campaign' ? '🗺️ chiến dịch' : '⚔️ hỗn chiến'}${t.daily ? `<br><span class="muted" style="font-size:16px">${scheduleCell(t, edit)}<br>thể thức: ${edit ? `<select data-pairing="${t.id}" style="font-size:15px;padding:0 4px"><option value="rr" ${t.daily.pairing === 'rr' ? 'selected' : ''}>vòng tròn</option><option value="swiss" ${t.daily.pairing === 'swiss' ? 'selected' : ''}>Thụy Sĩ</option></select>` : t.daily.pairing === 'swiss' ? 'Thụy Sĩ' : 'vòng tròn'} · đã qua ${t.daily.days} vòng</span>` : ''}${t.access === 'invite' ? `<br><span class="muted" style="font-size:16px">🔒 ${t.members} đội</span>` : ''}${t.hidden ? '<br><span class="muted" style="font-size:16px">🙈 đang ẩn với người chơi</span>' : ''}</td>
+          <td>${t.game === 'board' ? '♟️ cờ OTT' : '✊ oẳn tù tì'} · ${t.mode === 'campaign' ? '🗺️ chiến dịch' : '⚔️ hỗn chiến'}${t.daily ? `<br><span class="muted" style="font-size:16px">${scheduleCell(t, edit)}<br>${showdownCell(t, edit)}<br>thể thức: ${edit ? `<select data-pairing="${t.id}" style="font-size:15px;padding:0 4px"><option value="rr" ${t.daily.pairing === 'rr' ? 'selected' : ''}>vòng tròn</option><option value="swiss" ${t.daily.pairing === 'swiss' ? 'selected' : ''}>Thụy Sĩ</option></select>` : t.daily.pairing === 'swiss' ? 'Thụy Sĩ' : 'vòng tròn'} · đã qua ${t.daily.days} vòng</span>` : ''}${t.access === 'invite' ? `<br><span class="muted" style="font-size:16px">🔒 ${t.members} đội</span>` : ''}${t.hidden ? '<br><span class="muted" style="font-size:16px">🙈 đang ẩn với người chơi</span>' : ''}</td>
           <td><span class="tag ${waiting ? 'pending' : t.status}">${waiting ? 'chưa mở' : STATUS_VI[t.status] || t.status}</span></td>
           <td>${startCell}</td>
           <td>${edit ? `<input type="datetime-local" data-dl="${t.id}" value="${toLocalInput(new Date(t.deadline))}" style="font-size:16px;padding:2px 6px">` : esc(fmtDate(t.deadline))}</td>
@@ -275,6 +287,7 @@
             <button class="btn small" data-bots="${t.id}">bot đấu tập</button>
             ${t.game === 'board' ? `<button class="btn small" data-maps="${t.id}" title="vị trí xuất phát của các quân và các ô tường">🗺️ bản đồ</button>` : ''}
             <button class="btn small" data-subs="${t.id}">bài nộp</button>
+            ${t.daily ? `<button class="btn small" data-keys="${t.id}" title="mã cần nhập để nộp bài trong lúc quyết đấu">🔑 mã quyết đấu</button>` : ''}
             <a class="btn small" href="/tournament/${id}/live">bảng xếp hạng</a>
             <a class="btn small" href="/tournament/${id}/matches">lịch sử trận</a>
             ${t.daily && t.daily.played ? `<button class="btn small" data-rejudge="${t.id}" title="xóa kết quả một vòng đấu và cho các bot đấu lại vòng đó">🔁 rejudge</button>` : ''}
@@ -311,6 +324,9 @@
       $$('[data-start]').forEach(inp => onDone(inp, () =>
         patch(inp.dataset.start, { startsAt: inp.value ? new Date(inp.value).toISOString() : '' }, inp.value ? 'Đã đổi giờ bắt đầu 🕘' : 'Đã bỏ giờ bắt đầu: nhận bài ngay 🚪')));
       $$('[data-nostart]').forEach(b => b.onclick = () => patch(b.dataset.nostart, { startsAt: '' }, 'Đã bỏ giờ bắt đầu: nhận bài ngay 🚪'));
+      const saveShowdown = (id, v) => patch(id, { showdownAt: v ? new Date(v).toISOString() : '' }, v ? 'Đã đặt giờ quyết đấu ⚔️ (5 giờ)' : 'Đã bỏ quyết đấu').then(loadTournaments);
+      $$('[data-showdown]').forEach(inp => onDone(inp, () => saveShowdown(inp.dataset.showdown, inp.value)));
+      $$('[data-noshowdown]').forEach(b => b.onclick = () => saveShowdown(b.dataset.noshowdown, ''));
       $$('[data-pairing]').forEach(sel => sel.onchange = () => {
         patch(sel.dataset.pairing, { pairing: sel.value }, `Từ vòng đấu tiếp theo: ${sel.value === 'swiss' ? 'thể thức Thụy Sĩ 🔀' : 'vòng tròn 🔁'}`);
       });
@@ -393,6 +409,12 @@
         showMaps(tournaments.find(t => t.id === b.dataset.maps));
       });
       if (mapsOpen && !tournaments.some(x => x.id === mapsOpen.t.id)) { mapsOpen = null; $('#mapsPanel').classList.add('hidden'); }
+      $$('[data-keys]').forEach(b => b.onclick = () => {
+        if (panelShown('keys', b.dataset.keys)) return $('#keysPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        closePanels();
+        showKeys(tournaments.find(t => t.id === b.dataset.keys));
+      });
+      if (keysOpen) { const t = tournaments.find(x => x.id === keysOpen.t.id); if (t && t.daily) keysOpen.t = t; else { keysOpen = null; $('#keysPanel').classList.add('hidden'); } }
       $$('[data-trename]').forEach(b => b.onclick = () => {
         if (panelShown('rename', b.dataset.trename)) return $('#renameName').focus();
         closePanels();
@@ -402,12 +424,81 @@
 
     // ---------- the panels under the list (players, sparring bots, submissions) ----------
     function panelShown(kind, id) {
-      const open = { members: membersOpen && membersOpen.t.id, bots: botsOpen && botsOpen.t.id, subs: subsOpen && subsOpen.id, rename: renameOpen, rejudge: rejudgeOpen && rejudgeOpen.t.id, maps: mapsOpen && mapsOpen.t.id }[kind];
+      const open = { members: membersOpen && membersOpen.t.id, bots: botsOpen && botsOpen.t.id, subs: subsOpen && subsOpen.id, rename: renameOpen, rejudge: rejudgeOpen && rejudgeOpen.t.id, maps: mapsOpen && mapsOpen.t.id, keys: keysOpen && keysOpen.t.id }[kind];
       return open === id && !$(`#${kind}Panel`).classList.contains('hidden');
     }
     function closePanels() {
-      membersOpen = botsOpen = subsOpen = renameOpen = rejudgeOpen = mapsOpen = null;
-      ['#membersPanel', '#botsPanel', '#subsPanel', '#renamePanel', '#rejudgePanel', '#mapsPanel'].forEach(p => $(p).classList.add('hidden'));
+      membersOpen = botsOpen = subsOpen = renameOpen = rejudgeOpen = mapsOpen = keysOpen = null;
+      ['#membersPanel', '#botsPanel', '#subsPanel', '#renamePanel', '#rejudgePanel', '#mapsPanel', '#keysPanel'].forEach(p => $(p).classList.add('hidden'));
+    }
+
+    // ---------- showdown keys ("mã quyết đấu") ----------
+    // keysOpen = { t, keys, filter } while the panel is open. During the showdown every submission
+    // needs one of these keys: 'once' = one submission, 'permanent' = any number.
+    let keysOpen = null;
+    const KEY_KIND = { once: 'dùng 1 lần', permanent: 'dùng mãi' };
+    const keyState = k => (k.kind === 'once' ? (k.usedBy ? `đã dùng · ${k.usedBy.teamName} · ${fmtDate(k.usedAt)}` : 'chưa dùng') : `đã dùng ${k.uses} lần`);
+    async function showKeys(t) {
+      keysOpen = { t, keys: [], filter: '' };
+      try { keysOpen.keys = (await api(`/api/admin/tournaments/${encodeURIComponent(t.id)}/keys`)).keys; } catch (e) { toast(e.message, 'error'); }
+      if (keysOpen && keysOpen.t.id === t.id) renderKeys();
+      $('#keysPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    function renderKeys() {
+      const k = keysOpen, t = k.t, panel = $('#keysPanel');
+      const shown = k.keys.filter(x => !k.filter || (k.filter === 'unused' ? x.kind === 'once' && !x.usedBy : k.filter === 'used' ? x.kind === 'once' && x.usedBy : x.kind === k.filter));
+      const unused = k.keys.filter(x => x.kind === 'once' && !x.usedBy).length;
+      const sd = t.daily.showdownAt ? `Quyết đấu: ${esc(fmtDate(t.daily.showdownAt))} → ${esc(fmtDate(new Date(Date.parse(t.daily.showdownAt) + SHOWDOWN_HOURS * 3600e3).toISOString()))}${t.daily.showdown ? ' <b>(đang diễn ra)</b>' : ''}.` : '⚠️ Giải chưa đặt giờ quyết đấu (dòng "⚔️ quyết đấu" ở bảng trên): mã chỉ có tác dụng trong lúc quyết đấu.';
+      panel.classList.remove('hidden');
+      panel.innerHTML = `<section class="box">
+        <div class="row" style="justify-content:space-between"><h3 class="lines" style="margin:0">🔑 Mã quyết đấu · ${esc(t.name)}</h3><button class="btn small" id="closeKeys">đóng</button></div>
+        <p class="muted" style="font-size:17px;margin:4px 0 10px">Trong ${SHOWDOWN_HOURS} giờ quyết đấu, người chơi phải nhập một mã (12 ký tự, phân biệt chữ hoa, chữ thường) mỗi lần nộp bài. Mã <b>dùng 1 lần</b> hết hiệu lực sau một bài nộp; mã <b>dùng mãi</b> nộp được bao nhiêu lần cũng được. ${sd}</p>
+        <div class="row" style="gap:8px;align-items:flex-end">
+          <label style="margin:0"><span>số mã</span><input id="keyCount" type="number" min="1" max="1000" value="10" style="width:100px"></label>
+          <label style="margin:0"><span>loại</span><select id="keyKind"><option value="once">🎟️ dùng 1 lần</option><option value="permanent">♾️ dùng mãi</option></select></label>
+          <button class="btn red" id="keyGen">Tạo mã 🔑</button>
+          <button class="btn yellow" id="keyCsv" ${shown.length ? '' : 'disabled'}>⬇️ Xuất CSV (${shown.length} mã)</button>
+        </div>
+        <div class="row" style="gap:10px;margin:12px 0 8px">
+          <select id="keyFilter"><option value="">mọi mã (${k.keys.length})</option><option value="unused">dùng 1 lần, chưa dùng (${unused})</option><option value="used">dùng 1 lần, đã dùng</option><option value="once">dùng 1 lần</option><option value="permanent">dùng mãi</option></select>
+        </div>
+        <div class="scroll-table" style="max-height:420px"><table class="plain"><thead><tr><th>mã</th><th>loại</th><th>trạng thái</th><th>tạo lúc</th><th></th></tr></thead><tbody>
+          ${shown.map(x => `<tr><td><code style="font-size:18px;letter-spacing:1px">${esc(x.key)}</code></td><td>${KEY_KIND[x.kind]}</td><td>${esc(keyState(x))}</td><td>${esc(fmtDate(x.createdAt))}</td>
+            <td><button class="btn small" data-keycopy="${x.key}" title="chép mã">📋</button> <button class="btn small" data-keydel="${x.key}" title="xóa mã này">🗑</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">chưa có mã nào</td></tr>'}
+        </tbody></table></div>
+      </section>`;
+      $('#keyFilter').value = k.filter;
+      $('#keyFilter').onchange = e => { k.filter = e.target.value; renderKeys(); };
+      $('#closeKeys').onclick = () => { keysOpen = null; panel.classList.add('hidden'); };
+      $('#keyGen').onclick = async () => {
+        const count = +$('#keyCount').value, kind = $('#keyKind').value;
+        if (!Number.isInteger(count) || count < 1 || count > 1000) return toast('Số mã phải từ 1 đến 1000', 'error');
+        try {
+          k.keys = (await api(`/api/admin/tournaments/${encodeURIComponent(t.id)}/keys`, { method: 'POST', body: { count, kind } })).keys;
+          toast(`Đã tạo ${count} mã ${KEY_KIND[kind]} 🔑`);
+          renderKeys();
+        } catch (e) { toast(e.message, 'error'); }
+      };
+      // the keys listed (the filter applies), as a CSV file Excel opens with its accents (UTF-8 BOM)
+      $('#keyCsv').onclick = () => {
+        const cell = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+        const lines = [['ma', 'loai', 'trang_thai', 'so_lan_dung', 'doi_da_dung', 'ten_dang_nhap', 'dung_luc', 'tao_luc'].join(',')]
+          .concat(shown.map(x => [x.key, KEY_KIND[x.kind], x.kind === 'once' ? (x.usedBy ? 'đã dùng' : 'chưa dùng') : '', x.uses, x.usedBy ? x.usedBy.teamName : '', x.usedBy ? x.usedBy.username : '', x.usedAt ? fmtDate(x.usedAt) : '', fmtDate(x.createdAt)].map(cell).join(',')));
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
+        const slug = t.name.normalize('NFD').replace(/\p{M}/gu, '').replace(/[đĐ]/g, 'd').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '') || t.id;
+        a.download = `ma-quyet-dau-${slug}${k.filter ? '-' + k.filter : ''}.csv`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      };
+      $$('[data-keycopy]', panel).forEach(b => b.onclick = () => navigator.clipboard.writeText(b.dataset.keycopy).then(() => toast('Đã chép mã 📋'), () => toast('Không chép được', 'error')));
+      $$('[data-keydel]', panel).forEach(b => b.onclick = async () => {
+        if (!confirm(`Xóa mã ${b.dataset.keydel}? Mã này sẽ không dùng được nữa.`)) return;
+        try {
+          k.keys = (await api(`/api/admin/tournaments/${encodeURIComponent(t.id)}/keys/${encodeURIComponent(b.dataset.keydel)}`, { method: 'DELETE' })).keys;
+          renderKeys();
+        } catch (e) { toast(e.message, 'error'); }
+      });
     }
 
     // ---------- rejudge (daily league) ----------

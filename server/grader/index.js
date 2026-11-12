@@ -259,7 +259,9 @@ const waitingTopUp = new Set(); // submissions whose running practice is checked
 function topUpPractice(t, s, resumeCutOff = false) {
   const bots = new Set(practice.botsFor(t).map(b => b.id));
   const stale = s.practice && (s.practice.results.length !== bots.size || s.practice.results.some(r => !bots.has(r.bot))
-    || (s.practice.rules ?? null) !== practice.rulesOf(t));
+    || (s.practice.rules ?? null) !== practice.rulesOf(t)
+    // a showdown is set, but results played before showdown scores were recorded can't count in it
+    || (!!t.showdownAt && s.practice.results.some(r => r.status === 'done' && r.sd === undefined)));
   if (!stale && !(resumeCutOff && (!s.practice || s.practice.status !== 'done'))) return;
   // a run still going against the old set finishes first, then only this submission is checked again
   const run = practice.runningFor(s);

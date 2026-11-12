@@ -121,7 +121,7 @@ async function playGame(bots, map) {
     moves.push(move || null);
     verdicts.push(error ? ['invalid', String(raw).slice(0, 30), error] : bot.cpu);
   }
-  return { moves, verdicts, winner: g.winner, reason: g.reason, end, issues };
+  return { moves, verdicts, winner: g.winner, reason: g.reason, end, issues, left: { white: R.count(g.board, 'white'), black: R.count(g.board, 'black') } };
 }
 
 // games: how many games; aWhite: whether A takes white (moves first) in the first one;
@@ -149,7 +149,7 @@ async function runMatch(subA, subB, ensureBuilt, { games = GAMES, aWhite = true,
     scoreA += winner === 'A' ? 3 : winner === 'draw' ? 1 : 0;
     scoreB += winner === 'B' ? 3 : winner === 'draw' ? 1 : 0;
     for (const who of ['A', 'B']) if (!issues[who] && game.issues[sideOf[who]]) issues[who] = `Ván ${k + 1}, ${game.issues[sideOf[who]].charAt(0).toLowerCase()}${game.issues[sideOf[who]].slice(1)}`;
-    record.push({ white, ...(map ? mapFields(map) : {}), moves: game.moves, verdicts: game.verdicts, winner, reason: game.reason, ...(game.end ? { end: game.end } : {}) });
+    record.push({ white, ...(map ? mapFields(map) : {}), moves: game.moves, verdicts: game.verdicts, winner, reason: game.reason, left: { A: game.left[sideOf.A], B: game.left[sideOf.B] }, ...(game.end ? { end: game.end } : {}) });
   }
   return {
     games: record, scoreA, scoreB,
@@ -197,4 +197,10 @@ function describe(g) {
   return rows.join('\n');
 }
 
-module.exports = { GAME_CPU_MS, mapOf, runMatch, smokeTest: (sub, map) => smokeTest(sub, describe, map), GAMES, MAX_SCORE, MAX_TURNS: R.MAX_TURNS };
+// How many pieces each side starts with on this map (null = the standard game).
+const startPieces = map => {
+  const g = newGame(map);
+  return Math.max(R.count(g.board, 'white'), R.count(g.board, 'black'));
+};
+
+module.exports = { GAME_CPU_MS, mapOf, startPieces, runMatch, smokeTest: (sub, map) => smokeTest(sub, describe, map), GAMES, MAX_SCORE, MAX_TURNS: R.MAX_TURNS };

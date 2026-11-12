@@ -56,6 +56,7 @@
         </div>
         <textarea class="code" id="code" spellcheck="false"></textarea>
         <div class="row" style="margin-top:14px">
+          <label id="keyRow" class="hidden" style="margin:0" title="Đang quyết đấu: mỗi lần nộp bài cần một mã do trọng tài phát"><span>🔑</span><input id="showdownKey" maxlength="20" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="12 ký tự, phân biệt hoa thường" style="width:200px;font-family:monospace;letter-spacing:1px"></label>
           <button class="btn red" id="submit" style="font-size:26px">Nộp bot 🚀</button>
           <span id="closed" class="hidden" style="color:var(--red)">Đã hết hạn nộp bài.</span>
         </div>
@@ -338,6 +339,7 @@ public class Bot {
       $('#pmine').innerHTML = `
         <div class="team">${avatarSvg(mine.avatar, 40)}<span>${esc(mine.teamName)}</span></div>
         <div class="pts">${mine.total === null ? '–' : mine.total}<small class="muted" style="font-size:18px">/${d.maxTotal}</small> ${statusText(mine)}</div>
+        ${d.showdown ? `<div class="tag" title="mỗi ván đấu tập: thắng × 550 + số quân còn lại × 25">⚔️ quyết đấu đến ${esc(fmtDate(new Date(d.showdownEnd).toISOString()))}</div>` : ''}
         <div class="pbar" style="flex:1;min-width:120px"><div style="width:${pct}%"></div></div>
         <a class="btn yellow" href="/tournament/${encodeURIComponent(tid)}/live">📊 Xem bảng xếp hạng</a>`;
     }
@@ -364,6 +366,12 @@ public class Bot {
       $('#submit').disabled = notYet || closed || frozen || outOfTries || ME.role === 'judge' || wait > 0;
       $('#submit').textContent = notYet ? '🔒 Chưa đến giờ mở nhận bài' : outOfTries ? `🔒 Hết lượt nộp cho ${botName(target)}` : frozen ? '🔒 Đang thi đấu, mở lại khi công bố kết quả' : wait > 0 ? `⏳ Đợi ${Math.ceil(wait / 1000)}s…` : submitLabel();
       $('#closed').classList.toggle('hidden', !closed);
+      $('#keyRow').classList.toggle('hidden', !inShowdownNow());
+    }
+    // the showdown ("quyết đấu"): 5 hours from tournament.daily.showdownAt, when submitting needs a key
+    function inShowdownNow() {
+      const at = tournament && tournament.daily && tournament.daily.showdownAt;
+      return !!at && serverNow() >= Date.parse(at) && serverNow() < Date.parse(at) + 5 * 3600e3;
     }
     function submitLabel() {
       return tournament && tournament.mode === 'campaign' && target ? `Nộp bot đấu với ${botName(target)} 🚀` : 'Nộp bot 🚀';
@@ -398,11 +406,14 @@ public class Bot {
         const already = det && det.userId === ME.id && (det.bots.find(b => b.bot === target) || {}).beaten;
         if (already && !confirm(`Bạn đã hạ ${botName(target)} rồi. Vẫn nộp bài đấu với bot này?`)) return;
       }
+      const key = inShowdownNow() ? $('#showdownKey').value.trim() : '';
+      if (inShowdownNow() && !key) { $('#showdownKey').focus(); return toast('Đang quyết đấu: hãy nhập mã quyết đấu 🔑', 'error'); }
       $('#submit').disabled = true;
       try {
-        await api(`/api/tournaments/${encodeURIComponent(tid)}/submissions`, { method: 'POST', body: { language: lang, code: $('#code').value, ...(campaignMode ? { target } : {}) } });
+        await api(`/api/tournaments/${encodeURIComponent(tid)}/submissions`, { method: 'POST', body: { language: lang, code: $('#code').value, ...(campaignMode ? { target } : {}), ...(key ? { key } : {}) } });
         cooldownUntil = Date.now() + COOLDOWN;
         toast('Đã nhận bot! Đang biên dịch… 🔧');
+        if (key) $('#showdownKey').value = ''; // (a one-time key is used up)
         await load();
         refreshPractice();
       } catch (e) {

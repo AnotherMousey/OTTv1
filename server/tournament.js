@@ -74,6 +74,17 @@ class TournamentManager {
     for (const d of t.days || []) {
       if (d.status === 'done' && now >= Date.parse(d.publishAt)) this.publishDay(t, d);
     }
+    // the showdown ("quyết đấu") opens or closes: the evaluations switch formula, so every page updates
+    const showdown = grader.practice.inShowdown(t, now);
+    if ((this.showdowns || (this.showdowns = new Map())).get(t.id) !== showdown) {
+      const known = this.showdowns.has(t.id);
+      this.showdowns.set(t.id, showdown);
+      if (known) {
+        this.io.to('users').emit('tournaments:changed');
+        this.io.to('users').emit('practice:updated', { tournamentId: t.id });
+        this.broadcast(t);
+      }
+    }
     if (this.active.has(t.id)) return;
     const running = (t.days || []).find(d => d.status === 'running'); // cut off by a restart
     const [slot] = running ? [] : daily.dueSlots(t, now);

@@ -21,7 +21,7 @@
 const db = require('./db');
 const { avatarOf } = require('./auth');
 const { canPlay } = require('./access');
-const { botsFor } = require('./grader/practice');
+const { botsFor, inShowdown, showdownMatchMax, evalOf } = require('./grader/practice');
 const { MAX_SCORE } = require('./grader/board');
 const { TURNS } = require('./grader/match');
 
@@ -34,7 +34,8 @@ const pairingOf = t => (t.pairing === 'swiss' ? 'swiss' : 'rr');
 const swissRounds = n => (n < 2 ? 0 : Math.ceil(Math.log2(n)));
 const gameOf = t => (t.game === 'board' ? 'board' : 'rps');
 // The most a bot can score in practice: every match against every sparring bot won outright.
-const evalMax = t => botsFor(t).length * (gameOf(t) === 'board' ? MAX_SCORE : TURNS * 3);
+// (during the showdown: every game won with no piece lost)
+const evalMax = t => botsFor(t).length * (inShowdown(t) ? showdownMatchMax(t) : gameOf(t) === 'board' ? MAX_SCORE : TURNS * 3);
 const validTime = v => typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
 // A cycle the judge may pick, in hours: 15 minutes to 30 days.
 const MIN_CYCLE_HOURS = 0.25, MAX_CYCLE_HOURS = 30 * 24;
@@ -214,7 +215,7 @@ function standings(t) {
     const p = r && (subs.get(e.submissionId) || {}).practice;
     if (!r) continue;
     r.evalStatus = p ? p.status : 'queued';
-    if (p && (p.status === 'done' || p.status === 'stopped')) r.eval = p.total;
+    if (p && (p.status === 'done' || p.status === 'stopped')) r.eval = evalOf(p, t);
   }
   const list = [...rows.values()].sort((x, y) =>
     y.points - x.points || (y.eval ?? -1) - (x.eval ?? -1) || y.w - x.w || y.score - x.score || x.teamName.localeCompare(y.teamName));
@@ -229,7 +230,7 @@ function board(t, now = Date.now()) {
   return {
     id: t.id, name: t.name, mode: 'brawl', format: 'daily', status: t.status, error: t.error || null,
     deadline: t.deadline, startsAt: t.startsAt || null, dailyTime: t.dailyTime || null, cycleHours: cycleHoursOf(t), nextAt: t.status === 'open' ? nextSlot(t, now) : null,
-    publishDelayMs: PUBLISH_DELAY_MS, pairing: pairingOf(t), rejudgeQueue: (t.rejudgeQueue || []).map(q => q.day),
+    publishDelayMs: PUBLISH_DELAY_MS, pairing: pairingOf(t), showdownAt: t.showdownAt || null, showdown: inShowdown(t), rejudgeQueue: (t.rejudgeQueue || []).map(q => q.day),
     days: (t.days || []).map(d => {
       const fights = dayTotal(d);
       return { number: d.number, at: d.slot || d.startedAt, status: d.status, live: !!d.live, publishAt: d.publishAt, publishedAt: d.publishedAt || null, teams: d.entries.length,

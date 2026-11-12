@@ -6,7 +6,7 @@ const os = require('os');
 const db = require('../db');
 const { HOUSE_BOTS, houseBots, defaultRunnable } = require('./house');
 const { runMatch } = require('./match');
-const { mapOf } = require('./board');
+const { mapOf, startPieces, GAMES } = require('./board');
 
 // practice matches at the same time, across all submissions (default: one per CPU)
 const PARALLEL = +process.env.PRACTICE_PARALLEL || os.cpus().length;
@@ -32,6 +32,28 @@ async function withSlot(fn) {
     if (next) next();
   }
 }
+
+// Showdown ("quyết đấu"): a 5-hour window the judge sets (t.showdownAt) in a brawl. While it lasts,
+// a team's evaluation counts, for every game against a sparring bot, win * 550 + pieces * 25
+// (win = 1 if the bot won the game, pieces = how many of its pieces were left on the board; RPS has
+// no pieces: only the win of each match counts). Every practice match records both scores, so the
+// evaluation switches the moment the window opens or closes.
+const SHOWDOWN_MS = 5 * 3600 * 1000;
+const SHOWDOWN = { win: 550, piece: 25 };
+const showdownEnd = t => (t && t.showdownAt ? Date.parse(t.showdownAt) + SHOWDOWN_MS : null);
+const inShowdown = (t, now = Date.now()) => !!(t && t.showdownAt) && now >= Date.parse(t.showdownAt) && now < showdownEnd(t);
+// A match's showdown score for each side: { A, B }.
+function showdownScore(r) {
+  if (!r.games) return { A: r.winner === 'A' ? SHOWDOWN.win : 0, B: r.winner === 'B' ? SHOWDOWN.win : 0 };
+  const side = who => r.games.reduce((s, g) => s + (g.winner === who ? SHOWDOWN.win : 0) + ((g.left || {})[who] || 0) * SHOWDOWN.piece, 0);
+  return { A: side('A'), B: side('B') };
+}
+// The most one match against a sparring bot can be worth in the showdown.
+const showdownMatchMax = t => (gameOf(t) === 'board' ? GAMES * (SHOWDOWN.win + startPieces(mapOf(t)) * SHOWDOWN.piece) : SHOWDOWN.win);
+// A practice run's evaluation right now: the showdown total while the showdown lasts.
+const evalOf = (p, t, now = Date.now()) => (inShowdown(t, now) ? p.sdTotal || 0 : p.total);
+// One result's score (and the bot's) as it counts right now.
+const scoreOf = (r, t, now = Date.now()) => (inShowdown(t, now) ? { score: r.sd, botScore: r.sdBot } : { score: r.score, botScore: r.botScore });
 
 const tournamentOf = sub => db.data.tournaments.find(x => x.id === sub.tournamentId);
 const isCampaign = sub => (tournamentOf(sub) || {}).mode === 'campaign';
@@ -133,17 +155,18 @@ function evaluate(sub, ensureBuilt, { topUp = false } = {}) {
   const opponents = isCampaign(sub) && sub.target ? all.filter(h => h.id === sub.target) : all;
   const play = async (house, opts) => {
     const r = await runMatch(sub, house.custom, ensureBuilt, { ...opts, map: mapOf(tournamentOf(sub)) });
-    return { ...r, issue: r.issues.A };
+    return { ...r, issue: r.issues.A, sd: showdownScore(r) };
   };
   const old = sub.practice;
   const kept = topUp && !isCampaign(sub) && old && old.status === 'done' && (old.rules ?? null) === rulesOf(tournamentOf(sub))
-    ? new Map(old.results.filter(r => r.status === 'done').map(r => [r.bot, r]))
+    ? new Map(old.results.filter(r => r.status === 'done' && r.sd !== undefined).map(r => [r.bot, r])) // (no sd: played before the showdown existed)
     : new Map();
   const results = opponents.map(h => (kept.has(h.id) ? { ...kept.get(h.id), name: h.name } : { bot: h.id, name: h.name, status: 'queued' }));
   const total = () => results.reduce((s, x) => s + (x.score || 0), 0);
+  const sdTotal = () => results.reduce((s, x) => s + (x.sd || 0), 0);
   const toPlay = opponents.map((h, i) => [h, i]).filter(([, i]) => results[i].status === 'queued');
   if (kept.size && !toPlay.length) { // only a bot was removed: nothing to play
-    Object.assign(old, { results, total: total() });
+    Object.assign(old, { results, total: total(), sdTotal: sdTotal() });
     db.save();
     listener(sub);
     return Promise.resolve();
@@ -152,6 +175,7 @@ function evaluate(sub, ensureBuilt, { topUp = false } = {}) {
     status: 'running',
     rules: rulesOf(tournamentOf(sub)),
     total: total(),
+    sdTotal: sdTotal(),
     startedAt: kept.size ? old.startedAt : new Date().toISOString(),
     results,
   };
@@ -164,7 +188,7 @@ function evaluate(sub, ensureBuilt, { topUp = false } = {}) {
     slot.status = 'playing';
     if (!isCampaign(sub)) {
       const r = await play(house);
-      Object.assign(slot, { status: 'done', score: r.scoreA, botScore: r.scoreB, winner: r.winner, issue: r.issue, replay: await saveReplay(sub, house, r) });
+      Object.assign(slot, { status: 'done', score: r.scoreA, botScore: r.scoreB, sd: r.sd.A, sdBot: r.sd.B, winner: r.winner, issue: r.issue, replay: await saveReplay(sub, house, r) });
     } else {
       const games = [];
       slot.games = games;
@@ -187,6 +211,7 @@ function evaluate(sub, ensureBuilt, { topUp = false } = {}) {
       });
     }
     sub.practice.total = total();
+    sub.practice.sdTotal = sdTotal();
     db.save();
     listener(sub);
   })))
@@ -217,4 +242,4 @@ function waitFor(tournamentId) {
   return Promise.all([...running.values()].filter(r => r.tournamentId === tournamentId).map(r => r.promise));
 }
 
-module.exports = { PARALLEL, rulesOf, evaluate, runningFor, waitFor, replayKey, replayName, onUpdate, botsFor, liveOf, gameOf, HOUSE_BOTS, houseBots, CAMPAIGN_GAMES };
+module.exports = { SHOWDOWN_MS, SHOWDOWN, inShowdown, showdownEnd, showdownMatchMax, evalOf, scoreOf, PARALLEL, rulesOf, evaluate, runningFor, waitFor, replayKey, replayName, onUpdate, botsFor, liveOf, gameOf, HOUSE_BOTS, houseBots, CAMPAIGN_GAMES };

@@ -74,7 +74,18 @@ class Bot {
     p.stderr.on('data', chunk => { this.stderr = (this.stderr + chunk).slice(-3000); });
     p.stdin.on('error', () => {});
     p.on('error', e => this._die('không khởi động được: ' + e.message));
-    p.on('exit', code => this._die(`bị lỗi và dừng (mã thoát ${code})`));
+    p.on('exit', code => {
+      // 125 from `docker run` = Docker itself could not start the container (missing image, bad
+      // mount, daemon error...): not the bot's fault. Wait for stderr to drain, then show Docker's message.
+      if (SANDBOX && code === 125) {
+        p.once('close', () => {
+          const msg = this.stderr.split('\n').map(l => l.trim()).filter(Boolean).filter(l => /error|docker:/i.test(l)).pop() || '';
+          this._die(`không chạy được: lỗi Docker trên máy chủ (mã 125)${msg ? ': ' + msg.slice(0, 200) : ''}`);
+        });
+        return;
+      }
+      this._die(`bị lỗi và dừng (mã thoát ${code})`);
+    });
   }
 
   _onStdout(chunk) {
