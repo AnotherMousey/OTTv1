@@ -135,7 +135,7 @@
         renderDailyBoard(lastBoard);
       });
       const valueOf = row => (lbSort.key === 'total' ? row.points : lbSort.key === 'eval' ? (row.eval ?? -1) : ((row.byDay || {})[lbSort.key] ?? -1));
-      const rows = b.rows.slice().sort((x, y) => (lbSort.desc ? valueOf(y) - valueOf(x) : valueOf(x) - valueOf(y)) || x.rank - y.rank);
+      const rows = b.rows.slice().sort((x, y) => (!!x.banned - !!y.banned) || (lbSort.desc ? valueOf(y) - valueOf(x) : valueOf(x) - valueOf(y)) || (x.rank ?? Infinity) - (y.rank ?? Infinity));
       const pending = b.days.find(d => d.status !== 'published'); // playing, or waiting to be published
       clearInterval(dailyTimer);
       const waiting = (b.rejudgeQueue || []).length ? ` · ⏳ chờ chấm lại: ${b.rejudgeQueue.map(n => `vòng ${n}`).join(', ')}` : '';
@@ -169,11 +169,13 @@
       const tbody = $('#rows');
       const before = rowPositions(tbody);
       tbody.innerHTML = rows.map(row => {
-        const top = row.played > 0 && row.rank <= 3; // medals once a team has played
-        const cls = [b.champion && b.champion.userId === row.userId ? 'champion' : '', ME && row.userId === ME.id ? 'me' : '', prevPoints[row.userId] !== undefined && prevPoints[row.userId] !== row.points ? 'flash' : ''].join(' ');
-        return `<tr class="${cls}" data-id="${row.userId}">
-          <td class="rank">${b.champion && b.champion.userId === row.userId ? '🏆' : top ? ['🥇', '🥈', '🥉'][row.rank - 1] : row.rank}</td>
-          <td><div class="team">${avatarSvg(row.avatar, 40)}<span class="n">${esc(row.teamName)}</span>${row.username ? `<small class="uname">@${esc(row.username)}</small>` : ''}${ME && row.userId === ME.id ? '<span class="muted" style="font-size:16px">← bạn!</span>' : ''}</div></td>
+        const top = !row.banned && row.played > 0 && row.rank <= 3; // medals once a team has played
+        const cls = [b.champion && b.champion.userId === row.userId ? 'champion' : '', ME && row.userId === ME.id ? 'me' : '', row.banned ? 'banned' : '', prevPoints[row.userId] !== undefined && prevPoints[row.userId] !== row.points ? 'flash' : ''].join(' ');
+        // the judge bans / unbans a team by clicking it
+        const judge = ME && ME.role === 'judge';
+        return `<tr class="${cls}" data-id="${row.userId}" ${row.banned ? 'title="đội này đã bị trọng tài cấm thi đấu"' : ''}>
+          <td class="rank">${row.banned ? '🚫' : b.champion && b.champion.userId === row.userId ? '🏆' : top ? ['🥇', '🥈', '🥉'][row.rank - 1] : row.rank}</td>
+          <td ${judge ? `class="bannable" data-ban="${row.userId}" title="${row.banned ? 'bấm để bỏ cấm đội này' : 'bấm để cấm đội này'}"` : ''}><div class="team">${avatarSvg(row.avatar, 40)}<span class="n">${esc(row.teamName)}</span>${row.username ? `<small class="uname">@${esc(row.username)}</small>` : ''}${ME && row.userId === ME.id ? '<span class="muted" style="font-size:16px">← bạn!</span>' : ''}</div></td>
           ${showEval ? `<td class="evalcell">${row.eval !== null ? `<span class="pts" style="font-size:26px">${row.eval}${row.evalMax != null ? `<small class="muted" style="font-size:16px">/${row.evalMax}</small>` : ''}</span>`
             : `<span class="muted" style="font-size:18px">${{ queued: '⏳ đang chờ đấu tập', running: '🥊 đang đấu tập…', error: 'chấm thất bại' }[row.evalStatus] || 'chưa đánh giá'}</span>`}</td>` : ''}
           <td class="days">${dayCells(d => {
@@ -183,6 +185,18 @@
           <td class="pts" title="${row.w} thắng · ${row.d} hòa · ${row.l} thua${row.lastDay !== null ? ` · vòng gần nhất +${row.lastDay}` : ''}">${row.points}</td>
         </tr>`;
       }).join('') || `<tr><td colspan="${showEval ? 5 : 4}" class="center muted">chưa có đội nào có bot chạy được</td></tr>`;
+      $$('[data-ban]', tbody).forEach(td => td.onclick = async () => {
+        const row = b.rows.find(r => r.userId === td.dataset.ban);
+        if (!row) return;
+        const ban = !row.banned;
+        if (!confirm(ban
+          ? `Cấm đội "${row.teamName}" thi đấu ở giải này?\n\nĐội bị cấm không nộp bài được, không được xếp cặp ở các vòng sau và không thể vô địch; đội vẫn hiện ở cuối bảng xếp hạng (bị gạch ngang), giữ nguyên điểm đã có. Có thể bỏ cấm sau.`
+          : `Bỏ cấm đội "${row.teamName}"? Đội được nộp bài và thi đấu lại từ vòng sau.`)) return;
+        try {
+          await api(`/api/admin/tournaments/${encodeURIComponent(tid)}/ban`, { method: 'POST', body: { userId: row.userId, banned: ban } });
+          toast(ban ? `Đã cấm đội ${row.teamName} 🚫` : `Đã bỏ cấm đội ${row.teamName}`);
+        } catch (e) { toast(e.message, 'error'); }
+      });
       syncDayScroll(published.length);
       b.rows.forEach(row => { prevPoints[row.userId] = row.points; });
       slideRows(tbody, before);

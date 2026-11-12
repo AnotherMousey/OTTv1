@@ -6,5 +6,8 @@ const isJudge = u => !!u && u.role === 'judge';
 const isInviteOnly = t => t.access === 'invite';
 const canPlay = (t, userId) => !isInviteOnly(t) || (t.members || []).includes(userId);
 const canSee = (t, user) => isJudge(user) || (!!user && !t.hidden && canPlay(t, user.id));
+// t.banned: teams (user ids) the judge banned from a brawl. They still see it and stay on its
+// leaderboard (struck through, at the bottom), but can't submit, play new rounds or win it.
+const isBanned = (t, userId) => (t.banned || []).includes(userId);
 
-module.exports = { isJudge, isInviteOnly, canPlay, canSee };
+module.exports = { isJudge, isInviteOnly, canPlay, canSee, isBanned };

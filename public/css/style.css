@@ -336,6 +336,13 @@ pre.msg { white-space: pre; background: #f4f2ea; border-radius: 8px; padding: 10
 .board tr.eliminated td { background: #f0efea; color: #999; }
 .board tr.eliminated .team span.n { text-decoration: line-through wavy #c66; }
 .board tr.champion td { background: #fff1a8; }
+/* a team the judge banned: greyed, with one line through the middle of the whole row */
+.board tr.banned td { position: relative; background: #f0efea; color: #999; }
+.board tr.banned td::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; border-top: 3px solid var(--red); pointer-events: none; }
+.board tr.banned td:first-child::after { left: 10px; }
+.board tr.banned td:last-child::after { right: 10px; }
+.board td.bannable { cursor: pointer; }
+.board td.bannable:hover .team .n { text-decoration: underline dotted; }
 .board tr.danger td { background: #ffe6e3; }
 .board tr.flash td { animation: flash .8s; }
 @keyframes flash { 30% { background: var(--yellow); } }

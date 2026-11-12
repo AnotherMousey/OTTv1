@@ -35,8 +35,8 @@ async function withSlot(fn) {
 
 // Showdown ("quyết đấu"): a window the judge sets in a brawl: from t.showdownAt, t.showdownMinutes
 // long. Its rounds are ordinary rounds between the teams (see daily.js), one every
-// t.showdownEveryMinutes from its start, in place of the regular schedule. No bot plays the sparring
-// bots meanwhile: practice of bots submitted during the window waits until it ends.
+// t.showdownEveryMinutes from its start, in place of the regular schedule. (Practice against the
+// sparring bots goes on as usual; it just doesn't count in the showdown.)
 const DEFAULT_SHOWDOWN_MINUTES = 300, DEFAULT_SHOWDOWN_EVERY = 60;
 // limits the judge may pick: length 15 minutes to 3 days, interval 5 minutes to 1 day
 const SHOWDOWN_LIMITS = { minutes: [15, 72 * 60], every: [5, 24 * 60] };
@@ -139,8 +139,6 @@ const running = new Map();
 // Otherwise (and without topUp) every bot is played from scratch.
 function evaluate(sub, ensureBuilt, { topUp = false } = {}) {
   if (running.has(sub.id)) return running.get(sub.id).promise;
-  // brawl showdown: no fights against the sparring bots until it ends (see tournament.js)
-  if (!isCampaign(sub) && inShowdown(tournamentOf(sub))) return Promise.resolve();
   supersede(sub);
   // Campaign submissions aimed at one sparring bot only fight that bot.
   const all = botsFor(tournamentOf(sub));

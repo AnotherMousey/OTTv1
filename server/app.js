@@ -52,7 +52,7 @@ const manager = new TournamentManager(io);
 const findUser = id => db.data.users.find(u => u.id === id);
 const findTournament = id => db.data.tournaments.find(t => t.id === id);
 const currentUser = req => (req.session.userId ? findUser(req.session.userId) : null);
-const { isJudge, isInviteOnly, canPlay, canSee } = require('./access');
+const { isJudge, isInviteOnly, canPlay, canSee, isBanned } = require('./access');
 // The tournament in the URL, if this user may see it (invite-only ones are hidden from outsiders).
 const visibleTournament = req => {
   const t = findTournament(req.params.id);
@@ -263,6 +263,7 @@ app.post('/api/tournaments/:id/submissions', apiAuth, wrap(async (req, res) => {
   if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
   if (isJudge(req.user)) return fail(res, 403, 'Trọng tài chỉ chấm, không thi đấu. (Hãy đăng nhập bằng tài khoản người chơi để nộp bài.)');
   if (!canPlay(t, req.user.id)) return fail(res, 404, 'Không tìm thấy giải đấu');
+  if (isBanned(t, req.user.id)) return fail(res, 403, 'Đội của bạn đã bị trọng tài cấm thi đấu ở giải này 🚫');
   if (t.status !== 'open' || Date.parse(t.deadline) <= Date.now()) return fail(res, 400, 'Muộn rồi! Giải này đã hết hạn nộp bài.');
   if (t.startsAt && Date.parse(t.startsAt) > Date.now()) return fail(res, 400, 'Giải chưa bắt đầu, hãy đợi đến giờ mở cửa nhé.');
   const frozen = daily.isDaily(t) && daily.frozen(t);
@@ -329,9 +330,8 @@ app.get('/api/tournaments/:id/practice', apiAuth, (req, res) => {
     return res.json({ mode: 'campaign', board: campaign.board(t), details: campaign.details(t, want), serverNow: Date.now() });
   }
   const userIds = [...new Set(db.data.submissions.filter(s => s.tournamentId === t.id && canPlay(t, s.userId)).map(s => s.userId))];
-  // showdown ("quyết đấu"): a team's score is the points (3 / 1 / 0) it took in the showdown's rounds
-  const showdown = grader.practice.inShowdown(t);
-  const sdPoints = showdown ? new Map(daily.standings(t).map(r => [r.userId, r.eval || 0])) : null;
+  // (the practice score against the sparring bots, showdown or not: it is only the leaderboard that
+  // hides it during a showdown)
   const rows = userIds.map(uid => {
     const u = findUser(uid);
     if (!u) return null;
@@ -346,7 +346,6 @@ app.get('/api/tournaments/:id/practice', apiAuth, (req, res) => {
       status: !s ? 'no-bot' : p ? p.status : 'queued',
       total: p ? p.total : null,
       played: p ? p.results.filter(r => r.status === 'done').length : 0,
-      ...(showdown ? { status: 'done', total: sdPoints.get(uid) || 0 } : {}),
     };
   }).filter(Boolean);
   rows.sort((a, b) => (b.total ?? -1) - (a.total ?? -1) || a.teamName.localeCompare(b.teamName));
@@ -367,7 +366,7 @@ app.get('/api/tournaments/:id/practice', apiAuth, (req, res) => {
         language: s.language,
         submittedAt: s.createdAt,
         status: s.practice ? s.practice.status : 'queued',
-        total: showdown ? sdPoints.get(want) || 0 : s.practice ? s.practice.total : 0,
+        total: s.practice ? s.practice.total : 0,
         results: (s.practice ? s.practice.results : house.map(h => ({ bot: h.id, name: h.name, status: 'queued' })))
           // names come from the current bot list, so renamed bots show their new name on old results
           .map(({ bot, name, status, score, botScore, winner, issue }) => ({ bot, name: (house.find(h => h.id === bot) || { name }).name, desc: (house.find(h => h.id === bot) || {}).desc || '', status, score, botScore, winner, issue,
@@ -377,7 +376,7 @@ app.get('/api/tournaments/:id/practice', apiAuth, (req, res) => {
   } else if (req.query.user) {
     return fail(res, 403, 'Không được xem điểm của đội khác 🤫');
   }
-  res.json({ rows, details, turns: TURNS, ...daily.showdownInfo(t), showdownEnd: grader.practice.showdownEnd(t), maxScore: maxMatchScore(t), houseCount: house.length, maxTotal: showdown ? null : house.length * maxMatchScore(t), serverNow: Date.now() });
+  res.json({ rows, details, turns: TURNS, ...daily.showdownInfo(t), showdownEnd: grader.practice.showdownEnd(t), maxScore: maxMatchScore(t), houseCount: house.length, maxTotal: house.length * maxMatchScore(t), serverNow: Date.now() });
 });
 
 // Replay of a practice match: your own (the judge: anyone's) against one sparring bot.
@@ -636,6 +635,31 @@ app.patch('/api/admin/tournaments/:id', apiAuth, apiJudge, (req, res) => {
   db.save();
   io.to('users').emit('tournaments:changed');
   res.json({ tournament: publicTournament(t, req.user) });
+});
+// Brawl: ban a team (body { userId, banned: true }) or lift the ban (banned: false). A banned team
+// can't submit, isn't paired in new rounds, can't be champion, and is struck through at the bottom
+// of the leaderboard; the points it already has stay on it.
+app.post('/api/admin/tournaments/:id/ban', apiAuth, apiJudge, (req, res) => {
+  const t = findTournament(req.params.id);
+  if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
+  if (!daily.isDaily(t)) return fail(res, 400, 'Chỉ cấm được đội trong giải hỗn chiến');
+  const { userId, banned } = req.body || {};
+  if (typeof banned !== 'boolean') return fail(res, 400, 'banned phải là true hoặc false');
+  const u = findUser(String(userId || ''));
+  if (!u) return fail(res, 404, 'Không tìm thấy đội này');
+  const list = new Set(t.banned || []);
+  if (banned) list.add(u.id); else list.delete(u.id);
+  if (list.size) t.banned = [...list]; else delete t.banned;
+  // a finished league can't be won by a banned team: the best team not banned is champion
+  if (t.status === 'finished') {
+    const top = daily.standings(t).find(r => !r.banned);
+    t.championId = top && top.played > 0 ? top.userId : null;
+  }
+  db.save();
+  console.log(`[daily] "${t.name}": ${u.teamName} ${banned ? 'banned' : 'unbanned'} by the judge`);
+  manager.broadcast(t);
+  io.to('users').emit('tournaments:changed');
+  res.json({ banned: !!(t.banned || []).includes(u.id) });
 });
 // Daily league: play a day right now (on top of the scheduled ones).
 app.post('/api/admin/tournaments/:id/play-now', apiAuth, apiJudge, (req, res) => {

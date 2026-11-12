@@ -20,7 +20,7 @@
 // end (no hidden period, no frozen submissions), and it is published as soon as it is done.
 const db = require('./db');
 const { avatarOf } = require('./auth');
-const { canPlay } = require('./access');
+const { canPlay, isBanned } = require('./access');
 const { botsFor, inShowdown, showdownEnd, showdownMinutesOf, showdownEveryOf } = require('./grader/practice');
 const { MAX_SCORE } = require('./grader/board');
 const { TURNS } = require('./grader/match');
@@ -103,11 +103,12 @@ function publishDelay(t, now) {
   return last ? PUBLISH_DELAY_MS : 0;
 }
 
-// Every team's newest working bot submitted before `at`.
-function entriesAt(t, at) {
+// Every team's newest working bot submitted before `at` (banned teams only with withBanned).
+function entriesAt(t, at, { withBanned = false } = {}) {
   const latest = new Map();
   for (const s of db.data.submissions) {
     if (s.tournamentId !== t.id || s.status !== 'ok' || !canPlay(t, s.userId) || Date.parse(s.createdAt) > at) continue;
+    if (!withBanned && isBanned(t, s.userId)) continue;
     const prev = latest.get(s.userId);
     if (!prev || prev.createdAt < s.createdAt) latest.set(s.userId, s);
   }
@@ -231,7 +232,7 @@ function standings(t) {
       if (day === last) { a.lastDay += pa; b.lastDay += pb; }
     }
   }
-  const newest = entriesAt(t, Infinity);
+  const newest = entriesAt(t, Infinity, { withBanned: true }); // (banned teams stay listed, struck through)
   if (t.status !== 'finished') {
     for (const e of newest) {
       const r = row(e.userId, e.teamName);
@@ -255,9 +256,11 @@ function standings(t) {
     }
   }
   for (const r of rows.values()) delete r.sdPoints;
-  const list = [...rows.values()].sort((x, y) =>
+  // banned teams: at the bottom, without a rank
+  for (const r of rows.values()) r.banned = isBanned(t, r.userId);
+  const list = [...rows.values()].sort((x, y) => x.banned - y.banned ||
     y.points - x.points || (y.eval ?? -1) - (x.eval ?? -1) || y.w - x.w || y.score - x.score || x.teamName.localeCompare(y.teamName));
-  list.forEach((r, i) => { r.rank = i + 1; });
+  list.forEach((r, i) => { r.rank = r.banned ? null : i + 1; });
   return list;
 }
 

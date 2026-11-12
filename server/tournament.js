@@ -84,13 +84,12 @@ class TournamentManager {
       if (d.status === 'done' && now >= Date.parse(d.publishAt)) this.publishDay(t, d);
     }
     // the showdown ("quyết đấu") opens or closes: the evaluation switches (to the points of its rounds
-    // and back), so every page updates. Once it closes, bots submitted during it play the sparring bots.
+    // and back), so every page updates.
     const showdown = grader.practice.inShowdown(t, now);
     if ((this.showdowns || (this.showdowns = new Map())).get(t.id) !== showdown) {
       const known = this.showdowns.has(t.id);
       this.showdowns.set(t.id, showdown);
       if (known) {
-        if (!showdown) grader.replayStalePractice(t, true);
         this.io.to('users').emit('tournaments:changed');
         this.io.to('users').emit('practice:updated', { tournamentId: t.id });
         this.broadcast(t);
@@ -226,7 +225,7 @@ class TournamentManager {
 
   finishDaily(t) {
     const [top] = daily.standings(t);
-    t.championId = top && top.played > 0 ? top.userId : null;
+    t.championId = top && top.played > 0 && !top.banned ? top.userId : null;
     t.status = 'finished';
     t.finishedAt = new Date().toISOString();
     db.save();
