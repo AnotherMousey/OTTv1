@@ -536,7 +536,7 @@
       const panel = $('#rejudgePanel');
       panel.innerHTML = `<section class="box">
         <div class="row" style="justify-content:space-between"><h3 class="lines" style="margin:0">Chấm lại / xóa vòng đấu · ${esc(t.name)}</h3><button class="btn small" id="closeRejudge">đóng</button></div>
-        <p class="muted" style="font-size:17px;margin:4px 0 10px">Tick các vòng cần chấm lại. Mỗi yêu cầu vào cuối hàng chờ và được chấm theo thứ tự gửi (trong một yêu cầu: từ vòng nhỏ nhất). Đến lượt, kết quả cũ của vòng bị xóa và các bot (cùng đội, cùng bài nộp như lúc đầu) đấu lại; không có thời gian chờ công bố: kết quả cập nhật trực tiếp sau từng trận.${t.game === 'board' ? ' Vòng chấm lại dùng bản đồ đang được chọn lúc đến lượt nó.' : ''}<br><b>🗑 Xóa vòng</b> bỏ hẳn các vòng được chọn: trận đấu và điểm của chúng biến mất khỏi bảng xếp hạng, không đấu lại, không khôi phục được. Các vòng còn lại giữ nguyên số thứ tự (ví dụ xóa vòng 2 thì còn vòng 1, 3, 4…). Không xóa được vòng đang thi đấu.</p>
+        <p class="muted" style="font-size:17px;margin:4px 0 10px">Tick các vòng cần chấm lại. Mỗi yêu cầu vào cuối hàng chờ và được chấm theo thứ tự gửi (trong một yêu cầu: từ vòng nhỏ nhất). Đến lượt, kết quả cũ của vòng bị xóa và các bot (cùng đội, cùng bài nộp như lúc đầu) đấu lại; không có thời gian chờ công bố: kết quả cập nhật trực tiếp sau từng trận.${t.game === 'board' ? ' Vòng chấm lại dùng bản đồ đang được chọn lúc đến lượt nó.' : ''}<br><b>🗑 Xóa vòng</b> bỏ hẳn các vòng được chọn: trận đấu và điểm của chúng biến mất khỏi bảng xếp hạng, không đấu lại, không khôi phục được. Các vòng còn lại được đánh số lại liên tục (ví dụ có vòng 1–127, xóa vòng 126 thì vòng 127 thành vòng 126; xóa hết thì vòng tiếp theo là vòng 1). Không xóa được khi đang có vòng thi đấu.</p>
         ${queue.length ? `<p style="font-size:17px;margin:0 0 8px">⏳ Hàng chờ chấm lại: ${queue.map(n => `vòng ${n}`).join(' → ')}</p>` : ''}
         <div class="row" style="gap:8px;margin-bottom:8px">
           <button class="btn small" id="rjAll">chọn tất cả</button><button class="btn small" id="rjNone">bỏ tất cả</button>
@@ -590,7 +590,7 @@
         if (!confirm(`Xóa hẳn ${which}?\n\nMọi trận đấu và điểm của ${picked.length === 1 ? 'vòng này' : 'các vòng này'} bị xóa khỏi bảng xếp hạng và lịch sử trận. Không khôi phục được.${t.status === 'finished' ? '\n\nGiải đã kết thúc: nhà vô địch được xác định lại theo bảng xếp hạng mới.' : ''}`)) return;
         try {
           const res = await api(`/api/admin/tournaments/${encodeURIComponent(t.id)}/delete-days`, { method: 'POST', body: { days: picked } });
-          toast(`Đã xóa ${res.deleted.length === 1 ? `vòng ${res.deleted[0]}` : `${res.deleted.length} vòng`} (${res.matches} trận) 🗑`);
+          toast(`Đã xóa ${res.deleted.length === 1 ? `vòng ${res.deleted[0]}` : `${res.deleted.length} vòng`} (${res.matches} trận) 🗑${res.renumbered ? ` · ${res.renumbered} vòng được đánh số lại` : ""}`);
           rejudgeOpen = null;
           panel.classList.add('hidden');
           loadTournaments();

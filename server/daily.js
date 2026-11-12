@@ -21,7 +21,7 @@
 const db = require('./db');
 const { avatarOf } = require('./auth');
 const { canPlay } = require('./access');
-const { botsFor, inShowdown, showdownMatchMax, showdownTeam, showdownMinutesOf, showdownEveryOf, nextShowdownRun } = require('./grader/practice');
+const { botsFor, inShowdown, showdownEnd, showdownMatchMax, showdownTeam, showdownMinutesOf, showdownEveryOf, nextShowdownRun } = require('./grader/practice');
 const { MAX_SCORE } = require('./grader/board');
 const { TURNS } = require('./grader/match');
 
@@ -30,8 +30,8 @@ const PUBLISH_DELAY_MS = process.env.PUBLISH_DELAY_MS !== undefined ? +process.e
 const POINTS = { win: 3, draw: 1, loss: 0 };
 
 const isDaily = t => t.format === 'daily';
-// The number of the next day played. Days the judge deleted leave gaps (1, 3, 4...): the others keep
-// their numbers, so their matches (named and filed by day number) stay where they are.
+// The number of the next day played. (Days are numbered 1, 2, 3...: when the judge deletes some, the
+// others are numbered again, see the delete-days route in app.js.)
 const nextDayNumber = t => (t.days || []).reduce((n, d) => Math.max(n, d.number), 0) + 1;
 const pairingOf = t => (t.pairing === 'swiss' ? 'swiss' : 'rr');
 const swissRounds = n => (n < 2 ? 0 : Math.ceil(Math.log2(n)));
@@ -79,6 +79,16 @@ function dueSlots(t, now) {
 function nextSlot(t, now) {
   const [s] = slotsBetween(t, Math.max(firstMoment(t), now + 1), Date.parse(t.deadline));
   return s ? new Date(s).toISOString() : null;
+}
+
+// How long a day starting at `now` keeps its results hidden. During the showdown ("quyết đấu") a day
+// is published as soon as its matches end, except the showdown's last one (no other day starts before
+// the showdown ends, or the tournament does), which waits the usual PUBLISH_DELAY_MS.
+function publishDelay(t, now) {
+  if (!inShowdown(t, now)) return PUBLISH_DELAY_MS;
+  const next = nextSlot(t, now);
+  const last = !next || Date.parse(next) >= showdownEnd(t);
+  return last ? PUBLISH_DELAY_MS : 0;
 }
 
 // Every team's newest working bot submitted before `at`.
@@ -249,6 +259,40 @@ function showdownInfo(t, now = Date.now()) {
   };
 }
 
+// Deletes the days numbered in `numbers` (a Set) and their matches, then numbers the days left
+// 1, 2, 3... again, renaming their matches ("day N - ...") to match. The caller makes sure no day is
+// being played meanwhile. Returns { deleted: [old numbers], matches, renumbered }.
+async function deleteDays(t, numbers) {
+  const gone = (t.days || []).filter(d => numbers.has(d.number));
+  const names = gone.flatMap(d => dayMatches(t, d).map(m => m.name));
+  t.days = (t.days || []).filter(d => !numbers.has(d.number)).sort((a, b) => a.number - b.number);
+  if (t.rejudgeQueue) {
+    t.rejudgeQueue = t.rejudgeQueue.filter(q => !numbers.has(q.day));
+    if (!t.rejudgeQueue.length) delete t.rejudgeQueue;
+  }
+  await db.deleteMatches(t.id, names);
+  // lowest first, so a day's new (smaller) number is always free by the time it gets it
+  const renames = [], renumber = new Map(); // old number -> new
+  const rename = (name, n) => name.replace(/^day \d+ /, `day ${n} `);
+  t.days.forEach((d, i) => {
+    const n = i + 1;
+    if (d.number === n) return;
+    renumber.set(d.number, n);
+    for (const m of dayMatches(t, d)) renames.push({ from: m.name, to: rename(m.name, n), set: { day: n } });
+    for (const list of Object.values(d.pairs || {})) for (const p of list) p.name = rename(p.name, n);
+    d.number = n;
+  });
+  for (const q of t.rejudgeQueue || []) if (renumber.has(q.day)) q.day = renumber.get(q.day);
+  await db.renameMatches(t.id, renames);
+  // a finished league crowns whoever leads the standings without these days
+  if (t.status === 'finished') {
+    const [top] = standings(t);
+    t.championId = top && top.played > 0 ? top.userId : null;
+  }
+  db.save();
+  return { deleted: gone.map(d => d.number), matches: names.length, renumbered: renumber.size };
+}
+
 // The public leaderboard: published standings, and for each day only its progress (never outcomes).
 function board(t, now = Date.now()) {
   const rows = standings(t);
@@ -268,4 +312,4 @@ function board(t, now = Date.now()) {
   };
 }
 
-module.exports = { nextDayNumber, showdownInfo, isDaily, pairingOf, swissRounds, swissPairs, frozen, validTime, validCycle, cycleHoursOf, MIN_CYCLE_HOURS, MAX_CYCLE_HOURS, slotsBetween, dueSlots, nextSlot, entriesAt, pairsOf, dayMatches, isPublished, standings, board, PUBLISH_DELAY_MS };
+module.exports = { publishDelay, deleteDays, nextDayNumber, showdownInfo, isDaily, pairingOf, swissRounds, swissPairs, frozen, validTime, validCycle, cycleHoursOf, MIN_CYCLE_HOURS, MAX_CYCLE_HOURS, slotsBetween, dueSlots, nextSlot, entriesAt, pairsOf, dayMatches, isPublished, standings, board, PUBLISH_DELAY_MS };

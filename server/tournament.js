@@ -188,7 +188,7 @@ class TournamentManager {
         number: daily.nextDayNumber(t),
         slot,
         startedAt: new Date(now).toISOString(),
-        publishAt: new Date(now + daily.PUBLISH_DELAY_MS).toISOString(),
+        publishAt: new Date(now + daily.publishDelay(t, now)).toISOString(),
         entries: daily.entriesAt(t, slot ? Date.parse(slot) : now),
         status: 'running',
       };

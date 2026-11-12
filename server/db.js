@@ -93,6 +93,11 @@ const jsonBackend = {
     for (const name of names) delete this.details[`${tid}
 ${name}`];
   },
+  async renameMatch(tid, from, to) {
+    const d = this.details[`${tid}\n${from}`];
+    delete this.details[`${tid}\n${from}`];
+    if (d) this.details[`${tid}\n${to}`] = d;
+  },
   async deleteTournament(tid, subIds) {
     for (const key of Object.keys(this.details)) if (key.startsWith(tid + '\n')) delete this.details[key];
     for (const id of subIds) delete this.codes[id];
@@ -230,6 +235,9 @@ const pgBackend = {
   async deleteMatches(tid, names) {
     await this.pool.query('DELETE FROM matches WHERE tournament_id = $1 AND name = ANY($2)', [tid, names]);
   },
+  async renameMatch(tid, from, to, summary) {
+    await this.pool.query('UPDATE matches SET name = $3, summary = $4 WHERE tournament_id = $1 AND name = $2', [tid, from, to, toJson(summary)]);
+  },
   async deleteTournament(tid) {
     await this.pool.query('DELETE FROM matches WHERE tournament_id = $1', [tid]); // its submission rows go with the next save
   },
@@ -300,6 +308,19 @@ const db = {
     const byName = this.data.matches[tid] || {};
     for (const name of names) delete byName[name];
     await backend.deleteMatches(tid, names);
+    this.save();
+  },
+  // Renames matches: renames = [{ from, to, set }] (set: summary fields to change too), in order. The
+  // caller orders them so a new name is never still taken (e.g. days renumbered from the lowest up).
+  async renameMatches(tid, renames) {
+    const byName = this.data.matches[tid] || {};
+    for (const { from, to, set } of renames) {
+      const summary = byName[from];
+      if (!summary || from === to) continue;
+      delete byName[from];
+      byName[to] = { ...summary, ...set, name: to };
+      await backend.renameMatch(tid, from, to, byName[to]);
+    }
     this.save();
   },
   // A deleted tournament's matches and code. (Remove it and its submissions from db.data first.)

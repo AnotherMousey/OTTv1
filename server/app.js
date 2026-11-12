@@ -700,8 +700,10 @@ app.post('/api/admin/tournaments/:id/rejudge', apiAuth, apiJudge, (req, res) => 
   res.json({ ok: true, queued: fresh.map(d => d.number), skipped: days.length - fresh.length, ahead });
 });
 // Daily league: delete the days numbered in `days` for good: their matches and the points they gave
-// are gone from the standings. The other days keep their numbers (see daily.nextDayNumber). A day
-// being played can't be deleted; one waiting to be rejudged leaves the queue.
+// are gone from the standings. The days left are numbered again 1, 2, 3... in order (deleting day 126
+// of 127 makes 127 the new 126; deleting them all makes the next one day 1), their matches renamed
+// to match. Not while a day is being played (or rejudged): its matches are still being filed under
+// its number. A day waiting to be rejudged leaves the queue (the others follow their day's new number).
 app.post('/api/admin/tournaments/:id/delete-days', apiAuth, apiJudge, wrap(async (req, res) => {
   const t = findTournament(req.params.id);
   if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
@@ -710,24 +712,19 @@ app.post('/api/admin/tournaments/:id/delete-days', apiAuth, apiJudge, wrap(async
   if (!numbers.size) return fail(res, 400, 'Chưa chọn vòng đấu nào');
   const days = (t.days || []).filter(d => numbers.has(d.number));
   if (days.length !== numbers.size) return fail(res, 404, 'Không tìm thấy vòng đấu này');
-  const busy = days.find(d => d.status === 'running');
-  if (busy) return fail(res, 400, `Vòng ${busy.number} đang thi đấu, đợi nó xong rồi hãy xóa`);
-  const names = days.flatMap(d => daily.dayMatches(t, d).map(m => m.name));
-  t.days = t.days.filter(d => !numbers.has(d.number));
-  if (t.rejudgeQueue) {
-    t.rejudgeQueue = t.rejudgeQueue.filter(q => !numbers.has(q.day));
-    if (!t.rejudgeQueue.length) delete t.rejudgeQueue;
+  const busy = (t.days || []).find(d => d.status === 'running');
+  if (busy || manager.active.has(t.id)) return fail(res, 400, `${busy ? `Vòng ${busy.number}` : 'Một vòng'} đang thi đấu, đợi nó xong rồi hãy xóa`);
+  // no day starts while the numbers change (a new day would take a number still in use)
+  manager.active.add(t.id);
+  try {
+    const r = await daily.deleteDays(t, numbers);
+    console.log(`[daily] "${t.name}" day ${r.deleted.join(', ')}: deleted by the judge (${r.matches} matches, ${r.renumbered} days renumbered)`);
+    res.json({ ok: true, ...r });
+  } finally {
+    manager.active.delete(t.id);
   }
-  // a finished league crowns whoever leads the standings without these days
-  if (t.status === 'finished') {
-    const [top] = daily.standings(t);
-    t.championId = top && top.played > 0 ? top.userId : null;
-  }
-  await db.deleteMatches(t.id, names); // (saves)
-  console.log(`[daily] "${t.name}" day ${days.map(d => d.number).join(', ')}: deleted by the judge (${names.length} matches)`);
   manager.broadcast(t);
   io.to('users').emit('tournaments:changed');
-  res.json({ ok: true, deleted: days.map(d => d.number), matches: names.length });
 }));
 // Announcements: a short message to everyone who can see the tournament, gone after 24 hours.
 app.post('/api/admin/tournaments/:id/announcements', apiAuth, apiJudge, (req, res) => {
