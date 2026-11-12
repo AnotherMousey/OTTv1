@@ -118,6 +118,15 @@ class TournamentManager {
       this.broadcast(t);
     }
     for (const d of t.days || []) {
+      // a day that started during the showdown (not its last day) has no hidden period; this also
+      // fixes days set up before that rule, or before the judge moved the showdown over them
+      if (d.status !== 'published' && !d.live && d.startedAt && Date.parse(d.publishAt) > Date.parse(d.startedAt)
+        && daily.publishDelay(t, Date.parse(d.startedAt)) === 0) {
+        d.publishAt = d.startedAt;
+        db.save();
+        this.broadcast(t);
+        this.io.to('users').emit('tournaments:changed');
+      }
       if (d.status === 'done' && now >= Date.parse(d.publishAt)) this.publishDay(t, d);
     }
     // the showdown ("quyết đấu") opens or closes: the evaluations switch formula, so every page updates
@@ -134,6 +143,20 @@ class TournamentManager {
     this.showdownTick(t, now);
     if (this.active.has(t.id)) return;
     const running = (t.days || []).find(d => d.status === 'running'); // cut off by a restart
+    // days numbered with gaps (some deleted while another was being played, or before deleting
+    // renumbered them): number them 1, 2, 3... again once none is being played
+    if (!running && (t.days || []).some((d, i) => d.number !== i + 1)) {
+      this.active.add(t.id);
+      daily.deleteDays(t, new Set())
+        .then(r => {
+          console.log(`[daily] "${t.name}": ${r.renumbered} days numbered again from 1`);
+          this.broadcast(t);
+          this.io.to('users').emit('tournaments:changed');
+        })
+        .catch(e => console.error(`[daily] "${t.name}": renumbering failed:`, e))
+        .finally(() => this.active.delete(t.id));
+      return;
+    }
     const [slot] = running ? [] : daily.dueSlots(t, now);
     // queued rejudges and due match times are played in the order they came
     const [first] = running ? [] : t.rejudgeQueue || [];
