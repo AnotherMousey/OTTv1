@@ -33,15 +33,39 @@ async function withSlot(fn) {
   }
 }
 
-// Showdown ("quyết đấu"): a 5-hour window the judge sets (t.showdownAt) in a brawl. While it lasts,
-// a team's evaluation counts, for every game against a sparring bot, win * 550 + pieces * 25
-// (win = 1 if the bot won the game, pieces = how many of its pieces were left on the board; RPS has
-// no pieces: only the win of each match counts). Every practice match records both scores, so the
-// evaluation switches the moment the window opens or closes.
-const SHOWDOWN_MS = 5 * 3600 * 1000;
+// Showdown ("quyết đấu"): a window the judge sets in a brawl: from t.showdownAt, t.showdownMinutes
+// long. Every t.showdownEveryMinutes from its start (start, start + 1 interval, ... while the window
+// lasts) there is a showdown run: each team's newest working bot at that moment plays every sparring
+// bot once, and scores, for every game, win * 550 + pieces * 25 (win = 1 if it won the game, pieces =
+// how many of its pieces were left on the board; RPS has no pieces: only the win of each match).
+// While the window lasts, a team's evaluation is its total in the last finished run (submitting a bot
+// doesn't change it until the next run). t.showdownRun = the run being played, t.showdownLast = the
+// last finished one: { number, at, startedAt, finishedAt, status, teams: { userId: { submissionId,
+// teamName, total, results: [{ bot, name, status, score, botScore, winner, issue }] } } }.
 const SHOWDOWN = { win: 550, piece: 25 };
-const showdownEnd = t => (t && t.showdownAt ? Date.parse(t.showdownAt) + SHOWDOWN_MS : null);
+const DEFAULT_SHOWDOWN_MINUTES = 300, DEFAULT_SHOWDOWN_EVERY = 60;
+// limits the judge may pick: length 15 minutes to 3 days, interval 5 minutes to 1 day
+const SHOWDOWN_LIMITS = { minutes: [15, 72 * 60], every: [5, 24 * 60] };
+const showdownMinutesOf = t => t.showdownMinutes || DEFAULT_SHOWDOWN_MINUTES;
+const showdownEveryOf = t => t.showdownEveryMinutes || DEFAULT_SHOWDOWN_EVERY;
+const showdownEnd = t => (t && t.showdownAt ? Date.parse(t.showdownAt) + showdownMinutesOf(t) * 60000 : null);
 const inShowdown = (t, now = Date.now()) => !!(t && t.showdownAt) && now >= Date.parse(t.showdownAt) && now < showdownEnd(t);
+// The run due now (the latest interval mark passed), or null outside the window: { number, at }.
+function showdownSlot(t, now = Date.now()) {
+  if (!inShowdown(t, now)) return null;
+  const start = Date.parse(t.showdownAt), every = showdownEveryOf(t) * 60000;
+  const k = Math.floor((now - start) / every);
+  return { number: k + 1, at: new Date(start + k * every).toISOString() };
+}
+// When the next run starts, or null if none is left in the window.
+function nextShowdownRun(t, now = Date.now()) {
+  if (!t.showdownAt) return null;
+  const start = Date.parse(t.showdownAt), every = showdownEveryOf(t) * 60000;
+  const next = now < start ? start : start + (Math.floor((now - start) / every) + 1) * every;
+  return next < showdownEnd(t) ? new Date(next).toISOString() : null;
+}
+// A team's showdown result as it counts right now (the last finished run), or null.
+const showdownTeam = (t, userId, now = Date.now()) => (inShowdown(t, now) && t.showdownLast && t.showdownLast.teams[userId]) || null;
 // A match's showdown score for each side: { A, B }.
 function showdownScore(r) {
   if (!r.games) return { A: r.winner === 'A' ? SHOWDOWN.win : 0, B: r.winner === 'B' ? SHOWDOWN.win : 0 };
@@ -50,10 +74,36 @@ function showdownScore(r) {
 }
 // The most one match against a sparring bot can be worth in the showdown.
 const showdownMatchMax = t => (gameOf(t) === 'board' ? GAMES * (SHOWDOWN.win + startPieces(mapOf(t)) * SHOWDOWN.piece) : SHOWDOWN.win);
-// A practice run's evaluation right now: the showdown total while the showdown lasts.
-const evalOf = (p, t, now = Date.now()) => (inShowdown(t, now) ? p.sdTotal || 0 : p.total);
-// One result's score (and the bot's) as it counts right now.
-const scoreOf = (r, t, now = Date.now()) => (inShowdown(t, now) ? { score: r.sd, botScore: r.sdBot } : { score: r.score, botScore: r.botScore });
+
+// Plays a showdown run (run.teams already lists the bots taking part), sharing the practice slots.
+// onUpdate is called after every match. Stops early once run.cancelled is set.
+async function runShowdown(t, run, ensureBuilt, onUpdate = () => {}) {
+  const bots = botsFor(t);
+  const map = mapOf(t);
+  const jobs = [];
+  for (const team of Object.values(run.teams)) {
+    const sub = db.data.submissions.find(s => s.id === team.submissionId);
+    team.total = 0;
+    team.results = bots.map(h => ({ bot: h.id, name: h.name, status: sub ? 'queued' : 'skipped' }));
+    if (!sub) continue;
+    bots.forEach((h, i) => jobs.push(withSlot(async () => {
+      const slot = team.results[i];
+      if (run.cancelled) { slot.status = 'skipped'; return; }
+      slot.status = 'playing';
+      try {
+        const r = await runMatch(sub, h.custom, ensureBuilt, { map });
+        const sd = showdownScore(r);
+        Object.assign(slot, { status: 'done', score: sd.A, botScore: sd.B, winner: r.winner, issue: r.issues.A });
+        team.total += sd.A;
+      } catch (e) {
+        console.error('[showdown] match failed:', e);
+        Object.assign(slot, { status: 'error' });
+      }
+      onUpdate();
+    })));
+  }
+  await Promise.all(jobs);
+}
 
 const tournamentOf = sub => db.data.tournaments.find(x => x.id === sub.tournamentId);
 const isCampaign = sub => (tournamentOf(sub) || {}).mode === 'campaign';
@@ -155,18 +205,17 @@ function evaluate(sub, ensureBuilt, { topUp = false } = {}) {
   const opponents = isCampaign(sub) && sub.target ? all.filter(h => h.id === sub.target) : all;
   const play = async (house, opts) => {
     const r = await runMatch(sub, house.custom, ensureBuilt, { ...opts, map: mapOf(tournamentOf(sub)) });
-    return { ...r, issue: r.issues.A, sd: showdownScore(r) };
+    return { ...r, issue: r.issues.A };
   };
   const old = sub.practice;
   const kept = topUp && !isCampaign(sub) && old && old.status === 'done' && (old.rules ?? null) === rulesOf(tournamentOf(sub))
-    ? new Map(old.results.filter(r => r.status === 'done' && r.sd !== undefined).map(r => [r.bot, r])) // (no sd: played before the showdown existed)
+    ? new Map(old.results.filter(r => r.status === 'done').map(r => [r.bot, r]))
     : new Map();
   const results = opponents.map(h => (kept.has(h.id) ? { ...kept.get(h.id), name: h.name } : { bot: h.id, name: h.name, status: 'queued' }));
   const total = () => results.reduce((s, x) => s + (x.score || 0), 0);
-  const sdTotal = () => results.reduce((s, x) => s + (x.sd || 0), 0);
   const toPlay = opponents.map((h, i) => [h, i]).filter(([, i]) => results[i].status === 'queued');
   if (kept.size && !toPlay.length) { // only a bot was removed: nothing to play
-    Object.assign(old, { results, total: total(), sdTotal: sdTotal() });
+    Object.assign(old, { results, total: total() });
     db.save();
     listener(sub);
     return Promise.resolve();
@@ -175,7 +224,6 @@ function evaluate(sub, ensureBuilt, { topUp = false } = {}) {
     status: 'running',
     rules: rulesOf(tournamentOf(sub)),
     total: total(),
-    sdTotal: sdTotal(),
     startedAt: kept.size ? old.startedAt : new Date().toISOString(),
     results,
   };
@@ -188,7 +236,7 @@ function evaluate(sub, ensureBuilt, { topUp = false } = {}) {
     slot.status = 'playing';
     if (!isCampaign(sub)) {
       const r = await play(house);
-      Object.assign(slot, { status: 'done', score: r.scoreA, botScore: r.scoreB, sd: r.sd.A, sdBot: r.sd.B, winner: r.winner, issue: r.issue, replay: await saveReplay(sub, house, r) });
+      Object.assign(slot, { status: 'done', score: r.scoreA, botScore: r.scoreB, winner: r.winner, issue: r.issue, replay: await saveReplay(sub, house, r) });
     } else {
       const games = [];
       slot.games = games;
@@ -211,7 +259,6 @@ function evaluate(sub, ensureBuilt, { topUp = false } = {}) {
       });
     }
     sub.practice.total = total();
-    sub.practice.sdTotal = sdTotal();
     db.save();
     listener(sub);
   })))
@@ -242,4 +289,4 @@ function waitFor(tournamentId) {
   return Promise.all([...running.values()].filter(r => r.tournamentId === tournamentId).map(r => r.promise));
 }
 
-module.exports = { SHOWDOWN_MS, SHOWDOWN, inShowdown, showdownEnd, showdownMatchMax, evalOf, scoreOf, PARALLEL, rulesOf, evaluate, runningFor, waitFor, replayKey, replayName, onUpdate, botsFor, liveOf, gameOf, HOUSE_BOTS, houseBots, CAMPAIGN_GAMES };
+module.exports = { SHOWDOWN, SHOWDOWN_LIMITS, showdownMinutesOf, showdownEveryOf, inShowdown, showdownEnd, showdownSlot, nextShowdownRun, showdownTeam, showdownMatchMax, runShowdown, PARALLEL, rulesOf, evaluate, runningFor, waitFor, replayKey, replayName, onUpdate, botsFor, liveOf, gameOf, HOUSE_BOTS, houseBots, CAMPAIGN_GAMES };

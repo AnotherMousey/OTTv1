@@ -320,6 +320,8 @@ public class Bot {
     function statusText(r, max) {
       if (r.status === 'no-bot') return '<span class="muted">chưa có bot chạy được</span>';
       if (r.status === 'queued') return '<span class="muted">⏳ đang chờ lượt đấu tập…</span>';
+      if (r.status === 'showdown-wait') return '<span class="muted">⏳ chờ lượt quyết đấu…</span>';
+      if (r.status === 'showdown-running') return '<span class="muted">🥊 đang quyết đấu…</span>';
       if (r.status === 'running') return `<span class="muted">🥊 đang đấu tập… ${r.played}/${practiceData.houseCount || 10}</span>`;
       if (r.status === 'stopped') return '<span class="muted">đã dừng</span>';
       if (r.status === 'error') return '<span style="color:var(--red)">chấm thất bại</span>';
@@ -339,7 +341,7 @@ public class Bot {
       $('#pmine').innerHTML = `
         <div class="team">${avatarSvg(mine.avatar, 40)}<span>${esc(mine.teamName)}</span></div>
         <div class="pts">${mine.total === null ? '–' : mine.total}<small class="muted" style="font-size:18px">/${d.maxTotal}</small> ${statusText(mine)}</div>
-        ${d.showdown ? `<div class="tag" title="mỗi ván đấu tập: thắng × 550 + số quân còn lại × 25">⚔️ quyết đấu đến ${esc(fmtDate(new Date(d.showdownEnd).toISOString()))}</div>` : ''}
+        ${d.showdown ? `<div class="tag" title="cứ mỗi ${d.showdownEveryMinutes} phút, bot mới nhất của bạn đấu với các bot đấu tập; điểm là của lượt gần nhất (mỗi ván: thắng × 550 + số quân còn lại × 25)">⚔️ quyết đấu${d.showdownLast ? ` · điểm lượt ${d.showdownLast.number}` : ''}${d.showdownRun ? ` · lượt ${d.showdownRun.number} đang đấu ${d.showdownRun.played}/${d.showdownRun.total}` : ''}${d.showdownNextAt ? ` · lượt sau lúc ${esc(fmtDate(d.showdownNextAt))}` : ''} · kết thúc ${esc(fmtDate(new Date(d.showdownEnd).toISOString()))}</div>` : ''}
         <div class="pbar" style="flex:1;min-width:120px"><div style="width:${pct}%"></div></div>
         <a class="btn yellow" href="/tournament/${encodeURIComponent(tid)}/live">📊 Xem bảng xếp hạng</a>`;
     }
@@ -368,10 +370,10 @@ public class Bot {
       $('#closed').classList.toggle('hidden', !closed);
       $('#keyRow').classList.toggle('hidden', !inShowdownNow());
     }
-    // the showdown ("quyết đấu"): 5 hours from tournament.daily.showdownAt, when submitting needs a key
+    // the showdown ("quyết đấu"): showdownMinutes from tournament.daily.showdownAt, when submitting needs a key
     function inShowdownNow() {
       const at = tournament && tournament.daily && tournament.daily.showdownAt;
-      return !!at && serverNow() >= Date.parse(at) && serverNow() < Date.parse(at) + 5 * 3600e3;
+      return !!at && serverNow() >= Date.parse(at) && serverNow() < Date.parse(at) + (tournament.daily.showdownMinutes || 300) * 60000;
     }
     function submitLabel() {
       return tournament && tournament.mode === 'campaign' && target ? `Nộp bot đấu với ${botName(target)} 🚀` : 'Nộp bot 🚀';

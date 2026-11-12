@@ -113,7 +113,7 @@ function publicTournament(t, user) {
     description: t.description || '',
     deadline: t.deadline,
     startsAt: t.startsAt || null,
-    ...(daily.isDaily(t) ? { daily: { time: t.dailyTime || null, cycleHours: daily.cycleHoursOf(t), pairing: daily.pairingOf(t), showdownAt: t.showdownAt || null, showdown: grader.practice.inShowdown(t), nextAt: t.status === 'open' ? daily.nextSlot(t, Date.now()) : null, frozen: t.status === 'open' ? daily.frozen(t) : null, days: (t.days || []).filter(d => d.status === 'published').length, played: (t.days || []).length, list: (t.days || []).map(d => ({ number: d.number, at: d.startedAt, pairing: d.pairing || null, status: d.status, live: !!d.live })), queue: (t.rejudgeQueue || []).map(q => q.day), publishDelayMs: daily.PUBLISH_DELAY_MS } } : {}),
+    ...(daily.isDaily(t) ? { daily: { time: t.dailyTime || null, cycleHours: daily.cycleHoursOf(t), pairing: daily.pairingOf(t), ...daily.showdownInfo(t), nextAt: t.status === 'open' ? daily.nextSlot(t, Date.now()) : null, frozen: t.status === 'open' ? daily.frozen(t) : null, days: (t.days || []).filter(d => d.status === 'published').length, played: (t.days || []).length, list: (t.days || []).map(d => ({ number: d.number, at: d.startedAt, pairing: d.pairing || null, status: d.status, live: !!d.live })), queue: (t.rejudgeQueue || []).map(q => q.day), publishDelayMs: daily.PUBLISH_DELAY_MS } } : {}),
     status: t.status,
     createdAt: t.createdAt || t.startsAt || t.deadline,
     teamsReady: t.entries ? t.entries.length : ready.size,
@@ -330,6 +330,7 @@ app.get('/api/tournaments/:id/practice', apiAuth, (req, res) => {
     return res.json({ mode: 'campaign', board: campaign.board(t), details: campaign.details(t, want), serverNow: Date.now() });
   }
   const userIds = [...new Set(db.data.submissions.filter(s => s.tournamentId === t.id && canPlay(t, s.userId)).map(s => s.userId))];
+  const showdown = grader.practice.inShowdown(t);
   const rows = userIds.map(uid => {
     const u = findUser(uid);
     if (!u) return null;
@@ -342,8 +343,9 @@ app.get('/api/tournaments/:id/practice', apiAuth, (req, res) => {
       avatar: auth.avatarOf(u),
       language: s ? s.language : null,
       status: !s ? 'no-bot' : p ? p.status : 'queued',
-      total: p ? grader.practice.evalOf(p, t) : null,
+      total: p ? p.total : null,
       played: p ? p.results.filter(r => r.status === 'done').length : 0,
+      ...(showdown ? showdownRow(t, uid) : {}),
     };
   }).filter(Boolean);
   rows.sort((a, b) => (b.total ?? -1) - (a.total ?? -1) || a.teamName.localeCompare(b.teamName));
@@ -356,7 +358,21 @@ app.get('/api/tournaments/:id/practice', apiAuth, (req, res) => {
     const s = grader.activeSubmission(t.id, want);
     const u = findUser(want);
     const replays = db.data.matches[grader.practice.replayKey(t.id)] || {};
-    if (s && u) {
+    const sd = showdown && grader.practice.showdownTeam(t, want);
+    const sdSub = sd && db.data.submissions.find(x => x.id === sd.submissionId);
+    if (sdSub && u) {
+      // showdown: the team's results in the last finished run (no replays)
+      details = {
+        userId: want, teamName: u.teamName, submissionId: sdSub.id, language: sdSub.language, submittedAt: sdSub.createdAt,
+        status: 'done', total: sd.total, showdownRun: t.showdownLast.number,
+        results: sd.results.map(({ bot, name, status, score, botScore, winner, issue }) => ({ bot, name: (house.find(h => h.id === bot) || { name }).name, desc: (house.find(h => h.id === bot) || {}).desc || '', status, score, botScore, winner, issue, replay: false })),
+      };
+    } else if (showdown && s && u) {
+      details = {
+        userId: want, teamName: u.teamName, submissionId: s.id, language: s.language, submittedAt: s.createdAt, status: 'queued', total: 0,
+        results: house.map(h => ({ bot: h.id, name: h.name, desc: h.desc || '', status: 'queued' })),
+      };
+    } else if (s && u) {
       details = {
         userId: want,
         teamName: u.teamName,
@@ -364,11 +380,9 @@ app.get('/api/tournaments/:id/practice', apiAuth, (req, res) => {
         language: s.language,
         submittedAt: s.createdAt,
         status: s.practice ? s.practice.status : 'queued',
-        total: s.practice ? grader.practice.evalOf(s.practice, t) : 0,
+        total: s.practice ? s.practice.total : 0,
         results: (s.practice ? s.practice.results : house.map(h => ({ bot: h.id, name: h.name, status: 'queued' })))
-          // names come from the current bot list, so renamed bots show their new name on old results;
-          // during a showdown the scores are the showdown ones
-          .map(r => ({ ...r, ...(r.status === 'done' ? grader.practice.scoreOf(r, t) : {}) }))
+          // names come from the current bot list, so renamed bots show their new name on old results
           .map(({ bot, name, status, score, botScore, winner, issue }) => ({ bot, name: (house.find(h => h.id === bot) || { name }).name, desc: (house.find(h => h.id === bot) || {}).desc || '', status, score, botScore, winner, issue,
             replay: (replays[grader.practice.replayName(want, bot)] || {}).submissionId === s.id })),
       };
@@ -376,8 +390,15 @@ app.get('/api/tournaments/:id/practice', apiAuth, (req, res) => {
   } else if (req.query.user) {
     return fail(res, 403, 'Không được xem điểm của đội khác 🤫');
   }
-  res.json({ rows, details, turns: TURNS, showdown: grader.practice.inShowdown(t), showdownAt: t.showdownAt || null, showdownEnd: grader.practice.showdownEnd(t), maxScore: maxMatchScore(t), houseCount: house.length, maxTotal: house.length * maxMatchScore(t), serverNow: Date.now() });
+  res.json({ rows, details, turns: TURNS, ...daily.showdownInfo(t), showdownEnd: grader.practice.showdownEnd(t), maxScore: maxMatchScore(t), houseCount: house.length, maxTotal: house.length * maxMatchScore(t), serverNow: Date.now() });
 });
+
+// A team's row on the practice board during the showdown: its total in the last finished run.
+function showdownRow(t, uid) {
+  const sd = grader.practice.showdownTeam(t, uid);
+  if (sd) return { status: 'done', total: sd.total, played: sd.results.filter(r => r.status === 'done').length };
+  return { status: t.showdownRun && t.showdownRun.teams[uid] ? 'showdown-running' : 'showdown-wait', total: null, played: 0 };
+}
 
 // Replay of a practice match: your own (the judge: anyone's) against one sparring bot.
 app.get('/api/tournaments/:id/practice/:bot', apiAuth, wrap(async (req, res) => {
@@ -559,7 +580,7 @@ app.post('/api/admin/tournaments', apiAuth, apiJudge, (req, res) => {
 app.patch('/api/admin/tournaments/:id', apiAuth, apiJudge, (req, res) => {
   const t = findTournament(req.params.id);
   if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
-  const { name, deadline, startsAt, description, access, hidden, dailyTime, cycleHours, tzOffset, pairing, showdownAt } = req.body || {};
+  const { name, deadline, startsAt, description, access, hidden, dailyTime, cycleHours, tzOffset, pairing, showdownAt, showdownMinutes, showdownEveryMinutes } = req.body || {};
   // hiding / showing, the name and the description can change at any time; everything else only before the tournament starts
   const anyTime = Object.keys(req.body || {}).every(k => ['hidden', 'name', 'description'].includes(k));
   if (t.status !== 'open' && !anyTime) return fail(res, 400, 'Chỉ sửa được giải đấu chưa bắt đầu');
@@ -571,12 +592,20 @@ app.patch('/api/admin/tournaments/:id', apiAuth, apiJudge, (req, res) => {
     if (dailyTime !== undefined) return fail(res, 400, 'Chọn một trong hai: giờ thi đấu hằng ngày hoặc chu kỳ');
     if (!daily.validCycle(cycleHours)) return fail(res, 400, CYCLE_ERROR);
   }
-  // showdown ("quyết đấu"): when its 5 hours start, or '' / null for none
+  // showdown ("quyết đấu"): when it starts ('' / null: none), how long it lasts and how often its
+  // runs are played (minutes)
   let showdown;
   if (showdownAt !== undefined) {
     if (!daily.isDaily(t)) return fail(res, 400, 'Chỉ giải hỗn chiến mới có quyết đấu');
     showdown = showdownAt ? Date.parse(showdownAt) : null;
     if (showdown !== null && !Number.isFinite(showdown)) return fail(res, 400, 'Giờ quyết đấu không hợp lệ');
+  }
+  const SL = grader.practice.SHOWDOWN_LIMITS;
+  const okMinutes = (v, [lo, hi]) => Number.isInteger(v) && v >= lo && v <= hi;
+  if (showdownMinutes !== undefined || showdownEveryMinutes !== undefined) {
+    if (!daily.isDaily(t)) return fail(res, 400, 'Chỉ giải hỗn chiến mới có quyết đấu');
+    if (showdownMinutes !== undefined && !okMinutes(showdownMinutes, SL.minutes)) return fail(res, 400, `Quyết đấu phải dài từ ${SL.minutes[0]} phút đến ${SL.minutes[1] / 60} giờ`);
+    if (showdownEveryMinutes !== undefined && !okMinutes(showdownEveryMinutes, SL.every)) return fail(res, 400, `Khoảng cách giữa các lượt quyết đấu phải từ ${SL.every[0]} phút đến ${SL.every[1] / 60} giờ`);
   }
   if (pairing !== undefined) {
     if (!daily.isDaily(t) || !['rr', 'swiss'].includes(pairing)) return fail(res, 400, 'Thể thức phải là vòng tròn (rr) hoặc Thụy Sĩ (swiss)');
@@ -606,9 +635,15 @@ app.patch('/api/admin/tournaments/:id', apiAuth, apiJudge, (req, res) => {
   }
   if (name !== undefined) t.name = lineText(name, 80);
   if (description !== undefined) t.description = lineText(description, 500);
-  if (showdown !== undefined) {
-    if (showdown === null) delete t.showdownAt; else t.showdownAt = new Date(showdown).toISOString();
-    grader.replayStalePractice(t); // bots evaluated before showdown scores were recorded play again
+  if (showdown !== undefined || showdownMinutes !== undefined || showdownEveryMinutes !== undefined) {
+    if (showdown === null) delete t.showdownAt; else if (showdown !== undefined) t.showdownAt = new Date(showdown).toISOString();
+    if (showdownMinutes !== undefined) t.showdownMinutes = showdownMinutes;
+    if (showdownEveryMinutes !== undefined) t.showdownEveryMinutes = showdownEveryMinutes;
+    // a new schedule starts over: runs played under the old one no longer count
+    if (t.showdownRun) t.showdownRun.cancelled = true;
+    delete t.showdownRun;
+    delete t.showdownLast;
+    manager.broadcast(t);
   }
   if (access !== undefined) {
     t.access = access;

@@ -21,7 +21,7 @@
 const db = require('./db');
 const { avatarOf } = require('./auth');
 const { canPlay } = require('./access');
-const { botsFor, inShowdown, showdownMatchMax, evalOf } = require('./grader/practice');
+const { botsFor, inShowdown, showdownMatchMax, showdownTeam, showdownMinutesOf, showdownEveryOf, nextShowdownRun } = require('./grader/practice');
 const { MAX_SCORE } = require('./grader/board');
 const { TURNS } = require('./grader/match');
 
@@ -215,12 +215,35 @@ function standings(t) {
     const p = r && (subs.get(e.submissionId) || {}).practice;
     if (!r) continue;
     r.evalStatus = p ? p.status : 'queued';
-    if (p && (p.status === 'done' || p.status === 'stopped')) r.eval = evalOf(p, t);
+    if (p && (p.status === 'done' || p.status === 'stopped')) r.eval = p.total;
+  }
+  // showdown: the evaluation is the team's total in the last finished showdown run instead
+  if (inShowdown(t)) {
+    for (const r of rows.values()) {
+      const sd = showdownTeam(t, r.userId);
+      r.eval = sd ? sd.total : null;
+      r.evalStatus = sd ? 'done' : t.showdownRun && t.showdownRun.teams[r.userId] ? 'showdown-running' : 'showdown-wait';
+    }
   }
   const list = [...rows.values()].sort((x, y) =>
     y.points - x.points || (y.eval ?? -1) - (x.eval ?? -1) || y.w - x.w || y.score - x.score || x.teamName.localeCompare(y.teamName));
   list.forEach((r, i) => { r.rank = i + 1; });
   return list;
+}
+
+// The showdown as the pages show it: its window, interval, the run being played and the next one.
+function showdownInfo(t, now = Date.now()) {
+  if (!t.showdownAt) return { showdownAt: null, showdown: false };
+  const run = t.showdownRun, last = t.showdownLast;
+  const progress = r => {
+    const all = Object.values(r.teams).flatMap(x => x.results || []);
+    return { number: r.number, at: r.at, played: all.filter(x => x.status === 'done' || x.status === 'error').length, total: all.length };
+  };
+  return {
+    showdownAt: t.showdownAt, showdownMinutes: showdownMinutesOf(t), showdownEveryMinutes: showdownEveryOf(t), showdown: inShowdown(t, now),
+    showdownNextAt: nextShowdownRun(t, now), showdownRun: run ? progress(run) : null,
+    showdownLast: last ? { number: last.number, at: last.at, finishedAt: last.finishedAt } : null,
+  };
 }
 
 // The public leaderboard: published standings, and for each day only its progress (never outcomes).
@@ -230,7 +253,7 @@ function board(t, now = Date.now()) {
   return {
     id: t.id, name: t.name, mode: 'brawl', format: 'daily', status: t.status, error: t.error || null,
     deadline: t.deadline, startsAt: t.startsAt || null, dailyTime: t.dailyTime || null, cycleHours: cycleHoursOf(t), nextAt: t.status === 'open' ? nextSlot(t, now) : null,
-    publishDelayMs: PUBLISH_DELAY_MS, pairing: pairingOf(t), showdownAt: t.showdownAt || null, showdown: inShowdown(t), rejudgeQueue: (t.rejudgeQueue || []).map(q => q.day),
+    publishDelayMs: PUBLISH_DELAY_MS, pairing: pairingOf(t), ...showdownInfo(t, now), rejudgeQueue: (t.rejudgeQueue || []).map(q => q.day),
     days: (t.days || []).map(d => {
       const fights = dayTotal(d);
       return { number: d.number, at: d.slot || d.startedAt, status: d.status, live: !!d.live, publishAt: d.publishAt, publishedAt: d.publishedAt || null, teams: d.entries.length,
@@ -242,4 +265,4 @@ function board(t, now = Date.now()) {
   };
 }
 
-module.exports = { isDaily, pairingOf, swissRounds, swissPairs, frozen, validTime, validCycle, cycleHoursOf, MIN_CYCLE_HOURS, MAX_CYCLE_HOURS, slotsBetween, dueSlots, nextSlot, entriesAt, pairsOf, dayMatches, isPublished, standings, board, PUBLISH_DELAY_MS };
+module.exports = { showdownInfo, isDaily, pairingOf, swissRounds, swissPairs, frozen, validTime, validCycle, cycleHoursOf, MIN_CYCLE_HOURS, MAX_CYCLE_HOURS, slotsBetween, dueSlots, nextSlot, entriesAt, pairsOf, dayMatches, isPublished, standings, board, PUBLISH_DELAY_MS };

@@ -61,6 +61,52 @@ class TournamentManager {
     }
   }
 
+  // ---------- showdown runs (see grader/practice.js) ----------
+  // At every interval mark of the window, each team's newest working bot (as of that mark) plays every
+  // sparring bot. One run at a time per tournament: a mark passed while one is still playing starts
+  // the next run as soon as it ends (only the latest mark, not every one missed). A run cut off by a
+  // restart is played again from scratch.
+  showdownTick(t, now) {
+    const busy = this.showdownBusy || (this.showdownBusy = new Set());
+    if (busy.has(t.id)) return;
+    const slot = grader.practice.showdownSlot(t, now);
+    if (!slot) {
+      if (t.showdownRun) { delete t.showdownRun; db.save(); } // the window closed (or moved) before it was played
+      return;
+    }
+    let run = t.showdownRun;
+    if (!run) {
+      if (t.showdownLast && t.showdownLast.number >= slot.number) return; // this mark is played
+      run = t.showdownRun = { number: slot.number, at: slot.at, status: 'running' };
+    }
+    run.startedAt = new Date(now).toISOString();
+    run.teams = Object.fromEntries(daily.entriesAt(t, Date.parse(run.at)).map(e => [e.userId, { submissionId: e.submissionId, teamName: e.teamName, total: 0, results: [] }]));
+    busy.add(t.id);
+    db.save();
+    this.showdownChanged(t);
+    let timer = null; // pages refresh at most once a second while matches end
+    const update = () => { if (!timer) timer = setTimeout(() => { timer = null; this.showdownChanged(t); }, 1000); };
+    grader.practice.runShowdown(t, run, grader.ensureBuilt, update)
+      .then(() => {
+        if (run.cancelled || t.showdownRun !== run) return; // the judge changed the schedule meanwhile
+        run.status = 'done';
+        run.finishedAt = new Date().toISOString();
+        t.showdownLast = run;
+        delete t.showdownRun;
+      })
+      .catch(e => console.error('[showdown] run failed:', e))
+      .finally(() => {
+        clearTimeout(timer);
+        busy.delete(t.id);
+        db.save();
+        this.showdownChanged(t);
+      });
+  }
+  showdownChanged(t) {
+    this.io.to('users').emit('practice:updated', { tournamentId: t.id });
+    this.broadcast(t);
+  }
+
   // ---------- daily league ----------
   dailyTick(t, now) {
     if (t.status === 'finished') return;
@@ -85,6 +131,7 @@ class TournamentManager {
         this.broadcast(t);
       }
     }
+    this.showdownTick(t, now);
     if (this.active.has(t.id)) return;
     const running = (t.days || []).find(d => d.status === 'running'); // cut off by a restart
     const [slot] = running ? [] : daily.dueSlots(t, now);
