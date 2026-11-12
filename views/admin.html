@@ -586,6 +586,32 @@
     // evaluation is rejudged right away: every team's newest bot replays its practice on the new map.
     const mapChangeNote = t => `\n\nCác trận bắt đầu từ giờ sẽ dùng bố cục mới (trận đang đấu${t.daily ? ' và vòng đấu hằng ngày đã bắt đầu' : ''} vẫn giữ bố cục cũ).`
       + (t.mode !== 'campaign' && t.status === 'open' ? '\nĐiểm đánh giá sẽ được chấm lại ngay: bot mới nhất của mỗi đội đấu tập lại với các bot đấu tập trên bố cục mới.' : '');
+    // A map's code: everything it plays with (name, size, layout, goals, move limit) as one line of
+    // text the judge copies from one tournament and pastes in another ("OTTMAP1." + base64 of JSON).
+    const MAP_CODE_PREFIX = 'OTTMAP1.';
+    function mapCode(map) {
+      const json = JSON.stringify({ n: map.name, w: map.width, h: map.height, t: map.maxTurns, l: map.layout, g: map.goals || null, m: map.goalMode || 'any' });
+      return MAP_CODE_PREFIX + btoa(String.fromCharCode(...new TextEncoder().encode(json)));
+    }
+    // the map in a code, or throws (the server checks the board itself when it is added)
+    function parseMapCode(code) {
+      const raw = String(code || '').replace(/\s+/g, '');
+      if (!raw.startsWith(MAP_CODE_PREFIX)) throw new Error('Mã bản đồ phải bắt đầu bằng ' + MAP_CODE_PREFIX);
+      let d;
+      try { d = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(raw.slice(MAP_CODE_PREFIX.length)), c => c.charCodeAt(0)))); }
+      catch { throw new Error('Mã bản đồ bị hỏng hoặc chép thiếu'); }
+      if (!d || typeof d.l !== 'string' || !Number.isInteger(d.w) || !Number.isInteger(d.h) || !Number.isInteger(d.t)) throw new Error('Mã bản đồ bị hỏng hoặc chép thiếu');
+      return { name: String(d.n || 'Bản đồ').slice(0, 40), width: d.w, height: d.h, maxTurns: d.t, layout: d.l, goals: typeof d.g === 'string' ? d.g : null, goalMode: d.m === 'all' ? 'all' : 'any' };
+    }
+    // a name not used yet in this tournament: "Tên", else "Tên (2)", "Tên (3)"...
+    function freeMapName(name, maps) {
+      const taken = new Set(maps.map(m => m.name.toLowerCase()));
+      if (!taken.has(name.toLowerCase())) return name;
+      for (let i = 2; ; i++) {
+        const tail = ` (${i})`, n = name.slice(0, 40 - tail.length) + tail;
+        if (!taken.has(n.toLowerCase())) return n;
+      }
+    }
     async function showMaps(t, refresh = false) {
       let data;
       try { data = await api(`${mapsUrl(t)}/maps`); }
@@ -610,7 +636,7 @@
           <small class="muted">${map.width}×${map.height} · ⏱ tối đa ${map.maxTurns} nước${map.goalMode === 'all' ? ' · 🏁 chiếm tất cả ô đích' : ''}</small>
           <div class="row" style="gap:6px;justify-content:center">${activeMap === map.id
             ? '<span class="tag ok">✅ đang dùng</span>'
-            : `<button class="btn small yellow" data-mapuse="${map.id || ''}" title="các ván từ giờ bắt đầu từ bản đồ này">dùng</button>`}${extra}</div>
+            : `<button class="btn small yellow" data-mapuse="${map.id || ''}" title="các ván từ giờ bắt đầu từ bản đồ này">dùng</button>`}<button class="btn small" data-mapcode="${map.id || ''}" title="chép mã bản đồ để dán vào giải khác">📋 mã</button>${extra}</div>
         </div>`;
       panel.innerHTML = `<section class="box">
         <div class="row" style="justify-content:space-between"><h3 class="lines" style="margin:0">Bản đồ · ${esc(t.name)}</h3><button class="btn small" id="closeMaps">đóng</button></div>
@@ -619,11 +645,33 @@
           ${card(standard, '')}
           ${maps.map(m => card(m, `<button class="btn small" data-mapedit="${m.id}">✏️ sửa</button><button class="btn small" data-mapdel="${m.id}" title="xóa bản đồ">🗑</button>`)).join('')}
         </div>
-        ${editing ? mapEditor(editing) : '<button class="btn small" id="mapNew" style="margin-top:10px">➕ Tạo bản đồ mới</button>'}
+        ${editing ? mapEditor(editing) : `<div class="row" style="gap:8px;margin-top:10px">
+          <button class="btn small" id="mapNew">➕ Tạo bản đồ mới</button>
+          <input id="mapCodeIn" autocomplete="off" spellcheck="false" placeholder="dán mã bản đồ (📋 mã ở giải khác)" style="flex:1;min-width:220px;font-family:monospace;font-size:15px">
+          <button class="btn small yellow" id="mapImport">📥 Thêm từ mã</button>
+        </div>`}
       </section>`;
       panel.classList.remove('hidden');
       $('#closeMaps').onclick = () => { mapsOpen = null; panel.classList.add('hidden'); };
       if ($('#mapNew')) $('#mapNew').onclick = () => startMap(null);
+      $$('[data-mapcode]', panel).forEach(b => b.onclick = () => {
+        const map = (b.dataset.mapcode && maps.find(m => m.id === b.dataset.mapcode)) || standard;
+        navigator.clipboard.writeText(mapCode(map)).then(() => toast(`Đã chép mã bản đồ "${map.name}" 📋 Dán vào ô "dán mã bản đồ" ở giải khác.`), () => toast('Không chép được', 'error'));
+      });
+      if ($('#mapImport')) {
+        const doImport = async () => {
+          let map;
+          try { map = parseMapCode($('#mapCodeIn').value); } catch (e) { return toast(e.message, 'error'); }
+          map.name = freeMapName(map.name, maps);
+          try {
+            await api(`${mapsUrl(t)}/maps`, { method: 'POST', body: map });
+            toast(`Đã thêm bản đồ "${map.name}" 🗺️ Bấm "dùng" để chơi trên nó.`);
+            showMaps(t, true);
+          } catch (e) { toast(e.message, 'error'); }
+        };
+        $('#mapImport').onclick = doImport;
+        $('#mapCodeIn').addEventListener('keydown', e => { if (e.key === 'Enter') doImport(); });
+      }
       $$('[data-mapedit]', panel).forEach(b => b.onclick = () => startMap(b.dataset.mapedit));
       $$('[data-mapuse]', panel).forEach(b => b.onclick = async () => {
         const id = b.dataset.mapuse || null;
