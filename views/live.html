@@ -152,15 +152,8 @@
       if (b.status !== 'finished') dailyTimer = setInterval(tickBanner, 500);
       prog.classList.toggle('hidden', !(pending && pending.status === 'running'));
       if (pending && pending.status === 'running') prog.firstElementChild.style.width = (pending.totalMatches ? (100 * pending.played) / pending.totalMatches : 0) + '%';
-      const playing = pending && pending.status === 'running' ? ` · vòng ${pending.number}: đã đấu ${pending.played}/${pending.totalMatches} trận` : '';
-      sub.innerHTML = `Một vòng ${esc(scheduleText({ time: b.dailyTime, cycleHours: b.cycleHours }))} · ${b.pairing === 'swiss' ? 'thể thức Thụy Sĩ' : 'vòng tròn'} · thắng 3 · hòa 1 · thua 0 · đã qua ${published.filter(d => d.status === 'published').length} vòng${playing} · ${b.status === 'finished' ? 'kết thúc' : 'kết thúc lúc'} ${esc(fmtDate(b.deadline))}`
-        + (b.status === 'open' && ME.role !== 'judge' ? ` · <a href="/tournament/${encodeURIComponent(tid)}/submit">nộp bot</a>` : '')
-        + (b.showdownAt ? `<br>⚔️ Quyết đấu ${b.showdown ? '<b>đang diễn ra</b> ' : ''}từ ${esc(fmtDate(b.showdownAt))} đến ${esc(fmtDate(new Date(Date.parse(b.showdownAt) + b.showdownMinutes * 60000).toISOString()))}: cứ mỗi ${b.showdownEveryMinutes} phút, bot mới nhất của mỗi đội đấu với các bot đấu tập; điểm đánh giá là tổng điểm của lượt gần nhất (mỗi ván: thắng × 550 + số quân còn lại × 25). Nộp bot mới không đổi điểm ngay mà chờ lượt sau. Trong lúc quyết đấu, kết quả mỗi vòng đấu được công bố ngay khi đấu xong, trừ vòng cuối cùng của quyết đấu (vẫn chờ ${Math.round(b.publishDelayMs / 60000)} phút).`
-          + (b.showdownRun ? ` 🥊 Lượt ${b.showdownRun.number} đang đấu: ${b.showdownRun.played}/${b.showdownRun.total} trận.` : '')
-          + (b.showdownLast && b.showdown ? ` Điểm hiện tại: lượt ${b.showdownLast.number} (${esc(fmtDate(b.showdownLast.at))}).` : '')
-          + (b.showdownNextAt ? ` Lượt tiếp theo lúc ${esc(fmtDate(b.showdownNextAt))}.` : '') : '')
-        + '<br>↕️ Bấm vào tiêu đề cột (điểm đánh giá, từng vòng, tổng điểm) để sắp xếp bảng theo cột đó; bấm lần nữa để đảo chiều.'
-        + (game === 'board' ? '<br>Thời gian: mỗi bot được dùng tối đa <b>1 giây CPU mỗi nước</b> và <b>180 giây CPU mỗi ván</b> (dùng hết thì thua ván đó).' : '');
+      // (no description under the banner: only the way to the submit page)
+      sub.innerHTML = b.status === 'open' && ME.role !== 'judge' ? `<a href="/tournament/${encodeURIComponent(tid)}/submit">nộp bot</a>` : '';
 
       const champ = $('#champ');
       if (b.champion) {
