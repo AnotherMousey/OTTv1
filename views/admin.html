@@ -296,7 +296,7 @@
             ${t.daily ? `<button class="btn small" data-keys="${t.id}" title="mã cần nhập để nộp bài trong lúc quyết đấu">🔑 mã quyết đấu</button>` : ''}
             <a class="btn small" href="/tournament/${id}/live">bảng xếp hạng</a>
             <a class="btn small" href="/tournament/${id}/matches">lịch sử trận</a>
-            ${t.daily && t.daily.played ? `<button class="btn small" data-rejudge="${t.id}" title="xóa kết quả một vòng đấu và cho các bot đấu lại vòng đó">🔁 rejudge</button>` : ''}
+            ${t.daily && t.daily.played ? `<button class="btn small" data-rejudge="${t.id}" title="cho các bot đấu lại một vòng đấu, hoặc xóa hẳn vòng đó">🔁 rejudge</button>` : ''}
             ${open && !waiting ? `<button class="btn small red" data-now="${t.id}">${t.daily ? 'kết thúc' : 'đóng nộp bài ngay'}</button>` : ''}
             ${waiting ? `<button class="btn small yellow" data-opennow="${t.id}">mở nhận bài ngay</button>` : open && t.daily ? `<button class="btn small yellow" data-playnow="${t.id}" title="thêm một vòng đấu ngay bây giờ">⚡ đấu ngay</button>` : ''}
           </div>`}</td>
@@ -535,8 +535,8 @@
       const state = d => (queue.includes(d.number) ? `⏳ hàng chờ #${queue.indexOf(d.number) + 1}` : d.live && d.status !== 'published' ? 'đang chấm lại' : STATUS[d.status] || d.status);
       const panel = $('#rejudgePanel');
       panel.innerHTML = `<section class="box">
-        <div class="row" style="justify-content:space-between"><h3 class="lines" style="margin:0">Chấm lại vòng đấu · ${esc(t.name)}</h3><button class="btn small" id="closeRejudge">đóng</button></div>
-        <p class="muted" style="font-size:17px;margin:4px 0 10px">Tick các vòng cần chấm lại. Mỗi yêu cầu vào cuối hàng chờ và được chấm theo thứ tự gửi (trong một yêu cầu: từ vòng nhỏ nhất). Đến lượt, kết quả cũ của vòng bị xóa và các bot (cùng đội, cùng bài nộp như lúc đầu) đấu lại; không có thời gian chờ công bố: kết quả cập nhật trực tiếp sau từng trận.${t.game === 'board' ? ' Vòng chấm lại dùng bản đồ đang được chọn lúc đến lượt nó.' : ''}</p>
+        <div class="row" style="justify-content:space-between"><h3 class="lines" style="margin:0">Chấm lại / xóa vòng đấu · ${esc(t.name)}</h3><button class="btn small" id="closeRejudge">đóng</button></div>
+        <p class="muted" style="font-size:17px;margin:4px 0 10px">Tick các vòng cần chấm lại. Mỗi yêu cầu vào cuối hàng chờ và được chấm theo thứ tự gửi (trong một yêu cầu: từ vòng nhỏ nhất). Đến lượt, kết quả cũ của vòng bị xóa và các bot (cùng đội, cùng bài nộp như lúc đầu) đấu lại; không có thời gian chờ công bố: kết quả cập nhật trực tiếp sau từng trận.${t.game === 'board' ? ' Vòng chấm lại dùng bản đồ đang được chọn lúc đến lượt nó.' : ''}<br><b>🗑 Xóa vòng</b> bỏ hẳn các vòng được chọn: trận đấu và điểm của chúng biến mất khỏi bảng xếp hạng, không đấu lại, không khôi phục được. Các vòng còn lại giữ nguyên số thứ tự (ví dụ xóa vòng 2 thì còn vòng 1, 3, 4…). Không xóa được vòng đang thi đấu.</p>
         ${queue.length ? `<p style="font-size:17px;margin:0 0 8px">⏳ Hàng chờ chấm lại: ${queue.map(n => `vòng ${n}`).join(' → ')}</p>` : ''}
         <div class="row" style="gap:8px;margin-bottom:8px">
           <button class="btn small" id="rjAll">chọn tất cả</button><button class="btn small" id="rjNone">bỏ tất cả</button>
@@ -551,12 +551,14 @@
           <label class="row" style="gap:6px;margin:0;cursor:pointer"><input type="radio" name="rjPairing" value="rr" ${r.pairing === 'rr' ? 'checked' : ''}> vòng tròn</label>
           <label class="row" style="gap:6px;margin:0;cursor:pointer"><input type="radio" name="rjPairing" value="swiss" ${r.pairing === 'swiss' ? 'checked' : ''}> Thụy Sĩ</label>
         </div>
-        <div class="row" style="margin-top:12px"><button class="btn red" id="rjGo" ${!r.picked.size ? 'disabled' : ''}>🔁 ${busy ? 'Thêm vào hàng chờ' : 'Chấm lại'}</button></div>
+        <div class="row" style="margin-top:12px;gap:10px"><button class="btn red" id="rjGo" ${!r.picked.size ? 'disabled' : ''}>🔁 ${busy ? 'Thêm vào hàng chờ' : 'Chấm lại'}</button>
+          <button class="btn" id="rjDel" ${!r.picked.size ? 'disabled' : ''} title="xóa hẳn các vòng được chọn">🗑 Xóa vòng</button></div>
       </section>`;
       panel.classList.remove('hidden');
       const sync = () => {
         $('#rjCount').textContent = `${r.picked.size} vòng được chọn`;
         $('#rjGo').disabled = !r.picked.size;
+        $('#rjDel').disabled = !r.picked.size;
       };
       $$('[data-day]', panel).forEach(c => c.onchange = () => {
         c.checked ? r.picked.add(+c.dataset.day) : r.picked.delete(+c.dataset.day);
@@ -575,6 +577,20 @@
           const res = await api(`/api/admin/tournaments/${encodeURIComponent(t.id)}/rejudge`, { method: 'POST', body: { days, pairing: r.pairing } });
           const queued = res.queued.length === 1 ? `Vòng ${res.queued[0]}` : `${res.queued.length} vòng (${res.queued.join(', ')})`;
           toast(res.ahead ? `${queued} đã vào hàng chờ, sau ${res.ahead} vòng khác ⏳` : `${queued} đang được đấu lại 🔁`);
+          rejudgeOpen = null;
+          panel.classList.add('hidden');
+          loadTournaments();
+        } catch (e) { toast(e.message, 'error'); }
+      };
+      $('#rjDel').onclick = async () => {
+        const picked = [...r.picked].sort((a, b) => a - b);
+        const running = picked.filter(n => (days.find(d => d.number === n) || {}).status === 'running');
+        if (running.length) return toast(`Vòng ${running.join(', ')} đang thi đấu, đợi xong rồi hãy xóa`, 'error');
+        const which = picked.length === 1 ? `vòng ${picked[0]}` : `${picked.length} vòng (${picked.join(', ')})`;
+        if (!confirm(`Xóa hẳn ${which}?\n\nMọi trận đấu và điểm của ${picked.length === 1 ? 'vòng này' : 'các vòng này'} bị xóa khỏi bảng xếp hạng và lịch sử trận. Không khôi phục được.${t.status === 'finished' ? '\n\nGiải đã kết thúc: nhà vô địch được xác định lại theo bảng xếp hạng mới.' : ''}`)) return;
+        try {
+          const res = await api(`/api/admin/tournaments/${encodeURIComponent(t.id)}/delete-days`, { method: 'POST', body: { days: picked } });
+          toast(`Đã xóa ${res.deleted.length === 1 ? `vòng ${res.deleted[0]}` : `${res.deleted.length} vòng`} (${res.matches} trận) 🗑`);
           rejudgeOpen = null;
           panel.classList.add('hidden');
           loadTournaments();

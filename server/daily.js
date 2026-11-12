@@ -30,6 +30,9 @@ const PUBLISH_DELAY_MS = process.env.PUBLISH_DELAY_MS !== undefined ? +process.e
 const POINTS = { win: 3, draw: 1, loss: 0 };
 
 const isDaily = t => t.format === 'daily';
+// The number of the next day played. Days the judge deleted leave gaps (1, 3, 4...): the others keep
+// their numbers, so their matches (named and filed by day number) stay where they are.
+const nextDayNumber = t => (t.days || []).reduce((n, d) => Math.max(n, d.number), 0) + 1;
 const pairingOf = t => (t.pairing === 'swiss' ? 'swiss' : 'rr');
 const swissRounds = n => (n < 2 ? 0 : Math.ceil(Math.log2(n)));
 const gameOf = t => (t.game === 'board' ? 'board' : 'rps');
@@ -151,7 +154,7 @@ const dayTotal = d => (d.pairing === 'swiss' ? (d.rounds || 0) * Math.floor(d.en
 function frozen(t, now = Date.now()) {
   const day = (t.days || []).find(d => !shown(d));
   if (day) return { day: day.number, publishAt: day.publishAt };
-  return dueSlots(t, now).length ? { day: (t.days || []).length + 1, publishAt: null } : null;
+  return dueSlots(t, now).length ? { day: nextDayNumber(t), publishAt: null } : null;
 }
 
 const dayMatches = (t, day) => Object.values(db.data.matches[t.id] || {}).filter(m => m.day === day.number);
@@ -265,4 +268,4 @@ function board(t, now = Date.now()) {
   };
 }
 
-module.exports = { showdownInfo, isDaily, pairingOf, swissRounds, swissPairs, frozen, validTime, validCycle, cycleHoursOf, MIN_CYCLE_HOURS, MAX_CYCLE_HOURS, slotsBetween, dueSlots, nextSlot, entriesAt, pairsOf, dayMatches, isPublished, standings, board, PUBLISH_DELAY_MS };
+module.exports = { nextDayNumber, showdownInfo, isDaily, pairingOf, swissRounds, swissPairs, frozen, validTime, validCycle, cycleHoursOf, MIN_CYCLE_HOURS, MAX_CYCLE_HOURS, slotsBetween, dueSlots, nextSlot, entriesAt, pairsOf, dayMatches, isPublished, standings, board, PUBLISH_DELAY_MS };

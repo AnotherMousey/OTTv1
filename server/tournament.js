@@ -185,7 +185,7 @@ class TournamentManager {
       const now = Date.now();
       t.days = t.days || [];
       day = {
-        number: t.days.length + 1,
+        number: daily.nextDayNumber(t),
         slot,
         startedAt: new Date(now).toISOString(),
         publishAt: new Date(now + daily.PUBLISH_DELAY_MS).toISOString(),

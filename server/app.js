@@ -699,6 +699,36 @@ app.post('/api/admin/tournaments/:id/rejudge', apiAuth, apiJudge, (req, res) => 
   io.to('users').emit('tournaments:changed');
   res.json({ ok: true, queued: fresh.map(d => d.number), skipped: days.length - fresh.length, ahead });
 });
+// Daily league: delete the days numbered in `days` for good: their matches and the points they gave
+// are gone from the standings. The other days keep their numbers (see daily.nextDayNumber). A day
+// being played can't be deleted; one waiting to be rejudged leaves the queue.
+app.post('/api/admin/tournaments/:id/delete-days', apiAuth, apiJudge, wrap(async (req, res) => {
+  const t = findTournament(req.params.id);
+  if (!t) return fail(res, 404, 'Không tìm thấy giải đấu');
+  if (!daily.isDaily(t)) return fail(res, 400, 'Chỉ giải hỗn chiến mới xóa được vòng đấu');
+  const numbers = new Set(((req.body || {}).days || []).map(Number));
+  if (!numbers.size) return fail(res, 400, 'Chưa chọn vòng đấu nào');
+  const days = (t.days || []).filter(d => numbers.has(d.number));
+  if (days.length !== numbers.size) return fail(res, 404, 'Không tìm thấy vòng đấu này');
+  const busy = days.find(d => d.status === 'running');
+  if (busy) return fail(res, 400, `Vòng ${busy.number} đang thi đấu, đợi nó xong rồi hãy xóa`);
+  const names = days.flatMap(d => daily.dayMatches(t, d).map(m => m.name));
+  t.days = t.days.filter(d => !numbers.has(d.number));
+  if (t.rejudgeQueue) {
+    t.rejudgeQueue = t.rejudgeQueue.filter(q => !numbers.has(q.day));
+    if (!t.rejudgeQueue.length) delete t.rejudgeQueue;
+  }
+  // a finished league crowns whoever leads the standings without these days
+  if (t.status === 'finished') {
+    const [top] = daily.standings(t);
+    t.championId = top && top.played > 0 ? top.userId : null;
+  }
+  await db.deleteMatches(t.id, names); // (saves)
+  console.log(`[daily] "${t.name}" day ${days.map(d => d.number).join(', ')}: deleted by the judge (${names.length} matches)`);
+  manager.broadcast(t);
+  io.to('users').emit('tournaments:changed');
+  res.json({ ok: true, deleted: days.map(d => d.number), matches: names.length });
+}));
 // Announcements: a short message to everyone who can see the tournament, gone after 24 hours.
 app.post('/api/admin/tournaments/:id/announcements', apiAuth, apiJudge, (req, res) => {
   const t = findTournament(req.params.id);
